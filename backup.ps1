@@ -1,10 +1,15 @@
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$DestinationRootPath # 年別フォルダの親パスを受け取る引数を追加
+)
+
 # ---------------------------------------------
 # 設定セクション
 # ---------------------------------------------
 # OneDrive リモート（rclone の名称）
 $oneDrivePath   = "onedrive:公開資料"
-# ローカル作業ディレクトリのルート（MyVideosを含めたパス）
-$baseDirectory  = "$PSScriptRoot\work"
+# ローカル作業ディレクトリのルート（スクリプトと同じ階層の work）
+$baseDirectory  = "$PSScriptRoot\work" # 元の定義に戻す
 # ログ保存ディレクトリ
 $logDir         = "$PSScriptRoot\logs"
 
@@ -15,11 +20,11 @@ $logDir         = "$PSScriptRoot\logs"
 if (-not (Test-Path $logDir)) {
     New-Item -Path $logDir -ItemType Directory | Out-Null
 }
-# 基本ディレクトリが存在すれば削除し、再作成
-if (Test-Path $baseDirectory) {
-    Remove-Item -Path $baseDirectory -Recurse -Force
+# 基本ディレクトリ(work)が存在すれば削除し、再作成
+if (Test-Path $baseDirectory) { # $BaseDirectoryPath を $baseDirectory に戻す
+    Remove-Item -Path $baseDirectory -Recurse -Force # $BaseDirectoryPath を $baseDirectory に戻す
 }
-New-Item -Path $baseDirectory -ItemType Directory | Out-Null
+New-Item -Path $baseDirectory -ItemType Directory | Out-Null # $BaseDirectoryPath を $baseDirectory に戻す
 
 # 実行日時を含むログファイル名
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -33,10 +38,10 @@ Get-ChildItem -Path $logDir -Filter "onedrive_move_*.log" |
 # ---------------------------------------------
 # ステップ1：rclone で動画ファイルを移動
 # ---------------------------------------------
+# rclone 実行（テスト時は --dry-run を残し、本番運用時は外してください）
 rclone move $oneDrivePath $baseDirectory `
     --include "*.mp4" --include "*.avi" --include "*.mov" `
     --include "*.mkv" --include "*.wmv" --include "*.flv" `
-    --dry-run `
     --log-file $logFile --log-level INFO
 
 # ---------------------------------------------
@@ -45,7 +50,7 @@ rclone move $oneDrivePath $baseDirectory `
 # Shell.Application を使ってメディア作成日時を取得
 $shell = New-Object -ComObject Shell.Application
 
-Get-ChildItem -Path $baseDirectory -File | ForEach-Object {
+Get-ChildItem -Path $baseDirectory -File | ForEach-Object { # $BaseDirectoryPath を $baseDirectory に戻す
     try {
         $folder = $shell.Namespace($_.DirectoryName)
         $file   = $folder.ParseName($_.Name)
@@ -62,15 +67,15 @@ Get-ChildItem -Path $baseDirectory -File | ForEach-Object {
             $year = $_.CreationTime.Year
         }
 
-        # 年フォルダ作成
-        $targetDir = Join-Path $baseDirectory $year
+        # 年フォルダ作成 (★修正箇所)
+        $targetDir = Join-Path $DestinationRootPath $year # ベースを $DestinationRootPath に変更
         if (-not (Test-Path $targetDir)) {
             New-Item -Path $targetDir -ItemType Directory | Out-Null
         }
 
         # 年フォルダへ移動
         Move-Item -Path $_.FullName -Destination $targetDir -Force
-        Write-Host "Moved '$($_.Name)' → '$year\'"
+        Write-Host "Moved '$($_.Name)' → '$($targetDir)\'" # 出力パスを修正
     }
     catch {
         Write-Warning "Error processing '$($_.Name)': $_"
