@@ -3,6 +3,8 @@ param(
     [string]$DestinationRootPath # 年別フォルダの親パスを受け取る引数を追加
 )
 
+$ErrorActionPreference = "Stop"
+
 # Slack通知関数をインポート
 . "$PSScriptRoot\Send-SlackNotification.ps1"
 
@@ -65,10 +67,14 @@ if ($LASTEXITCODE -ne 0) {
 # Shell.Application を使ってメディア作成日時を取得
 $shell = New-Object -ComObject Shell.Application
 
-Get-ChildItem -Path $baseDirectory -File | ForEach-Object {
+Get-ChildItem -Path $baseDirectory -Recurse -File | ForEach-Object {
     try {
         $folder = $shell.Namespace($_.DirectoryName)
         $file   = $folder.ParseName($_.Name)
+
+        # $fileをコンソールへ出力（デバッグ用）
+        Write-Host "Processing file: $($_.FullName)"
+
         # プロパティ208: メディア作成日時
         $rawDate = $folder.GetDetailsOf($file, 208) -replace '[^\d/]', ''
         if ($rawDate -match '(\d{4}/\d{1,2}/\d{1,2})') {

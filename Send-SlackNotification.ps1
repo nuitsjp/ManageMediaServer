@@ -59,7 +59,12 @@ function Send-SlackNotification {
         # Slack通知自体でエラーが発生した場合
         $NotificationErrorMessage = "Slackへの通知中にエラーが発生しました: $($_.Exception.Message)"
         Write-Error $NotificationErrorMessage
-        # このエラーをイベントログに書き込むなどの代替措置を検討
+        try {
+        # このエラーをイベントログに書き込む
         Write-EventLog -LogName Application -Source "BackupOneDrive" -EventId 1002 -EntryType Error -Message $NotificationErrorMessage
+        }
+        catch {
+            # ignore
+        }
     }
 }
