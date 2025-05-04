@@ -10,7 +10,7 @@ param(
 # 設定セクション
 # ---------------------------------------------
 # OneDrive リモート（rclone の名称）
-$oneDrivePath   = "onedrive:公開資料"
+$oneDrivePath   = "onedrive:"
 # ローカル作業ディレクトリのルート（スクリプトと同じ階層の work）
 $baseDirectory  = "$PSScriptRoot\work" # 元の定義に戻す
 # ログ保存ディレクトリ
@@ -53,6 +53,9 @@ try {
         --include "*.mp4" --include "*.avi" --include "*.mov" `
         --include "*.mkv" --include "*.wmv" --include "*.flv" `
         --log-file $logFile --log-level INFO
+    if ($LASTEXITCODE -ne 0) {
+        throw "rclone異常終了: $LASTEXITCODE"
+    }
 } catch {
     Send-SlackNotification -Status "失敗" -Message "rclone実行中にエラーが発生しました。" -Exception $_.Exception
     throw
