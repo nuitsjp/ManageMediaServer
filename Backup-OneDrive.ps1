@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory=$true)]
-    [string]$DestinationRootPath # 年別フォルダの親パスを受け取る引数を追加
+    [string]$VideosDirectory,
+    [Parameter(Mandatory=$true)]
+    [string]$BackupDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +19,10 @@ $oneDrivePath   = "onedrive:"
 $workDirectory  = "$PSScriptRoot\work"
 # ログ保存ディレクトリ
 $logDir         = "$PSScriptRoot\logs"
+# 個人動画フォルダ（OneDrive の Videos バックアップ先フォルダ）
+$MyVideosDirectory = Join-Path $VideosDirectory 'MyVideos'
+# ログファイルのタイムスタンプ
+$timestamp      = Get-Date -Format "yyyyMMdd_HHmmss"
 
 # ---------------------------------------------
 # 初期化：ディレクトリとログ設定
@@ -33,12 +39,8 @@ try {
     }
     New-Item -Path $workDirectory -ItemType Directory | Out-Null
 
-    # 実行日時を含むログファイル名
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $logFile   = Join-Path $logDir "onedrive_move_$timestamp.log"
-
     # 30日以上前のログを削除
-    Get-ChildItem -Path $logDir -Filter "onedrive_move_*.log" |
+    Get-ChildItem -Path $logDir -Filter "*.log" |
       Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
       Remove-Item -Force
 } catch {
@@ -49,13 +51,14 @@ try {
 # ---------------------------------------------
 # ステップ1：rclone で動画ファイルを移動
 # ---------------------------------------------
-# rclone 実行（テスト時は --dry-run を残し、本番運用時は外してください）
+# rclone 実行
+$oneDriveLogFile   = Join-Path $logDir "onedrive_move_$timestamp.log"
 rclone move $oneDrivePath $workDirectory `
     --include "*.mp4" --include "*.avi" --include "*.mov" `
     --include "*.mkv" --include "*.wmv" --include "*.flv" `
-    --log-file $logFile --log-level INFO
+    --log-file $oneDriveLogFile --log-level INFO
 if ($LASTEXITCODE -ne 0) {
-    $logContent = Get-Content $logFile -Raw
+    $logContent = Get-Content $oneDriveLogFile -Raw
     $errorMessage = "rclone実行中にエラーが発生しました。ログ内容:`n$logContent"
     Send-SlackNotification -Status "失敗" -Message $errorMessage
     exit -1
@@ -89,7 +92,7 @@ Get-ChildItem -Path $workDirectory -Recurse -File | ForEach-Object {
         }
 
         # 年フォルダ作成
-        $targetDir = Join-Path $DestinationRootPath $year
+        $targetDir = Join-Path $MyVideosDirectory $year
         if (-not (Test-Path $targetDir)) {
             New-Item -Path $targetDir -ItemType Directory | Out-Null
         }
@@ -103,6 +106,22 @@ Get-ChildItem -Path $workDirectory -Recurse -File | ForEach-Object {
         Write-Warning "Error processing '$($_.Name)': $_"
         Send-SlackNotification -Status "失敗" -Message "ファイル '$($_.Name)' の処理中にエラーが発生しました。" -Exception $_.Exception
     }
+}
+
+# ---------------------------------------------
+# ステップ3：Videoフォルダをバックアップする
+# ---------------------------------------------
+
+$robocopyLogFile   = Join-Path $logDir "robocopy_$timestamp.log"
+
+# バックアップ実行
+# robocopy は Windows 専用コマンド。PowerShell Core でも Windows 上で実行可能。
+# /E: サブディレクトリ含む, /R:3 再試行3回, /W:10 待機10秒, /MT:16 マルチスレッド
+robocopy $VideosDirectory $BackupDirectory /E /R:3 /W:10 /MT:16 /LOG:$robocopyLogFile
+if ($LASTEXITCODE -gt 1) {
+    Write-Host "Backup failed with error code: $LASTEXITCODE"
+    Send-SlackNotification -Status "失敗" -Message "バックアップ処理中にエラーが発生しました。エラーコード: $LASTEXITCODE"
+    exit -1
 }
 
 Send-SlackNotification -Status "成功" -Message "バックアップ処理が正常に完了しました。"
