@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 # OneDrive リモート（rclone の名称）
 $oneDrivePath   = "onedrive:"
 # ローカル作業ディレクトリのルート（スクリプトと同じ階層の work）
-$baseDirectory  = "$PSScriptRoot\work" # 元の定義に戻す
+$workDirectory  = "$PSScriptRoot\work"
 # ログ保存ディレクトリ
 $logDir         = "$PSScriptRoot\logs"
 
@@ -28,10 +28,10 @@ try {
         New-Item -Path $logDir -ItemType Directory | Out-Null
     }
     # 基本ディレクトリ(work)が存在すれば削除し、再作成
-    if (Test-Path $baseDirectory) {
-        Remove-Item -Path $baseDirectory -Recurse -Force
+    if (Test-Path $workDirectory) {
+        Remove-Item -Path $workDirectory -Recurse -Force
     }
-    New-Item -Path $baseDirectory -ItemType Directory | Out-Null
+    New-Item -Path $workDirectory -ItemType Directory | Out-Null
 
     # 実行日時を含むログファイル名
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -50,7 +50,7 @@ try {
 # ステップ1：rclone で動画ファイルを移動
 # ---------------------------------------------
 # rclone 実行（テスト時は --dry-run を残し、本番運用時は外してください）
-rclone move $oneDrivePath $baseDirectory `
+rclone move $oneDrivePath $workDirectory `
     --include "*.mp4" --include "*.avi" --include "*.mov" `
     --include "*.mkv" --include "*.wmv" --include "*.flv" `
     --log-file $logFile --log-level INFO
@@ -67,7 +67,7 @@ if ($LASTEXITCODE -ne 0) {
 # Shell.Application を使ってメディア作成日時を取得
 $shell = New-Object -ComObject Shell.Application
 
-Get-ChildItem -Path $baseDirectory -Recurse -File | ForEach-Object {
+Get-ChildItem -Path $workDirectory -Recurse -File | ForEach-Object {
     try {
         $folder = $shell.Namespace($_.DirectoryName)
         $file   = $folder.ParseName($_.Name)
