@@ -1,16 +1,16 @@
-. $PSScriptRoot\secrets.ps1
+﻿. $PSScriptRoot\Send-SlackNotification.ps1 # Send-SlackNotification.ps1をインポートして関数を使用
 
-$redirectUri = "https://localhost"
+try {
+    Send-SlackNotification -Status "成功" `
+                           -Message "処理が正常に完了しました。"
+} catch {
+    Write-Error "通知に失敗しました: $($_.Exception.Message)"
+}
 
-# スコープ設定
-$scopes = "Mail.Send"
-
-# トークン取得用のURL
-$tokenUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-
-# 認証コードを取得するためのURL（一度だけ実行する部分）
-$authUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=$clientId&response_type=code&redirect_uri=$redirectUri&response_mode=query&scope=$scopes&state=12345"
-
-# ※最初に一度だけ実行し、認証コードを取得
-Start-Process $authUrl
-# 認証後にリダイレクトされたURLから?code=以降の値をコピーし、以下に貼り付け
+try {
+    throw "意図的なエラーを発生させました。"
+} catch {
+    Send-SlackNotification -Status "失敗" `
+                           -Message "処理中にエラーが発生しました。" `
+                           -Exception $_.Exception
+}
