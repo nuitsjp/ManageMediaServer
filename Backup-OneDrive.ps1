@@ -48,17 +48,15 @@ try {
 # ステップ1：rclone で動画ファイルを移動
 # ---------------------------------------------
 # rclone 実行（テスト時は --dry-run を残し、本番運用時は外してください）
-try {
-    rclone move $oneDrivePath $baseDirectory `
-        --include "*.mp4" --include "*.avi" --include "*.mov" `
-        --include "*.mkv" --include "*.wmv" --include "*.flv" `
-        --log-file $logFile --log-level INFO
-    if ($LASTEXITCODE -ne 0) {
-        throw "rclone異常終了: $LASTEXITCODE"
-    }
-} catch {
-    Send-SlackNotification -Status "失敗" -Message "rclone実行中にエラーが発生しました。" -Exception $_.Exception
-    throw
+rclone move $oneDrivePath $baseDirectory `
+    --include "*.mp4" --include "*.avi" --include "*.mov" `
+    --include "*.mkv" --include "*.wmv" --include "*.flv" `
+    --log-file $logFile --log-level INFO
+if ($LASTEXITCODE -ne 0) {
+    $logContent = Get-Content $logFile -Raw
+    $errorMessage = "rclone実行中にエラーが発生しました。ログ内容:`n$logContent"
+    Send-SlackNotification -Status "失敗" -Message $errorMessage
+    exit -1
 }
 
 # ---------------------------------------------
