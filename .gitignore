@@ -1,1 +1,8 @@
+# BackupOneDrive
+logs/
+work/
+secrets.ps1
+
+# Immich
 .env
+
