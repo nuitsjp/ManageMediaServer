@@ -49,79 +49,89 @@ try {
 }
 
 # ---------------------------------------------
-# ステップ1：rclone で動画ファイルを移動
-# ---------------------------------------------
-# rclone 実行
-$oneDriveLogFile   = Join-Path $logDir "onedrive_move_$timestamp.log"
-rclone move $oneDrivePath $workDirectory `
-    --include "*.mp4" --include "*.avi" --include "*.mov" `
-    --include "*.mkv" --include "*.wmv" --include "*.flv" `
-    --log-file $oneDriveLogFile --log-level INFO
-if ($LASTEXITCODE -ne 0) {
-    $logContent = Get-Content $oneDriveLogFile -Raw
-    $errorMessage = "rclone実行中にエラーが発生しました。ログ内容:`n$logContent"
-    Send-SlackNotification -Status "失敗" -Message $errorMessage
-    exit -1
-}
+try {
+    # ステップ1：rclone で動画ファイルを移動
+    # ---------------------------------------------
+    # rclone 実行
+    $oneDriveLogFile   = Join-Path $logDir "onedrive_move_$timestamp.log"
+    rclone move $oneDrivePath $workDirectory `
+        --include "*.mp4" --include "*.avi" --include "*.mov" `
+        --include "*.mkv" --include "*.wmv" --include "*.flv" `
+        --log-file $oneDriveLogFile --log-level INFO
+    if ($LASTEXITCODE -ne 0) {
+        $logContent = Get-Content $oneDriveLogFile -Raw
+        $errorMessage = "rclone実行中にエラーが発生しました。ログ内容:`n$logContent"
+        Send-SlackNotification -Status "失敗" -Message $errorMessage
+        throw $errorMessage
+    }
 
-# ---------------------------------------------
-# ステップ2：移動済みファイルを年別フォルダへ振り分け
-# ---------------------------------------------
-# Shell.Application を使ってメディア作成日時を取得
-$shell = New-Object -ComObject Shell.Application
+    # ---------------------------------------------
+    # ステップ2：移動済みファイルを年別フォルダへ振り分け
+    # ---------------------------------------------
+    # Shell.Application を使ってメディア作成日時を取得
+    $shell = New-Object -ComObject Shell.Application
 
-Get-ChildItem -Path $workDirectory -Recurse -File | ForEach-Object {
-    try {
-        $folder = $shell.Namespace($_.DirectoryName)
-        $file   = $folder.ParseName($_.Name)
+    Get-ChildItem -Path $workDirectory -Recurse -File | ForEach-Object {
+        try {
+            $folder = $shell.Namespace($_.DirectoryName)
+            $file   = $folder.ParseName($_.Name)
 
-        # $fileをコンソールへ出力（デバッグ用）
-        Write-Host "Processing file: $($_.FullName)"
+            # $fileをコンソールへ出力（デバッグ用）
+            Write-Host "Processing file: $($_.FullName)"
 
-        # プロパティ208: メディア作成日時
-        $rawDate = $folder.GetDetailsOf($file, 208) -replace '[^\d/]', ''
-        if ($rawDate -match '(\d{4}/\d{1,2}/\d{1,2})') {
-            $dateStr = $matches[1]
-            try {
-                $year = [datetime]::ParseExact($dateStr, "yyyy/M/d", $null).Year
-            } catch {
+            # プロパティ208: メディア作成日時
+            $rawDate = $folder.GetDetailsOf($file, 208) -replace '[^\d/]', ''
+            if ($rawDate -match '(\d{4}/\d{1,2}/\d{1,2})') {
+                $dateStr = $matches[1]
+                try {
+                    $year = [datetime]::ParseExact($dateStr, "yyyy/M/d", $null).Year
+                } catch {
+                    $year = $_.CreationTime.Year
+                }
+            } else {
                 $year = $_.CreationTime.Year
             }
-        } else {
-            $year = $_.CreationTime.Year
-        }
 
-        # 年フォルダ作成
-        $targetDir = Join-Path $MyVideosDirectory $year
-        if (-not (Test-Path $targetDir)) {
-            New-Item -Path $targetDir -ItemType Directory | Out-Null
-        }
+            # 年フォルダ作成
+            $targetDir = Join-Path $MyVideosDirectory $year
+            if (-not (Test-Path $targetDir)) {
+                New-Item -Path $targetDir -ItemType Directory | Out-Null
+            }
 
-        # 年フォルダへ移動
-        Move-Item -Path $_.FullName -Destination $targetDir -Force
-        Write-Host "Moved '$($_.Name)' → '$($targetDir)\'"
-        Send-SlackNotification -Status "成功" -Message "ファイル '$($_.Name)' を '$($targetDir)\' へ移動しました。"
+            # 年フォルダへ移動
+            Move-Item -Path $_.FullName -Destination $targetDir -Force
+            Write-Host "Moved '$($_.Name)' → '$($targetDir)\'"
+            Send-SlackNotification -Status "成功" -Message "ファイル '$($_.Name)' を '$($targetDir)\' へ移動しました。"
+        }
+        catch {
+            Write-Warning "Error processing '$($_.Name)': $_"
+            Send-SlackNotification -Status "失敗" -Message "ファイル '$($_.Name)' の処理中にエラーが発生しました。" -Exception $_.Exception
+        }
     }
-    catch {
-        Write-Warning "Error processing '$($_.Name)': $_"
-        Send-SlackNotification -Status "失敗" -Message "ファイル '$($_.Name)' の処理中にエラーが発生しました。" -Exception $_.Exception
+
+    # ---------------------------------------------
+    # ステップ3：Videoフォルダをバックアップする
+    # ---------------------------------------------
+
+    $robocopyLogFile   = Join-Path $logDir "robocopy_$timestamp.log"
+
+    # バックアップ実行
+    # robocopy は Windows 専用コマンド。PowerShell Core でも Windows 上で実行可能。
+    # /E: サブディレクトリ含む, /R:3 再試行3回, /W:10 待機10秒, /MT:16 マルチスレッド
+    robocopy $VideosDirectory $BackupDirectory /E /R:3 /W:10 /MT:16 /LOG:$robocopyLogFile
+    if ($LASTEXITCODE -gt 1) {
+        Write-Host "Backup failed with error code: $LASTEXITCODE"
+        Send-SlackNotification -Status "失敗" -Message "バックアップ処理中にエラーが発生しました。エラーコード: $LASTEXITCODE"
+        throw "バックアップ処理中にエラーが発生しました。エラーコード: $LASTEXITCODE"
     }
+
+    Send-SlackNotification -Status "成功" -Message "バックアップ処理が正常に完了しました。"
 }
-
-# ---------------------------------------------
-# ステップ3：Videoフォルダをバックアップする
-# ---------------------------------------------
-
-$robocopyLogFile   = Join-Path $logDir "robocopy_$timestamp.log"
-
-# バックアップ実行
-# robocopy は Windows 専用コマンド。PowerShell Core でも Windows 上で実行可能。
-# /E: サブディレクトリ含む, /R:3 再試行3回, /W:10 待機10秒, /MT:16 マルチスレッド
-robocopy $VideosDirectory $BackupDirectory /E /R:3 /W:10 /MT:16 /LOG:$robocopyLogFile
-if ($LASTEXITCODE -gt 1) {
-    Write-Host "Backup failed with error code: $LASTEXITCODE"
-    Send-SlackNotification -Status "失敗" -Message "バックアップ処理中にエラーが発生しました。エラーコード: $LASTEXITCODE"
+catch {
+    $errorTimestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $errorLogFile = Join-Path $logDir "error_$errorTimestamp.log"
+    $errorText = "[$errorTimestamp] エラー発生:`n$($_ | Out-String)"
+    $errorText | Set-Content -Path $errorLogFile -Encoding UTF8
+    Send-SlackNotification -Status "失敗" -Message "スクリプト実行中にエラーが発生しました。詳細は $errorLogFile を参照してください。" -Exception $_.Exception
     exit -1
 }
-
-Send-SlackNotification -Status "成功" -Message "バックアップ処理が正常に完了しました。"
