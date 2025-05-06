@@ -142,7 +142,7 @@ try {
     # robocopy は Windows 専用コマンド。PowerShell Core でも Windows 上で実行可能。
     # /E: サブディレクトリ含む, /R:3 再試行3回, /W:10 待機10秒, /MT:16 マルチスレッド
     robocopy $VideosDirectory $BackupDirectory /E /R:3 /W:10 /MT:16 /LOG:$robocopyLogFile
-    if ($LASTEXITCODE -gt 1) {
+    if ($LASTEXITCODE -gt 2) {
         Write-Host "Backup failed with error code: $LASTEXITCODE"
         Send-SlackNotification -Status "失敗" -Message "バックアップ処理中にエラーが発生しました。エラーコード: $LASTEXITCODE"
         throw "バックアップ処理中にエラーが発生しました。エラーコード: $LASTEXITCODE"
