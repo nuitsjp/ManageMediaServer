@@ -24,7 +24,7 @@ $MyVideosDirectory = Join-Path $VideosDirectory 'MyVideos'
 # 画像バックアップ先ディレクトリ
 $PicturesDirectory = Join-Path $BackupDirectory 'Pictures'
 # OneDrive上の画像フォルダ
-$oneDrivePicturesPath = "onedrive:"
+$oneDrivePicturesPath = "onedrive:Pictures"
 # ログファイルのタイムスタンプ
 $timestamp      = Get-Date -Format "yyyyMMdd_HHmmss"
 
