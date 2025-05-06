@@ -21,6 +21,10 @@ $workDirectory  = "$PSScriptRoot\work"
 $logDir         = "$PSScriptRoot\logs"
 # 個人動画フォルダ（OneDrive の Videos バックアップ先フォルダ）
 $MyVideosDirectory = Join-Path $VideosDirectory 'MyVideos'
+# 画像バックアップ先ディレクトリ
+$PicturesDirectory = Join-Path $BackupDirectory 'Pictures'
+# OneDrive上の画像フォルダ
+$oneDrivePicturesPath = "onedrive:"
 # ログファイルのタイムスタンプ
 $timestamp      = Get-Date -Format "yyyyMMdd_HHmmss"
 
@@ -38,6 +42,11 @@ try {
         Remove-Item -Path $workDirectory -Recurse -Force
     }
     New-Item -Path $workDirectory -ItemType Directory | Out-Null
+
+    # Picturesディレクトリがなければ作成
+    if (-not (Test-Path $PicturesDirectory)) {
+        New-Item -Path $PicturesDirectory -ItemType Directory | Out-Null
+    }
 
     # 30日以上前のログを削除
     Get-ChildItem -Path $logDir -Filter "*.log" |
@@ -61,6 +70,20 @@ try {
     if ($LASTEXITCODE -ne 0) {
         $logContent = Get-Content $oneDriveLogFile -Raw
         $errorMessage = "rclone実行中にエラーが発生しました。ログ内容:`n$logContent"
+        Send-SlackNotification -Status "失敗" -Message $errorMessage
+        throw $errorMessage
+    }
+
+    # ---------------------------------------------
+    # ステップ1.5：rcloneで画像ファイルをPicturesディレクトリへコピー
+    # ---------------------------------------------
+    $picturesLogFile = Join-Path $logDir "onedrive_pictures_copy_$timestamp.log"
+    rclone copy $oneDrivePicturesPath $PicturesDirectory `
+        --include "*.jpg" --include "*.jpeg" --include "*.png" --include "*.mp" `
+        --log-file $picturesLogFile --log-level INFO
+    if ($LASTEXITCODE -ne 0) {
+            $logContent = Get-Content $picturesLogFile -Raw
+        $errorMessage = "rclone画像コピー中にエラーが発生しました。ログ内容:`n$logContent"
         Send-SlackNotification -Status "失敗" -Message $errorMessage
         throw $errorMessage
     }
