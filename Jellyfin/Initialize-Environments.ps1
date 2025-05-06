@@ -1,3 +1,5 @@
+#!/usr/bin/env pwsh
+
 # ファイアウォールルールの設定値
 $ruleName = "Jellyfin (TCP 8096)" # ルール名 (任意の名前に変更可能)
 $portNumber = 8096               # 開放するポート番号
