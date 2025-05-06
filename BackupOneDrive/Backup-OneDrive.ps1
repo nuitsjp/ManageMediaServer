@@ -1,4 +1,6 @@
 #!/usr/bin/env pwsh
+#Requires -RunAsAdministrator
+
 param(
     [Parameter(Mandatory=$true)]
     [string]$VideosDirectory,
