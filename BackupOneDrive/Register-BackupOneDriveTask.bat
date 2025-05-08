@@ -6,7 +6,7 @@ schtasks /Delete /TN "Backup-OneDrive" /F >nul 2>&1
 
 schtasks /Create ^
   /TN "Backup-OneDrive" ^
-  /TR "pwsh.exe -ExecutionPolicy Bypass -File \"c:\Repos\BackupOneDrive\Backup-OneDrive.ps1\" -VideosDirectory \"C:\Users\atsus\Videos\" -BackupDirectory \"D:\Backup\"" ^
+  /TR "pwsh.exe -ExecutionPolicy Bypass -File \"C:\Repos\ManageMediaServer\BackupOneDrive\Backup-OneDrive.ps1\" -VideosDirectory \"C:\Users\atsus\Videos\" -BackupDirectory \"D:\Backup\"" ^
   /SC DAILY ^
   /ST 06:00 ^
   /RU "SYSTEM" ^
