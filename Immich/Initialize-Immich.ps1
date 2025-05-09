@@ -31,8 +31,11 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y ca-certificates curl gnupg lsb-release
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
-# Docker リポジトリを追加
-sudo bash -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list'
+
+# Docker リポジトリを追加 (修正版)
+ARCH=$(dpkg --print-architecture)
+RELEASE=$(lsb_release -cs)
+sudo bash -c "echo \"deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $RELEASE stable\" > /etc/apt/sources.list.d/docker.list"
 
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
@@ -52,7 +55,7 @@ Write-Host "[+] コンテナイメージ取得中（数分かかります）"
 Invoke-WSL "cd $ImmichDir && docker compose pull && docker compose up -d"
 
 ### 3‑5  LAN 公開（mirrored モード時はスキップ）
-$IsMirrored = (Get-Content ~/.wslconfig -ErrorAction SilentlyContinue | Select-String -SimpleMatch 'networkingMode=mirrored')
+$IsMirrored = (Test-Path ~/.wslconfig) -and (Get-Content ~/.wslconfig -ErrorAction SilentlyContinue | Select-String -SimpleMatch 'networkingMode=mirrored')
 if (-not $IsMirrored) {
     Write-Host "[+] port‑proxy と Firewall を構成 …"
     $wslIp = (wsl -d $Distro hostname -I).Split()[0]
