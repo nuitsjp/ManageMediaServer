@@ -1,3 +1,5 @@
+#!/usr/bin/env pwsh
+
 # Windows 11のWSL上にDockerを構築し、そこにImmichをコンテナーとして導入します。
 # Immichが未導入の場合は導入してから起動します。
 # 前提としてWSLは導入済みだが、Linuxディストリビューションは未導入の状態であること。
@@ -5,39 +7,69 @@
 # さらに、Immichの導入にはPostgreSQLとRedisが必要なので、これらもDockerコンテナーとして導入します。
 # WSLディストリビューションの確認と導入
 $distributionName = "Ubuntu"
-$distribution = wsl -l -v | Select-String $distributionName
-
-if (-not $distribution) {
-    Write-Host "$distributionName が見つかりません。インストールを開始します。"
-    wsl --install -d $distributionName
-    Write-Host "$distributionName のインストールが完了しました。"
-} else {
-    Write-Host "$distributionName は既にインストールされています。"
-}
 
 # Dockerの確認と導入 (WSL内)
 Write-Host "Dockerの導入状況を確認しています..."
-$dockerVersion = Invoke-Command -ScriptBlock { wsl -d $using:distributionName -- docker --version } -ErrorAction SilentlyContinue
-
-if ($dockerVersion -match "Docker version") {
-    Write-Host "Dockerは既にインストールされています。バージョン: $($dockerVersion)"
-    Write-Host "Dockerを更新しています..."
-    wsl -d $distributionName -- sudo apt-get update
-    wsl -d $distributionName -- sudo apt-get upgrade -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    Write-Host "Dockerの更新が完了しました。"
+# Dockerの確認
+& wsl -d $distributionName -- docker --version >$null 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Dockerが検出されませんでした。WSL上にDockerをインストールします..."
+    & wsl -d $distributionName -- sudo apt update
+    & wsl -d $distributionName -- sudo apt install -y docker.io
+    & wsl -d $distributionName -- sudo service docker start
+    Write-Host "Dockerのインストールと起動が完了しました。"
 } else {
-    Write-Host "Dockerがインストールされていません。インストールを開始します..."
-    wsl -d $distributionName -- sudo apt-get update
-    wsl -d $distributionName -- sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    Write-Host "Dockerのインストールが完了しました。"
-    # Dockerデーモンの起動確認やユーザーのdockerグループへの追加が必要な場合があります。
-    # 例: wsl -d $distributionName -- sudo systemctl start docker
-    # 例: wsl -d $distributionName -- sudo usermod -aG docker $USER (実行後、WSLの再起動が必要)
+    Write-Host "Dockerは既にインストールされています。"
+}
+# Dockerバージョンの表示
+$dockerVersion = & wsl -d $distributionName -- docker --version
+Write-Host "Dockerバージョン: $dockerVersion"
+
+# 環境変数取得用関数定義
+function Get-OrSet-Env {
+    param(
+        [string]$EnvName,
+        [string]$PromptName,
+        [string]$DefaultValue
+    )
+    $val = [Environment]::GetEnvironmentVariable($EnvName,'Machine')
+    if (-not $val) {
+        $ans = Read-Host "$PromptName の既定値: $DefaultValue でよろしいですか？ [Y/N]"
+        if ($ans -match '^[Nn]') {
+            $val = Read-Host "$PromptName を入力してください"
+        } else {
+            $val = $DefaultValue
+        }
+        [Environment]::SetEnvironmentVariable($EnvName,$val,'Machine')
+        Write-Host "$PromptName を登録しました: $val"
+    } else {
+        Write-Host "$PromptName: $val (環境変数から取得)"
+    }
+    return $val
 }
 
-# Immichの起動 (Docker Composeを使用)
-# ここにdocker-compose.ymlを使用してImmich、PostgreSQL、Redisを起動する処理を記述します。
-# 例: cd (docker-compose.ymlのあるディレクトリ)
-# 例: wsl -d $distributionName -- docker-compose up -d
+# アップロード先とDBデータ保存先を共通関数で設定
+$uploadLocation    = Get-OrSet-Env -EnvName 'IMMICH_UPLOAD_LOCATION'    -PromptName 'UPLOAD_LOCATION'    -DefaultValue 'C:\immich-photos'
+$dbDataLocation    = Get-OrSet-Env -EnvName 'IMMICH_DB_DATA_LOCATION'   -PromptName 'DB_DATA_LOCATION' -DefaultValue 'C:\immich-postgres'
 
-Write-Host "Immichの起動処理が完了しました。"
+# downloadsフォルダ作成とファイル取得
+$downloadsDir = Join-Path $PSScriptRoot 'downloads'
+if (-not (Test-Path $downloadsDir)) {
+    Write-Host "downloadsフォルダを作成します: $downloadsDir"
+    New-Item -ItemType Directory -Path $downloadsDir | Out-Null
+} else {
+    Write-Host "downloadsフォルダは既に存在します: $downloadsDir"
+}
+$files = @{
+    'https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml' = 'docker-compose.yml'
+    'https://github.com/immich-app/immich/releases/latest/download/example.env'        = 'example.env'
+}
+foreach ($url in $files.Keys) {
+    $dest = Join-Path $downloadsDir $files[$url]
+    if (-not (Test-Path $dest)) {
+        Write-Host "ダウンロード中: $($files[$url])"
+        Invoke-WebRequest -Uri $url -OutFile $dest
+    } else {
+        Write-Host "既に存在するためスキップ: $($files[$url])"
+    }
+}
