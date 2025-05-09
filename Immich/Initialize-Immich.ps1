@@ -1,21 +1,20 @@
 #!/usr/bin/env pwsh
 #requires -RunAsAdministrator
-
 [CmdletBinding()]param()
-
-$ErrorActionPreference = 'Stop'
 
 # --- 変更する場合はここだけ ---
 $Distro     = "Ubuntu"          # 既定 Ubuntu をそのまま使用
 $AppPort    = 2283              # Immich がリッスン/公開する TCP ポート
 $TimeZone   = "Asia/Tokyo"      # .env 用タイムゾーン
 $ImmichDir  = "~/immich"        # WSL 内の作業パス（~ は /home/<user>）
-# --------------------------------
+# --
 
 ### 補助: 指定 Bash をディストロ内部で実行
 function Invoke-WSL {
     param([string]$Command)
-    wsl -d $Distro -- bash -c $Command
+    # Windows の CR () が混入すると bash が誤解釈するため除去
+    $clean = $Command -replace "`r", ""
+    wsl -d $Distro -- bash -c "$clean"
 }
 
 ### 3‑1  ディストロが無ければインストール
@@ -26,7 +25,7 @@ if (-not (wsl -l -q | Select-String -SimpleMatch $Distro)) {
 
 ### 3‑2  パッケージ準備（apt 更新・Docker Engine / compose‑plugin）
 Write-Host "[+] apt 更新と Docker インストール …"
-Invoke-WSL @"
+Invoke-WSL @'
 set -euo pipefail
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y ca-certificates curl gnupg lsb-release
@@ -34,12 +33,11 @@ sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
 ARCH=$(dpkg --print-architecture)
 CODENAME=$(lsb_release -cs)
-echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $CODENAME stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $CODENAME stable" | sudo tee /etc/apt/sources.list.d/docker.list
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo usermod -aG docker $(whoami)
-"@
+'@
 
 ### 3‑3  Immich スタック取得 & .env 修正
 Write-Host "[+] Immich 用 docker‑compose ファイル取得 …"
