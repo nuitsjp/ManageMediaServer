@@ -1,21 +1,44 @@
 #!/usr/bin/env pwsh
 #requires -RunAsAdministrator
 
-# --- 変更する場合はここだけ -----------------
-$Distro    = "Ubuntu"      # 既定 Ubuntu
-$AppPort   = 2283          # Immich がリッスンする TCP ポート
-$TimeZone  = "Asia/Tokyo"  # .env 用タイムゾーン
-$ImmichDir = "~/immich"    # WSL 内の作業パス
-# -------------------------------------------
+# --- パラメーター定義とログ設定 -----------------------------------
+Param(
+    [string]$Distro   = 'Ubuntu',
+    [int]   $AppPort  = 2283,
+    [string]$TimeZone = 'Asia/Tokyo',
+    [string]$ImmichDir= '~/immich',
+    [switch]$VerboseMode
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
+    )
+    switch ($Level) {
+        'INFO' { Write-Host "[INFO] $Message" -ForegroundColor Cyan }
+        'WARN' { Write-Warning $Message }
+        'ERROR'{ Write-Error $Message }
+    }
+}
+
+# 任意の例外をキャッチしてスクリプトを中断
+trap {
+    Write-Log "予期せぬエラーが発生しました: $_" 'ERROR'
+    exit 1
+}
+# -----------------------------------------
 
 if ((wsl -l -q) -notcontains $Distro) {
     ### 3-1 ディストロが無ければ導入
-    Write-Host "[+] Ubuntu ディストロを導入 …"
+    Write-Log "Ubuntu ディストロを導入 …"
     wsl --install -d $Distro --no-launch
 }
 
 ### 3-2 apt 更新 & Docker インストール
-Write-Host "[+] apt 更新と Docker インストール …"
+Write-Log "apt 更新と Docker インストール …"
 
 # Ubuntu コードネームを PowerShell 側で取得
 $release  = (wsl -d $Distro -- lsb_release -cs).Trim()
@@ -38,7 +61,7 @@ sudo usermod -aG docker $linuxUser
 wsl -d $Distro -- bash -c "$installCmd"
 
 ### 3-3 Immich スタック取得 & .env 修正
-Write-Host "[+] Immich 用 docker-compose ファイル取得 …"
+Write-Log "Immich 用 docker-compose ファイル取得 …"
 $initCmd = @"
 mkdir -p $ImmichDir && cd $ImmichDir && \
 wget -qO docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml && \
@@ -49,7 +72,7 @@ sed -i '/^#\? *TZ=.*/d' .env && echo 'TZ=$TimeZone' >> .env
 wsl -d $Distro -- bash -c "$initCmd"
 
 ### 3-4 イメージ取得 & 起動
-Write-Host "[+] コンテナイメージ取得中（数分かかります）"
+Write-Log "コンテナイメージ取得中（数分かかります）"
 $upCmd = "cd $ImmichDir && sudo docker compose pull && sudo docker compose up -d"
 wsl -d $Distro -- bash -c "$upCmd"
 
@@ -69,11 +92,11 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 # WSL対話セッションを開始
-Write-Host "[+] WSL対話セッションを開始します..."
+Write-Log "WSL対話セッションを開始します..."
 wsl -d $Distro
 
 ### 3-5 LAN 公開
-Write-Host "[+] port-proxy と Firewall を構成 …"
+Write-Log "port-proxy と Firewall を構成 …"
 
 # ① WSL の最初の IPv4 を取得
 $wslIp = (wsl -d $Distro -- hostname -I).Split() |
@@ -109,6 +132,5 @@ if ($wslIp) {
 
 ### 3-6 完了メッセージ
 $HostIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'vEthernet|Loopback' } | Select-Object -First 1 -ExpandProperty IPAddress)
-Write-Host "[✓] ブラウザでアクセス: http://$HostIP`:$AppPort" -ForegroundColor Green
-Write-Host "[✓] WSLユーザー: デフォルト(ubuntu)または手動設定したユーザー" -ForegroundColor Green
-Write-Host "[✓] セットアップが完了しました" -ForegroundColor Green
+Write-Log "ブラウザでアクセス: http://$HostIP`:$AppPort"
+Write-Log "セットアップが完了しました"
