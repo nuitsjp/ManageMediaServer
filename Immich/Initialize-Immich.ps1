@@ -34,7 +34,7 @@ trap {
 # --- 2- WSLディストロの導入 ------------------------------------------------
 if ((wsl -l -q) -notcontains $Distro) {
     Write-Log "Ubuntu ディストロを導入 …"
-    wsl --install -d $Distro --no-launch
+    wsl --install -d $Distro
 }
 
 # --- 3- apt更新 & Dockerインストール ---------------------------------------
@@ -73,6 +73,7 @@ wsl -d $Distro -- bash -c "$initCmd"
 Write-Log "コンテナイメージ取得中（数分かかります）"
 $upCmd = "cd $ImmichDir && sudo docker compose pull && sudo docker compose up -d"
 wsl -d $Distro -- bash -c "$upCmd"
+wsl -d $Distro -- bash -c "touch ~/.hushlogin"
 
 # --- 6- WSL対話セッション --------------------------------------------------
 Write-Host @"
@@ -122,6 +123,4 @@ if ($wslIp) {
 }
 
 # --- 8- 完了メッセージ -----------------------------------------------------
-$HostIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'vEthernet|Loopback' } | Select-Object -First 1 -ExpandProperty IPAddress)
-Write-Log "ブラウザでアクセス: http://$HostIP`:$AppPort"
 Write-Log "セットアップが完了しました"
