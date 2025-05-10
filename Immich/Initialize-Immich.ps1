@@ -1,6 +1,5 @@
 #!/usr/bin/env pwsh
 #requires -RunAsAdministrator
-[CmdletBinding()]param()
 
 # --- 変更する場合はここだけ -----------------
 $Distro    = "Ubuntu"      # 既定 Ubuntu
@@ -9,8 +8,8 @@ $TimeZone  = "Asia/Tokyo"  # .env 用タイムゾーン
 $ImmichDir = "~/immich"    # WSL 内の作業パス
 # -------------------------------------------
 
-### 3-1 ディストロが無ければ導入
 if ((wsl -l -q) -notcontains $Distro) {
+    ### 3-1 ディストロが無ければ導入
     Write-Host "[+] Ubuntu ディストロを導入 …"
     wsl --install -d $Distro --no-launch
 }
@@ -54,6 +53,25 @@ Write-Host "[+] コンテナイメージ取得中（数分かかります）"
 $upCmd = "cd $ImmichDir && sudo docker compose pull && sudo docker compose up -d"
 wsl -d $Distro -- bash -c "$upCmd"
 
+# WSL対話セッションの説明
+Write-Host @"
+
+=========== WSL対話セッション ===========
+これからWSLの対話セッションを開始します。
+
+初回起動時は、以下を求められます:
+1. デフォルトユーザー(ubuntu)のパスワード設定
+2. その他必要に応じて設定を変更
+
+セットアップが完了したら、'exit'と入力してWSLを終了してください。
+======================================
+
+"@ -ForegroundColor Cyan
+
+# WSL対話セッションを開始
+Write-Host "[+] WSL対話セッションを開始します..."
+wsl -d $Distro
+
 ### 3-5 LAN 公開
 Write-Host "[+] port-proxy と Firewall を構成 …"
 
@@ -89,6 +107,8 @@ if ($wslIp) {
     Write-Warning "WSL IPv4 が取得できず port-proxy をスキップしました。手動で確認してください。"
 }
 
-    ### 3-6 完了メッセージ
+### 3-6 完了メッセージ
 $HostIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'vEthernet|Loopback' } | Select-Object -First 1 -ExpandProperty IPAddress)
 Write-Host "[✓] ブラウザでアクセス: http://$HostIP`:$AppPort" -ForegroundColor Green
+Write-Host "[✓] WSLユーザー: デフォルト(ubuntu)または手動設定したユーザー" -ForegroundColor Green
+Write-Host "[✓] セットアップが完了しました" -ForegroundColor Green
