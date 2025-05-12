@@ -41,8 +41,8 @@ else
     IMMICH_DIR="$IMMICH_DIR_PARAM"
 fi
 
-log "パッケージリストの更新と既存パッケージのアップグレード..."
-sudo apt update && sudo apt upgrade -y
+log "パッケージリストを更新中..."
+sudo apt update
 
 log "Dockerインストール用の前提パッケージをインストール..."
 sudo apt install -y ca-certificates curl gnupg lsb-release
