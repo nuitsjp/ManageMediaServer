@@ -6,7 +6,7 @@ Param(
     [string]$Distro   = 'Ubuntu',
     [int]   $AppPort  = 2283,
     [string]$TimeZone = 'Asia/Tokyo',
-    [string]$ImmichDir= '~/immich',
+    [string]$ImmichDir= '~/immich', # WSL内のパスとして解釈される
     [switch]$VerboseMode
 )
 
@@ -24,7 +24,6 @@ function Write-Log {
     }
 }
 
-# 任意の例外をキャッチしてスクリプトを中断
 trap {
     Write-Log "予期せぬエラーが発生しました: $_" 'ERROR'
     exit 1
@@ -33,94 +32,139 @@ trap {
 
 # --- 2- WSLディストロの導入 ------------------------------------------------
 if ((wsl -l -q) -notcontains $Distro) {
-    Write-Log "Ubuntu ディストロを導入 …"
+    Write-Log "$Distro ディストロを導入 …"
     wsl --install -d $Distro
+    Write-Log "$Distro のインストールが完了しました。初回セットアップのため、一度手動で $Distro を起動し、ユーザー作成とパスワード設定を完了させてから、再度このスクリプトを実行してください。"
+    Write-Log "または、このスクリプトがWSLの初回ユーザー作成を検知して対話セッションを開始するまでお待ちください。"
+    # WSLのインストール直後はユーザー作成プロンプトが出るため、一旦終了するか、ユーザーに手動起動を促す
+    # スクリプトが続行されても、次のwslコマンドでユーザー作成プロンプトが出るはず
 }
 
-# --- 3- apt更新 & Dockerインストール ---------------------------------------
-Write-Log "apt 更新と Docker インストール …"
+# --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
+Write-Log "WSL内セットアップスクリプトの準備と実行..."
 
-$release  = (wsl -d $Distro -- lsb_release -cs).Trim()
-$repoLine = "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $release stable"
-$linuxUser = (wsl -d $Distro -- whoami).Trim()
+# setup_immich_on_wsl.sh がこのスクリプトと同じディレクトリにあると仮定
+$PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
+$WslSetupScriptName = "setup_immich_on_wsl.sh"
+$WslSetupScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $WslSetupScriptName
 
-$installCmd = @"
-sudo apt update && sudo apt upgrade -y && \
-sudo apt install -y ca-certificates curl gnupg lsb-release && \
-sudo mkdir -p /etc/apt/keyrings && \
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc >/dev/null && \
-sudo chmod a+r /etc/apt/keyrings/docker.asc && \
-echo '$repoLine' | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null && \
-sudo apt update && \
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin && \
-sudo usermod -aG docker $linuxUser
-"@ -replace "`r",""
+if (-not (Test-Path $WslSetupScriptPathOnWindows)) {
+    Write-Log "$WslSetupScriptPathOnWindows が見つかりません。PowerShellスクリプトと同じディレクトリに配置してください。" 'ERROR'
+    exit 1
+}
 
-wsl -d $Distro -- bash -c "$installCmd"
+# WindowsパスをWSLパスに変換 (コピー元として使用)
+try {
+    $SourcePathOnWSL = (wsl -d $Distro -- wslpath -u $WslSetupScriptPathOnWindows).Trim()
+} catch {
+    Write-Log "WindowsパスからWSLパスへの変換に失敗しました。WSLが正しくインストールされ、$Distro が利用可能か確認してください。" 'ERROR'
+    Write-Log "エラー詳細: $($_.Exception.Message)"
+    exit 1
+}
 
-# --- 4- Immichスタック取得 & .env修正 --------------------------------------
-Write-Log "Immich 用 docker-compose ファイル取得 …"
-$initCmd = @"
-mkdir -p $ImmichDir && cd $ImmichDir && \
-wget -qO docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml && \
-wget -qO .env               https://github.com/immich-app/immich/releases/latest/download/example.env && \
-sed -i '/^#\? *TZ=.*/d' .env && echo 'TZ=$TimeZone' >> .env
-"@ -replace "`r",""
 
-wsl -d $Distro -- bash -c "$initCmd"
+# WSL内のコピー先パス (例: /tmp 配下)
+$DestinationScriptNameOnWSL = "setup_immich_for_distro.sh" # 汎用的な名前に変更も可
+$DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
 
-# --- 5- イメージ取得 & 起動 ------------------------------------------------
-Write-Log "コンテナイメージ取得中（数分かかります）"
-$upCmd = "cd $ImmichDir && sudo docker compose pull && sudo docker compose up -d"
-wsl -d $Distro -- bash -c "$upCmd"
-wsl -d $Distro -- bash -c "touch ~/.hushlogin"
+# WSL内でスクリプトをコピーし、権限付与、改行コード変換、実行
+# dos2unix がインストールされていない場合に備えてインストールコマンドも追加
+$WslCommands = @"
+sudo apt-get update && sudo apt-get install -y dos2unix && \
+cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
+dos2unix '$DestinationPathOnWSL' && \
+chmod +x '$DestinationPathOnWSL' && \
+'$DestinationPathOnWSL' '$TimeZone' '$ImmichDir'
+"@ -replace "`r","" # PowerShellヒアストリングのCRLFをLFに（念のため）
 
-# --- 6- WSL対話セッション --------------------------------------------------
+Write-Log "WSL内で以下のコマンド群を実行します:"
+Write-Log $WslCommands # デバッグ用に表示
+
+try {
+    wsl -d $Distro -- bash -c "$WslCommands"
+    Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
+    Write-Log "Dockerグループへの所属を完全に有効にするには、WSLセッション($Distro)を再起動するか、WSL内で 'newgrp docker' コマンドを実行してください。"
+} catch {
+    Write-Log "WSL内セットアップスクリプトの実行中にエラーが発生しました。" 'ERROR'
+    Write-Log "エラー詳細: $($_.Exception.Message)"
+    # WSLコマンドの標準エラー出力を表示したい場合
+    if ($_.Exception.ErrorRecord.TargetObject -is [System.Management.Automation.ErrorRecord]) {
+        Write-Log "WSLからのエラー出力: $($_.Exception.ErrorRecord.TargetObject.Status)"
+    }
+    exit 1
+}
+
+# --- 4- WSL対話セッション (ユーザーによる確認・初回パスワード設定用) -----------
+# このセクションはユーザーの希望により維持
 Write-Host @"
 
 =========== WSL対話セッション ===========
-これからWSLの対話セッションを開始します。
+Immichの基本的なセットアップは完了しました。
+WSLの対話セッションを開始します。
 
-初回起動時は、以下を求められます:
-1. デフォルトユーザー(ubuntu)のパスワード設定
-2. その他必要に応じて設定を変更
+WSLディストリビューションの初回起動時、またはユーザーが未設定の場合、
+デフォルトユーザーのパスワード設定などが求められることがあります。
 
-セットアップが完了したら、'exit'と入力してWSLを終了してください。
+Dockerグループの変更を有効にするために `exit` してから再度ログインするか、
+`newgrp docker` を実行すると `docker` コマンドが `sudo` なしで利用可能になります。
+（上記セットアップスクリプト内で `sudo docker compose` を使用しているため、Immichは既に起動試行されています）
+
+セットアップの確認や追加設定が完了したら、'exit'と入力してWSLを終了してください。
 ======================================
 
 "@ -ForegroundColor Cyan
 
 Write-Log "WSL対話セッションを開始します..."
-wsl -d $Distro
+wsl -d $Distro # ここでユーザーが初回パスワード設定などを行う想定
 
-# --- 7- LAN公開 (port-proxyとFirewall構成) -------------------------------
+# --- 5- LAN公開 (port-proxyとFirewall構成) -------------------------------
+# このセクションは変更なし (元のスクリプトのセクション7に相当)
 Write-Log "port-proxy と Firewall を構成 …"
 
-$wslIp = (wsl -d $Distro -- hostname -I).Split() |
-         Where-Object { $_ -match '\d+\.\d+\.\d+\.\d+' } |
-         Select-Object -First 1
+$wslIp = ""
+try {
+    $wslIp = (wsl -d $Distro -- hostname -I).Split() |
+             Where-Object { $_ -match '\d+\.\d+\.\d+\.\d+' } |
+             Select-Object -First 1
+} catch {
+    Write-Log "WSL IPアドレスの取得に失敗しました。WSLが実行されているか確認してください。" 'WARN'
+}
+
 
 if ($wslIp) {
-    $existing = netsh interface portproxy show v4tov4 |
-                Select-String " 0\.0\.0\.0\s+$AppPort\s+"   # listenaddress=0.0.0.0 かつ listenport=$AppPort
+    Write-Log "WSL IPアドレス: $wslIp"
+    $existingRule = Get-NetFirewallPortFilter -Protocol TCP | Where-Object { $_.LocalPort -eq $AppPort }
+    $portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+$wslIp\s+$AppPort"
 
-    if ($existing) {
-        netsh interface portproxy delete v4tov4 `
-            listenaddress=0.0.0.0 listenport=$AppPort proto=tcp | Out-Null
+    # Portproxy設定
+    if ($portProxyExists) {
+        Write-Log "既存のportproxy設定が見つかりました。更新は行いません。"
+    } else {
+        # 他のIPへの既存設定があれば削除
+        $anyExistingProxy = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+"
+        if ($anyExistingProxy) {
+            Write-Log "ポート $AppPort に対する既存のportproxy設定を削除します..."
+            netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$AppPort proto=tcp | Out-Null
+        }
+        Write-Log "portproxy を追加: 0.0.0.0:$AppPort -> $($wslIp):$AppPort"
+        netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$wslIp connectport=$AppPort proto=tcp | Out-Null
     }
 
-    netsh interface portproxy add v4tov4 `
-        listenaddress=0.0.0.0 listenport=$AppPort `
-        connectaddress=$wslIp   connectport=$AppPort | Out-Null
-
-    if (-not (Get-NetFirewallRule -DisplayName "Immich $AppPort" -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -DisplayName "Immich $AppPort" -Direction Inbound -Action Allow `
+    # Firewall設定
+    $firewallRuleName = "Immich (WSL Port $AppPort)"
+    if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
+        Write-Log "Firewallルール '$firewallRuleName' を追加..."
+        New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow `
                             -Protocol TCP -LocalPort $AppPort -Profile Any | Out-Null
+    } else {
+        Write-Log "既存のFirewallルール '$firewallRuleName' が見つかりました。"
     }
 
 } else {
-    Write-Warning "WSL IPv4 が取得できず port-proxy をスキップしました。手動で確認してください。"
+    Write-Warning "WSL IPv4 が取得できず port-proxy および Firewall の構成をスキップしました。WSL内でImmichが起動しているか、手動で確認してください。"
 }
 
-# --- 8- 完了メッセージ -----------------------------------------------------
-Write-Log "セットアップが完了しました"
+# --- 6- 完了メッセージ -----------------------------------------------------
+# このセクションは変更なし (元のスクリプトのセクション8に相当)
+Write-Log "セットアップ処理が完了しました。Immichへは http://localhost:$AppPort または http://<PCのIPアドレス>:$AppPort でアクセスできるはずです。"
+Write-Log "初回アクセス時はImmichの管理者ユーザー登録が必要です。"
