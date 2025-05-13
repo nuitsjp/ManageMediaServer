@@ -15,7 +15,6 @@ function Write-Log {
     Write-Host "[`] [`] [Start-Immich] $Message"
 }
 
-# 同一フォルダのlog.txtにログを出力する
 Write-Log "Beginning Immich startup process..."
 
 Write-Log "Script started with Distro: '$DistroName', ImmichDir: '$AbsoluteImmichDirWSL', User: '$WSLUserName'."
@@ -28,7 +27,7 @@ try {
     Start-Sleep -Seconds 5
 
     Write-Log "Attempting to start Immich services in '$AbsoluteImmichDirWSL' as user '$WSLUserName'..."
-    $WslCommand = "cd '$AbsoluteImmichDirWSL' && sudo docker compose pull && sudo docker compose up -d"
+    $WslCommand = "cd '$AbsoluteImmichDirWSL' && docker compose pull && docker compose up -d"
     
     Write-Log "Executing in WSL: wsl -d '`$DistroName' -u '`$WSLUserName' -- bash -c `"`$WslCommand`""
     wsl -d $DistroName -u $WSLUserName -- bash -c "$WslCommand"
