@@ -6,7 +6,6 @@ Param(
     [string]$Distro   = 'Ubuntu',
     [int]   $AppPort  = 2283,
     [string]$TimeZone = 'Asia/Tokyo',
-    [string]$ImmichDir= '~/immich', # WSL内のパスとして解釈される
     [switch]$VerboseMode
 )
 
@@ -79,6 +78,9 @@ try {
 $DestinationScriptNameOnWSL = "setup_immich_for_distro.sh" # 汎用的な名前に変更も可
 $DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
 
+# インストールパスを固定
+$ImmichDirPath = "/opt/immich"
+
 # WSL内でスクリプトをコピーし、権限付与、改行コード変換、実行
 # dos2unix がインストールされていない場合に備えてインストールコマンドも追加
 $WslCommands = @"
@@ -86,7 +88,7 @@ sudo apt-get update && sudo apt-get install -y dos2unix && \
 cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
 dos2unix '$DestinationPathOnWSL' && \
 chmod +x '$DestinationPathOnWSL' && \
-'$DestinationPathOnWSL' '$TimeZone' '$ImmichDir'
+'$DestinationPathOnWSL' '$TimeZone' '$ImmichDirPath'
 "@ -replace "`r","" # PowerShellヒアストリングのCRLFをLFに（念のため）
 
 Write-Log "WSL内で以下のコマンド群を実行します:"
@@ -198,31 +200,6 @@ try {
     }
     Write-Log "WSL Default User: $WSLDefaultUser"
 
-    # Immichディレクトリの絶対パスを解決 (WSL内)
-    $AbsoluteImmichDirWSL = ""
-    if ($ImmichDir.StartsWith("~")) {
-        $WslUserHome = (wsl -d $Distro -u $WSLDefaultUser -- sh -c 'echo $HOME').Trim()
-        if ([string]::IsNullOrEmpty($WslUserHome)) {
-            Write-Log "WSLユーザー '$WSLDefaultUser' のホームディレクトリを取得できませんでした。" 'ERROR'
-            throw "WSL User Home acquisition failed."
-        }
-        if ($ImmichDir -eq "~") {
-            $AbsoluteImmichDirWSL = $WslUserHome
-        } elseif ($ImmichDir.StartsWith("~/")) {
-            $RelativePath = $ImmichDir.Substring(2)
-            $AbsoluteImmichDirWSL = "$WslUserHome/$RelativePath"
-        } else {
-            Write-Log "ImmichDir形式 '$ImmichDir' の自動解決は '~/' プレフィックスのみサポートしています。手動で絶対パスを指定してください。" 'WARN'
-            $AbsoluteImmichDirWSL = $ImmichDir # Fallback
-        }
-    } else {
-        $AbsoluteImmichDirWSL = $ImmichDir # Assume it's already an absolute WSL path
-    }
-    $AbsoluteImmichDirWSL = $AbsoluteImmichDirWSL.Replace('\', '/')
-    Write-Log "Absolute Immich Directory in WSL: $AbsoluteImmichDirWSL"
-
-    # Start-Immich.ps1 スクリプトの動的生成部分を削除しました。
-    # $StartImmichScriptContent の定義と Set-Content は不要です。
 
     # タスクスケジューラに登録
     $TaskName = "ImmichWSLAutoStart"
@@ -235,7 +212,7 @@ try {
     }
 
     # Start-Immich.ps1 にパラメータを渡して実行するアクション
-    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`" -DistroName `"$Distro`" -AbsoluteImmichDirWSL `"$AbsoluteImmichDirWSL`" -WSLUserName `"$WSLDefaultUser`""
+    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`" -DistroName `"$Distro`" -WSLUserName `"$WSLDefaultUser`""
     $Action = New-ScheduledTaskAction -Execute $PwshPath -Argument $TaskArguments
     
     $Trigger = New-ScheduledTaskTrigger -AtStartup
