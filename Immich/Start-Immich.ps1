@@ -12,7 +12,7 @@ function Write-Log {
         [string]$Message,
         [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
     )
-    Write-Host "[`] [`] [Start-Immich] $Message"
+    Write-Host "[Start-Immich] $Message"
 }
 
 Write-Log "Beginning Immich startup process..."
