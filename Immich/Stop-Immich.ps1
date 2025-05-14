@@ -5,40 +5,34 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Distro = "Ubuntu-24.04"
-
 # Functionsファイルの読み込み
 . $PSScriptRoot\Functions.ps1
 
-# Immich実行ディレクトリのパス
-$immichDir = Join-Path $PSScriptRoot 'instance'
-if (-not (Test-Path $immichDir)) {
-    Write-Error "Immich実行ディレクトリが見つかりません: $immichDir"
+# Immich実行ディレクトリの存在確認
+if (-not (Test-ImmichDirectory)) {
     exit 1
 }
 
 # WSL内のパスを取得
-$wslImmichDir = ConvertTo-WslPath -WindowsPath $immichDir -DistributionName $Distro
+$wslImmichDir = ConvertTo-WslPath -WindowsPath $script:ImmichDir
 
-# Docker Composeのバージョンを確認（新形式か旧形式か）
-& wsl -d $Distro -- docker compose version >$null 2>&1
-$useNewCompose = $LASTEXITCODE -eq 0
-$composeCommand = if ($useNewCompose) { "docker compose" } else { "docker-compose" }
+# Docker Composeコマンドを取得
+$composeCommand = Get-DockerComposeCommand
 
 # Immichサービスの状態確認
-Write-Host "Immichサービスの状態を確認しています..."
-$containersRunning = & wsl -d $Distro -- bash -c "cd '$wslImmichDir' && $composeCommand ps -q | wc -l"
+Write-Log "Immichサービスの状態を確認しています..."
+$containersRunning = & wsl -d $script:Distro -- bash -c "cd '$wslImmichDir' && $composeCommand ps -q | wc -l"
 if ([int]$containersRunning -eq 0) {
-    Write-Host "Immichサービスは既に停止しています。"
+    Write-Log "Immichサービスは既に停止しています."
     exit 0
 }
 
 # Immichサービスの停止
-Write-Host "Immichサービスを停止しています..."
-& wsl -d $Distro -- bash -c "cd '$wslImmichDir' && $composeCommand down"
+Write-Log "Immichサービスを停止しています..."
+& wsl -d $script:Distro -- bash -c "cd '$wslImmichDir' && $composeCommand down"
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Immichサービスの停止に失敗しました。"
+    Write-Log "Immichサービスの停止に失敗しました." -Level ERROR
     exit 1
 }
 
-Write-Host "Immichサービスは正常に停止しました。"
+Write-Log "Immichサービスは正常に停止しました."
