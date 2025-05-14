@@ -3,12 +3,12 @@
 
 # パラメーター定義・ログ設定・例外処理
 Param(
-    [string]$Distro   = 'Ubuntu',
     [int]   $AppPort  = 2283,
     [string]$TimeZone = 'Asia/Tokyo'
 )
 
 $ErrorActionPreference = 'Stop'
+$Distro   = 'Ubuntu-24.04'
 
 function Write-Log {
     param(
