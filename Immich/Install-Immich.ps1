@@ -30,8 +30,33 @@ trap {
 $WSLUserName = "ubuntu"
 Write-Log "ユーザー名は '$WSLUserName' で固定されています。"
 
-# パスワード入力・確認ループを関数で実施
-$WSLPassword = Read-PasswordWithConfirmation
+# ディストリの有無を判定
+$needPassword = $false
+if (-not (Test-WslDistribution)) {
+    # ディストリ未インストール → パスワード必須
+    $needPassword = $true
+} else {
+    # ディストリが存在する場合、ubuntuユーザーの有無をWSL内で確認
+    $userExists = $false
+    try {
+        $userId = wsl -d $script:Distro -- id -u $WSLUserName 2>$null
+        $userExists = $null -ne $userId -and $userId -match '^\d+$'
+    } catch {
+        $userExists = $false
+    }
+    if (-not $userExists) {
+        $needPassword = $true
+    }
+}
+
+if ($needPassword) {
+    # パスワード入力・確認ループを関数で実施
+    $WSLPassword = Read-PasswordWithConfirmation
+    Write-Log "パスワードの入力が完了しました。"
+} else {
+    $WSLPassword = ""
+    Write-Log "既存のubuntuユーザーが存在するため、パスワード入力はスキップします。"
+}
 
 Write-Log "ユーザー情報の入力が完了しました。WSLのセットアップを開始します。"
 
@@ -242,4 +267,4 @@ try {
 
 Write-Log "セットアップが完了しました。以下のURLでImmichにアクセスできます。"
 Write-Log "http://localhost:$script:AppPort" -Level INFO
-Write-Log "Install-Immich.ps1 の処理が完了しました."
+Write-Log "Install-Immich.ps1 の処理が完了しました。"
