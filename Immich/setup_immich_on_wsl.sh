@@ -89,8 +89,21 @@ log "Docker CE, CLI, containerd.io, Docker Compose plugin をインストール.
 # 今回は docker-compose-plugin を使用
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-log "ユーザー $WSL_USERNAME を docker グループに追加..."
-sudo usermod -aG docker "$WSL_USERNAME"
+# dockerグループに未所属なら追加、既に所属ならスキップ
+if id -nG "$WSL_USERNAME" | grep -qw docker; then
+    log "ユーザー $WSL_USERNAME はすでに docker グループに所属しています。"
+else
+    log "ユーザー $WSL_USERNAME を docker グループに追加..."
+    sudo usermod -aG docker "$WSL_USERNAME"
+fi
+
+# dockerデーモンが起動していなければ自動起動
+if ! sudo service docker status >/dev/null 2>&1; then
+    log "Dockerデーモンを起動します..."
+    sudo service docker start
+else
+    log "Dockerデーモンは既に起動しています。"
+fi
 
 log "Immich用のディレクトリとファイルを設定..."
 sudo mkdir -p "$IMMICH_DIR"
