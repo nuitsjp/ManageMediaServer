@@ -30,22 +30,8 @@ trap {
 $WSLUserName = "ubuntu"
 Write-Log "ユーザー名は '$WSLUserName' で固定されています。"
 
-$WSLPassword = ""
-$WSLPasswordConfirm = ""
-
-while ([string]::IsNullOrWhiteSpace($WSLPassword) -or ($WSLPassword -ne $WSLPasswordConfirm)) {
-    if ($WSLPassword -ne $WSLPasswordConfirm -and -not [string]::IsNullOrWhiteSpace($WSLPassword)) {
-        Write-Log "パスワードが一致しません。再度入力してください。" -Level WARN
-    }
-    
-    $SecurePassword = Read-Host "パスワードを入力してください" -AsSecureString
-    $WSLPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword))
-    
-    $SecurePasswordConfirm = Read-Host "パスワードを再入力してください" -AsSecureString
-    $WSLPasswordConfirm = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePasswordConfirm))
-}
+# パスワード入力・確認ループを関数で実施
+$WSLPassword = Read-PasswordWithConfirmation
 
 Write-Log "ユーザー情報の入力が完了しました。WSLのセットアップを開始します。"
 

@@ -85,3 +85,26 @@ function Test-ImmichDirectory {
     
     return $true
 }
+
+function Read-PasswordWithConfirmation {
+    <#
+    .SYNOPSIS
+        パスワードを2回入力し、一致するまで再入力を促す。SecureStringは平文に変換される。
+    .OUTPUTS
+        string - 入力されたパスワード（平文）
+    #>
+    $password = ""
+    $passwordConfirm = ""
+    while ([string]::IsNullOrWhiteSpace($password) -or ($password -ne $passwordConfirm)) {
+        if ($password -ne $passwordConfirm -and -not [string]::IsNullOrWhiteSpace($password)) {
+            Write-Log "パスワードが一致しません。再度入力してください。" -Level WARN
+        }
+        $securePassword = Read-Host "パスワードを入力してください" -AsSecureString
+        $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
+        $securePasswordConfirm = Read-Host "パスワードを再入力してください" -AsSecureString
+        $passwordConfirm = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePasswordConfirm))
+    }
+    return $password
+}
