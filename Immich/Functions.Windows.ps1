@@ -11,3 +11,22 @@ function Write-Log {
         'ERROR' { Write-Error $Message }
     }
 }
+
+function Set-PortProxyForImmich {
+    param(
+        [int]$AppPort,
+        [string]$WslIp
+    )
+    $portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+$WslIp\s+$AppPort"
+    if ($portProxyExists) {
+        Write-Log "既存のportproxy設定があります。"
+    } else {
+        $anyExistingProxy = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+"
+        if ($anyExistingProxy) {
+            Write-Log "ポート $AppPort の既存portproxy設定を削除します。"
+            netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$AppPort proto=tcp | Out-Null
+        }
+        Write-Log "portproxyを追加: 0.0.0.0:$AppPort → $(WslIp):$(AppPort)"
+        netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$WslIp connectport=$AppPort proto=tcp | Out-Null
+    }
+}

@@ -23,7 +23,7 @@ if ($TimeZone -ne $script:TimeZone) {
 }
 
 trap {
-    Write-Log "予期せぬエラー: $_" -Level ERROR
+    Write-Error "予期せぬエラー: $_"
     exit 1
 }
 
@@ -65,19 +65,7 @@ Write-Log "LAN公開用のport-proxyとFirewallを構成します。"
 $wslIp = Get-WslIpAddress -DistributionName $script:Distro
 
 Write-Log "WSL IPアドレス: $wslIp"
-$portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$($script:AppPort)\s+$wslIp\s+$($script:AppPort)"
-
-if ($portProxyExists) {
-    Write-Log "既存のportproxy設定があります。"
-} else {
-    $anyExistingProxy = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$($script:AppPort)\s+"
-    if ($anyExistingProxy) {
-        Write-Log "ポート $($script:AppPort) の既存portproxy設定を削除します。"
-        netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$script:AppPort proto=tcp | Out-Null
-    }
-    Write-Log "portproxyを追加: 0.0.0.0:$($script:AppPort) → $($wslIp):$($script:AppPort)"
-    netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$script:AppPort connectaddress=$wslIp connectport=$script:AppPort proto=tcp | Out-Null
-}
+Set-PortProxyForImmich -AppPort $script:AppPort -WslIp $wslIp
 
 $firewallRuleName = "Immich (WSL Port $($script:AppPort))"
 if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
