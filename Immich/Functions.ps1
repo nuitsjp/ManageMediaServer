@@ -183,17 +183,22 @@ function Copy-WslSetupScript {
     <#
     .SYNOPSIS
         WSL内にセットアップスクリプトをコピーし、実行可能にする。
-    .PARAMETER SourcePathOnWSL
-        コピー元のWSL内パス
+    .PARAMETER WslSetupScriptPathOnWindows
+        セットアップスクリプトのWindows側の絶対パス
     .PARAMETER DestinationPathOnWSL
         コピー先のWSL内パス
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SourcePathOnWSL,
+        [string]$WslSetupScriptPathOnWindows,
         [Parameter(Mandatory = $true)]
         [string]$DestinationPathOnWSL
     )
+    $SourcePathOnWSL = ConvertTo-WslPath -WindowsPath $WslSetupScriptPathOnWindows
+    if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
+        Write-Log "WSLパスの変換結果が空です" -Level ERROR
+        throw "WSLパスの変換結果が空です"
+    }
     $PrepareScriptCommands = @"
 sudo apt-get update && sudo apt-get install -y dos2unix && \
 cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \

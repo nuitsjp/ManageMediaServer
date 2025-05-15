@@ -38,33 +38,21 @@ if (-not (Test-WslDistribution)) {
     Install-WslDistributionAndWait
 }
 
-# WSL内セットアップスクリプトの実行
-Write-Log "WSL内セットアップスクリプトを実行します。"
 
-$WslSetupScriptName = "setup_immich_on_wsl.sh"
-$WslSetupScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $WslSetupScriptName
 
 try {
-    $SourcePathOnWSL = ConvertTo-WslPath -WindowsPath $WslSetupScriptPathOnWindows
-    if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
-        throw "WSLパスの変換結果が空です"
-    }
-} catch {
-    Write-Log "WindowsパスからWSLパスへの変換に失敗しました。WSLや $script:Distro の状態を確認してください。" -Level ERROR
-    Write-Log "エラー詳細: $($_.Exception.Message)" -Level ERROR
-    exit 1
-}
+    # WSL内セットアップスクリプトの実行
+    Write-Log "WSL内セットアップスクリプトを実行します。"
 
-$DestinationScriptNameOnWSL = "setup_immich_for_distro.sh"
-$DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
-$ImmichDirPath = "/opt/immich"
-
-try {
-    # セットアップスクリプトの準備と実行
-    Copy-WslSetupScript -SourcePathOnWSL $SourcePathOnWSL -DestinationPathOnWSL $DestinationPathOnWSL
+    # スクリプトをWSLにコピー
+    $WslSetupScriptName = "setup_immich_on_wsl.sh"
+    $WslSetupScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $WslSetupScriptName
+    $DestinationPathOnWSL = "/tmp/$WslSetupScriptName"
+    Copy-WslSetupScript -WslSetupScriptPathOnWindows $WslSetupScriptPathOnWindows -DestinationPathOnWSL $DestinationPathOnWSL
     
-    # ユーザー名とパスワードを引数として渡す
     Write-Log "ユーザー '$WSLUserName' の設定とImmichのセットアップを実行しています..."
+
+    $ImmichDirPath = "/opt/immich"
     # シングルクォートで囲み、シェルによる特殊文字の解釈を防止
     $escapedPassword = $WSLPassword.Replace("'", "'\''")  # シングルクォートをエスケープ
     wsl -d $script:Distro -- bash -c "sudo '$DestinationPathOnWSL' '$script:TimeZone' '$ImmichDirPath' '$escapedPassword'"
