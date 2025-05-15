@@ -10,8 +10,7 @@ Param(
 $ErrorActionPreference = 'Stop'
 
 # Functionsファイルの読み込み
-. $PSScriptRoot\Functions.Windows.ps1
-. $PSScriptRoot\Functions.Wsl.ps1
+. $PSScriptRoot\Functions.ps1
 
 # パラメータが指定された場合は共通変数を上書き
 if ($AppPort -ne $script:AppPort) {
@@ -67,14 +66,7 @@ $wslIp = Get-WslIpAddress -DistributionName $script:Distro
 Write-Log "WSL IPアドレス: $wslIp"
 Set-PortProxyForImmich -AppPort $script:AppPort -WslIp $wslIp
 
-$firewallRuleName = "Immich (WSL Port $($script:AppPort))"
-if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
-    Write-Log "Firewallルール '$firewallRuleName' を追加します。"
-    New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow `
-                        -Protocol TCP -LocalPort $script:AppPort -Profile Any | Out-Null
-} else {
-    Write-Log "既存のFirewallルール '$firewallRuleName' があります。"
-}
+Ensure-FirewallRuleForImmich -AppPort $script:AppPort
 
 # Windows起動時のImmich自動起動設定
 Write-Log "Windows起動時のImmich自動起動を設定します。"

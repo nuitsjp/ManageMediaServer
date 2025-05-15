@@ -30,3 +30,17 @@ function Set-PortProxyForImmich {
         netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$WslIp connectport=$AppPort proto=tcp | Out-Null
     }
 }
+
+function Ensure-FirewallRuleForImmich {
+    param(
+        [int]$AppPort
+    )
+    $firewallRuleName = "Immich (WSL Port $AppPort)"
+    if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
+        Write-Log "Firewallルール '$firewallRuleName' を追加します。"
+        New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow `
+                            -Protocol TCP -LocalPort $AppPort -Profile Any | Out-Null
+    } else {
+        Write-Log "既存のFirewallルール '$firewallRuleName' があります。"
+    }
+}
