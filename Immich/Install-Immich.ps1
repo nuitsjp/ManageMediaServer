@@ -59,17 +59,9 @@ $DestinationScriptNameOnWSL = "setup_immich_for_distro.sh"
 $DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
 $ImmichDirPath = "/opt/immich"
 
-# セットアップスクリプトの準備と実行
-$PrepareScriptCommands = @"
-sudo apt-get update && sudo apt-get install -y dos2unix && \
-cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
-dos2unix '$DestinationPathOnWSL' && \
-chmod +x '$DestinationPathOnWSL'
-"@ -replace "`r",""
-
 try {
-    Write-Log "セットアップスクリプトを準備しています..."
-    wsl -d $script:Distro -- bash -c "sudo $PrepareScriptCommands"
+    # セットアップスクリプトの準備と実行
+    Copy-WslSetupScript -SourcePathOnWSL $SourcePathOnWSL -DestinationPathOnWSL $DestinationPathOnWSL
     
     # ユーザー名とパスワードを引数として渡す
     Write-Log "ユーザー '$WSLUserName' の設定とImmichのセットアップを実行しています..."

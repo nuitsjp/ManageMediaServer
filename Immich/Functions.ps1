@@ -178,3 +178,29 @@ function Install-WslDistributionAndWait {
         throw "WSLの起動を確認できませんでした。処理を中断します。"
     }
 }
+
+function Copy-WslSetupScript {
+    <#
+    .SYNOPSIS
+        WSL内にセットアップスクリプトをコピーし、実行可能にする。
+    .PARAMETER SourcePathOnWSL
+        コピー元のWSL内パス
+    .PARAMETER DestinationPathOnWSL
+        コピー先のWSL内パス
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePathOnWSL,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPathOnWSL
+    )
+    $PrepareScriptCommands = @"
+sudo apt-get update && sudo apt-get install -y dos2unix && \
+cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
+dos2unix '$DestinationPathOnWSL' && \
+chmod +x '$DestinationPathOnWSL'
+"@ -replace "`r",""
+
+    Write-Log "セットアップスクリプトを準備しています..."
+    wsl -d $script:Distro -- bash -c "sudo $PrepareScriptCommands"
+}
