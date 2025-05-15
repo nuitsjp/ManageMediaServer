@@ -71,7 +71,6 @@ if (-not $wslIp) {
 }
 
 Write-Log "WSL IPアドレス: $wslIp"
-$existingRule = Get-NetFirewallPortFilter -Protocol TCP | Where-Object { $_.LocalPort -eq $script:AppPort }
 $portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$($script:AppPort)\s+$wslIp\s+$($script:AppPort)"
 
 if ($portProxyExists) {
