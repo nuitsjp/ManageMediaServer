@@ -28,37 +28,10 @@ trap {
 
 # ユーザー情報の収集
 $WSLUserName = "ubuntu"
-Write-Log "ユーザー名は '$WSLUserName' で固定されています。"
+Write-Log "ユーザー名は '$WSLUserName' (固定)でセットアップを開始します。"
 
-# ディストリの有無を判定
-$needPassword = $false
-if (-not (Test-WslDistribution)) {
-    # ディストリ未インストール → パスワード必須
-    $needPassword = $true
-} else {
-    # ディストリが存在する場合、ubuntuユーザーの有無をWSL内で確認
-    $userExists = $false
-    try {
-        $userId = wsl -d $script:Distro -- id -u $WSLUserName 2>$null
-        $userExists = $null -ne $userId -and $userId -match '^\d+$'
-    } catch {
-        $userExists = $false
-    }
-    if (-not $userExists) {
-        $needPassword = $true
-    }
-}
-
-if ($needPassword) {
-    # パスワード入力・確認ループを関数で実施
-    $WSLPassword = Read-PasswordWithConfirmation
-    Write-Log "パスワードの入力が完了しました。"
-} else {
-    $WSLPassword = ""
-    Write-Log "既存のubuntuユーザーが存在するため、パスワード入力はスキップします。"
-}
-
-Write-Log "ユーザー情報の入力が完了しました。WSLのセットアップを開始します。"
+# パスワード入力・確認ループを関数で実施
+$WSLPassword = Read-PasswordWithConfirmation
 
 # WSLディストリビューションの導入
 if (-not (Test-WslDistribution)) {

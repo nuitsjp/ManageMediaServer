@@ -89,22 +89,49 @@ function Test-ImmichDirectory {
 function Read-PasswordWithConfirmation {
     <#
     .SYNOPSIS
-        パスワードを2回入力し、一致するまで再入力を促す。SecureStringは平文に変換される。
+        ディストリの有無を確認し、必要な場合のみパスワード入力を促す。SecureStringは平文に変換される。
+    .PARAMETER DistributionName
+        チェック対象のWSLディストリ名（省略時は $script:Distro）
     .OUTPUTS
-        string - 入力されたパスワード（平文）
+        string - 入力されたパスワード（平文、または不要時は空文字列）
     #>
-    $password = ""
-    $passwordConfirm = ""
-    while ([string]::IsNullOrWhiteSpace($password) -or ($password -ne $passwordConfirm)) {
-        if ($password -ne $passwordConfirm -and -not [string]::IsNullOrWhiteSpace($password)) {
-            Write-Log "パスワードが一致しません。再度入力してください。" -Level WARN
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$DistributionName = $script:Distro
+    )
+    
+    # ディストリの有無を判定
+    if (-not (Test-WslDistribution -DistributionName $DistributionName)) {
+        $needPassword = $true
+    } else {
+        $WSLUserName = "ubuntu"
+        $userExists = $false
+        try {
+            $userId = wsl -d $DistributionName -- id -u $WSLUserName 2>$null
+            $userExists = $null -ne $userId -and $userId -match '^[0-9]+$'
+        } catch {
+            $userExists = $false
         }
-        $securePassword = Read-Host "パスワードを入力してください" -AsSecureString
-        $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
-        $securePasswordConfirm = Read-Host "パスワードを再入力してください" -AsSecureString
-        $passwordConfirm = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePasswordConfirm))
+        $needPassword = -not $userExists
     }
-    return $password
+
+    if ($needPassword) {
+        $password = ""
+        $passwordConfirm = ""
+        while ([string]::IsNullOrWhiteSpace($password) -or ($password -ne $passwordConfirm)) {
+            if ($password -ne $passwordConfirm -and -not [string]::IsNullOrWhiteSpace($password)) {
+                Write-Log "パスワードが一致しません。再度入力してください。" -Level WARN
+            }
+            $securePassword = Read-Host "パスワードを入力してください" -AsSecureString
+            $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
+            $securePasswordConfirm = Read-Host "パスワードを再入力してください" -AsSecureString
+            $passwordConfirm = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePasswordConfirm))
+        }
+        return $password
+    } else {
+        Write-Log "既存のubuntuユーザーが存在するため、パスワード入力はスキップします。"
+        return ""
+    }
 }
