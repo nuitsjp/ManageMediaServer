@@ -107,7 +107,7 @@ $ImmichDirPath = "/opt/immich"
 
 # セットアップスクリプトの準備と実行
 $PrepareScriptCommands = @"
-apt-get update && apt-get install -y dos2unix && \
+sudo apt-get update && sudo apt-get install -y dos2unix && \
 cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
 dos2unix '$DestinationPathOnWSL' && \
 chmod +x '$DestinationPathOnWSL'
