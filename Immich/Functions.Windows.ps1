@@ -26,7 +26,7 @@ function Set-PortProxyForImmich {
             Write-Log "ポート $AppPort の既存portproxy設定を削除します。"
             netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$AppPort proto=tcp | Out-Null
         }
-        Write-Log "portproxyを追加: 0.0.0.0:$AppPort → $(WslIp):$(AppPort)"
+        Write-Log "portproxyを追加: 0.0.0.0:$AppPort → $($WslIp):$AppPort"
         netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$WslIp connectport=$AppPort proto=tcp | Out-Null
     }
 }
