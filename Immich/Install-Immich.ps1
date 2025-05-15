@@ -118,7 +118,7 @@ try {
     Write-Log "ユーザー '$WSLUserName' の設定とImmichのセットアップを実行しています..."
     # シングルクォートで囲み、シェルによる特殊文字の解釈を防止
     $escapedPassword = $WSLPassword.Replace("'", "'\''")  # シングルクォートをエスケープ
-    wsl -d $script:Distro -- bash -c "sudo '$DestinationPathOnWSL' '$script:TimeZone' '$ImmichDirPath' '$WSLUserName' '$escapedPassword'"
+    wsl -d $script:Distro -- bash -c "sudo '$DestinationPathOnWSL' '$script:TimeZone' '$ImmichDirPath' '$escapedPassword'"
     
     Write-Log "WSL内セットアップが完了しました。"
     Write-Log "WSLを再起動してユーザー設定とDockerグループの変更を適用します..."
