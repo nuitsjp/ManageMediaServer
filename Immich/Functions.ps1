@@ -225,3 +225,25 @@ function Restart-WslDistribution {
     Start-Sleep -Seconds 3
     wsl -d $DistributionName -- echo "WSL restarted"
 }
+
+function Get-WslIpAddress {
+    <#
+    .SYNOPSIS
+        指定したWSLディストリビューションのIPv4アドレスを取得します。
+    .PARAMETER DistributionName
+        対象のWSLディストリ名（省略時は $script:Distro）
+    .OUTPUTS
+        string - IPv4アドレス（取得失敗時は例外をthrow）
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$DistributionName = $script:Distro
+    )
+    $ip = (wsl -d $DistributionName -- hostname -I) -split '\s+' |
+          Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' } |
+          Select-Object -First 1
+    if (-not $ip) {
+        throw "WSL IPアドレスの取得に失敗しました。WSLが実行中か確認してください。"
+    }
+    return $ip
+}

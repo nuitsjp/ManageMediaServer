@@ -38,15 +38,13 @@ if (-not (Test-WslDistribution)) {
     Install-WslDistributionAndWait
 }
 
-# WSL内セットアップスクリプトの実行
-Write-Log "WSL内セットアップスクリプトを実行します。"
-
 # スクリプトをWSLにコピー
 $WslSetupScriptName = "setup_immich_on_wsl.sh"
 $WslSetupScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $WslSetupScriptName
 $DestinationPathOnWSL = "/tmp/$WslSetupScriptName"
 Copy-WslSetupScript -WslSetupScriptPathOnWindows $WslSetupScriptPathOnWindows -DestinationPathOnWSL $DestinationPathOnWSL
 
+# ユーザーの作成とImmichのセットアップ
 Write-Log "ユーザー '$WSLUserName' の設定とImmichのセットアップを実行しています..."
 
 $ImmichDirPath = "/opt/immich"
@@ -55,20 +53,15 @@ $escapedPassword = $WSLPassword.Replace("'", "'\''")  # シングルクォート
 wsl -d $script:Distro -- bash -c "sudo '$DestinationPathOnWSL' '$script:TimeZone' '$ImmichDirPath' '$escapedPassword'"
 
 Write-Log "WSL内セットアップが完了しました。"
-Write-Log "WSLを再起動してユーザー設定とDockerグループの変更を適用します..."
 
 # WSLを再起動して設定を適用
+Write-Log "WSLを再起動してユーザー設定とDockerグループの変更を適用します..."
 Restart-WslDistribution
 
 # LAN公開 (port-proxyとFirewall構成)
 Write-Log "LAN公開用のport-proxyとFirewallを構成します。"
 
-$wslIp = (wsl -d $script:Distro -- hostname -I).Split() |
-         Where-Object { $_ -match '\d+\.\d+\.\d+\.\d+' } |
-         Select-Object -First 1
-if (-not $wslIp) {
-    throw "WSL IPアドレスの取得に失敗しました。WSLが実行中か確認してください。"
-}
+$wslIp = Get-WslIpAddress -DistributionName $script:Distro
 
 Write-Log "WSL IPアドレス: $wslIp"
 $portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$($script:AppPort)\s+$wslIp\s+$($script:AppPort)"
