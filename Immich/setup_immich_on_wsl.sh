@@ -8,9 +8,8 @@ set -e
 # PowerShellスクリプトから引数として渡される
 TIME_ZONE="$1"
 IMMICH_DIR_PARAM="$2"
-WSL_USERNAME="$3"
-WSL_PASSWORD="$4"
-# DISTRO_CODENAME は lsb_release -cs で取得するため、ここでは不要になりました。
+WSL_PASSWORD="$3"
+WSL_USERNAME="ubuntu"
 
 # --- ヘルパー関数 ---
 log() {
@@ -33,31 +32,24 @@ fi
 if [ -z "$IMMICH_DIR_PARAM" ]; then
     error_exit "ImmichDir パラメータが設定されていません。"
 fi
-if [ -z "$WSL_USERNAME" ]; then
-    warn "ユーザー名が指定されていません。デフォルトのroot権限で続行します。"
+# ユーザー ubuntu の存在確認・作成
+if id "$WSL_USERNAME" &>/dev/null; then
+    log "ユーザー $WSL_USERNAME は既に存在します。"
 else
-    # ユーザーが既に存在するか確認
-    if id "$WSL_USERNAME" &>/dev/null; then
-        log "ユーザー $WSL_USERNAME は既に存在します。"
+    log "新規ユーザー $WSL_USERNAME を作成しています..."
+    useradd -m -s /bin/bash "$WSL_USERNAME"
+    usermod -aG sudo "$WSL_USERNAME"
+    if [ -n "$WSL_PASSWORD" ]; then
+        echo "$WSL_USERNAME:$WSL_PASSWORD" | chpasswd
+        log "ユーザー $WSL_USERNAME のパスワードを設定しました。"
     else
-        log "新規ユーザー $WSL_USERNAME を作成しています..."
-        useradd -m -s /bin/bash "$WSL_USERNAME"
-        usermod -aG sudo "$WSL_USERNAME"
-        
-        if [ -n "$WSL_PASSWORD" ]; then
-            echo "$WSL_USERNAME:$WSL_PASSWORD" | chpasswd
-            log "ユーザー $WSL_USERNAME のパスワードを設定しました。"
-        else
-            warn "パスワードが指定されていないため、パスワードなしでユーザーを作成しました。"
-            warn "セキュリティのために手動でパスワードを設定することをお勧めします。"
-        fi
-        
-        # WSLのデフォルトユーザーとして設定
-        log "WSLのデフォルトユーザーを $WSL_USERNAME に設定しています..."
-        echo "[user]" > /etc/wsl.conf
-        echo "default=$WSL_USERNAME" >> /etc/wsl.conf
-        log "WSLのデフォルトユーザー設定が完了しました。変更を適用するにはWSLの再起動が必要です。"
+        warn "パスワードが指定されていないため、パスワードなしでユーザーを作成しました。"
+        warn "セキュリティのために手動でパスワードを設定することをお勧めします。"
     fi
+    log "WSLのデフォルトユーザーを $WSL_USERNAME に設定しています..."
+    echo "[user]" > /etc/wsl.conf
+    echo "default=$WSL_USERNAME" >> /etc/wsl.conf
+    log "WSLのデフォルトユーザー設定が完了しました。変更を適用するにはWSLの再起動が必要です。"
 fi
 
 # IMMICH_DIR_PARAM の解決 (~/ を展開)
@@ -97,16 +89,8 @@ log "Docker CE, CLI, containerd.io, Docker Compose plugin をインストール.
 # 今回は docker-compose-plugin を使用
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# 現在のユーザーか、指定されたユーザーをdockerグループに追加
-if [ -n "$WSL_USERNAME" ] && id "$WSL_USERNAME" &>/dev/null; then
-    log "ユーザー $WSL_USERNAME を docker グループに追加..."
-    sudo usermod -aG docker "$WSL_USERNAME"
-else
-    LINUX_USER=$(whoami)
-    log "現在のユーザー ($LINUX_USER) を docker グループに追加..."
-    sudo usermod -aG docker "$LINUX_USER"
-fi
-# グループ変更の即時反映に関する注意はPowerShell側で表示
+log "ユーザー $WSL_USERNAME を docker グループに追加..."
+sudo usermod -aG docker "$WSL_USERNAME"
 
 log "Immich用のディレクトリとファイルを設定..."
 sudo mkdir -p "$IMMICH_DIR"
@@ -137,14 +121,8 @@ sudo docker compose pull
 log "Immichコンテナを起動中..."
 sudo docker compose up -d
 
-# 作成されたユーザーに.hushloginを作成
-if [ -n "$WSL_USERNAME" ] && id "$WSL_USERNAME" &>/dev/null; then
-    log "ログインメッセージを抑制するために $WSL_USERNAME の .hushlogin を作成..."
-    sudo -u "$WSL_USERNAME" touch "/home/$WSL_USERNAME/.hushlogin"
-else
-    log "ログインメッセージを抑制するために .hushlogin を作成..."
-    touch "$HOME/.hushlogin"
-fi
+log "ログインメッセージを抑制するために $WSL_USERNAME の .hushlogin を作成..."
+sudo -u "$WSL_USERNAME" touch "/home/$WSL_USERNAME/.hushlogin"
 
 log "Immich用WSLセットアップスクリプトが正常に完了しました。"
 log "Dockerグループへの所属を有効にするには、WSLセッションを再起動するか、現在のセッションで 'newgrp docker' を実行する必要があるかもしれません。"

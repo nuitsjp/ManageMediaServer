@@ -27,11 +27,8 @@ trap {
 }
 
 # ユーザー情報の収集
-$WSLUserName = Read-Host "WSL内で使用するユーザー名を入力してください [ubuntu]"
-if ([string]::IsNullOrWhiteSpace($WSLUserName)) {
-    $WSLUserName = "ubuntu"
-    Write-Log "デフォルトのユーザー名 '$WSLUserName' を使用します。"
-}
+$WSLUserName = "ubuntu"
+Write-Log "ユーザー名は '$WSLUserName' で固定されています。"
 
 $WSLPassword = ""
 $WSLPasswordConfirm = ""
