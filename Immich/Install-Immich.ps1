@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 
 # Functionsファイルの読み込み
 . $PSScriptRoot\Functions.ps1
+. $PSScriptRoot\Functions.Windows.ps1
+. $PSScriptRoot\Functions.Wsl.ps1
 
 # パラメータが指定された場合は共通変数を上書き
 if ($AppPort -ne $script:AppPort) {
