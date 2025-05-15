@@ -59,21 +59,6 @@ function Test-WslDistribution {
     return (wsl -l -q) -contains $DistributionName
 }
 
-# Immichのディレクトリが存在するか確認する関数
-function Test-ImmichDirectory {
-    param (
-        [Parameter(Mandatory = $false)]
-        [string]$DirectoryPath = $script:ImmichDir
-    )
-    
-    if (-not (Test-Path $DirectoryPath)) {
-        Write-Log "Immich実行ディレクトリが見つかりません: $DirectoryPath" -Level ERROR
-        return $false
-    }
-    
-    return $true
-}
-
 function Read-PasswordWithConfirmation {
     <#
     .SYNOPSIS

@@ -10,7 +10,6 @@ Param(
 $ErrorActionPreference = 'Stop'
 
 # Functionsファイルの読み込み
-. $PSScriptRoot\Functions.ps1
 . $PSScriptRoot\Functions.Windows.ps1
 . $PSScriptRoot\Functions.Wsl.ps1
 
