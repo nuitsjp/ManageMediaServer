@@ -209,3 +209,19 @@ chmod +x '$DestinationPathOnWSL'
     Write-Log "セットアップスクリプトを準備しています..."
     wsl -d $script:Distro -- bash -c "sudo $PrepareScriptCommands"
 }
+
+function Restart-WslDistribution {
+    <#
+    .SYNOPSIS
+        指定したWSLディストリビューションを再起動します。
+    .PARAMETER DistributionName
+        再起動対象のWSLディストリ名（省略時は $script:Distro）
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$DistributionName = $script:Distro
+    )
+    wsl --terminate $DistributionName
+    Start-Sleep -Seconds 3
+    wsl -d $DistributionName -- echo "WSL restarted"
+}
