@@ -35,34 +35,7 @@ $WSLPassword = Read-PasswordWithConfirmation
 
 # WSLディストリビューションの導入
 if (-not (Test-WslDistribution)) {
-    Write-Log "$script:Distro ディストリビューションをインストールします。"
-    wsl --install -d $script:Distro
-    Write-Log "$script:Distro のインストールが完了しました。"
-    
-    # WSLが起動するまで待機
-    Write-Log "WSLの起動を待機しています..."
-    $retryCount = 0
-    $maxRetries = 10
-    $success = $false
-    
-    while (-not $success -and $retryCount -lt $maxRetries) {
-        try {
-            Start-Sleep -Seconds 2
-            $result = wsl -d $script:Distro -- echo "WSL is ready"
-            if ($result -eq "WSL is ready") {
-                $success = $true
-                Write-Log "WSLが正常に起動しました。"
-            }
-        } catch {
-            $retryCount++
-            Write-Log "WSLの起動を待機中... ($retryCount/$maxRetries)"
-        }
-    }
-    
-    if (-not $success) {
-        Write-Log "WSLの起動を確認できませんでした。処理を中断します。" -Level ERROR
-        exit 1
-    }
+    Install-WslDistributionAndWait
 }
 
 # WSL内セットアップスクリプトの実行

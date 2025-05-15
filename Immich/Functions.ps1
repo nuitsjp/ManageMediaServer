@@ -135,3 +135,46 @@ function Read-PasswordWithConfirmation {
         return ""
     }
 }
+
+function Install-WslDistributionAndWait {
+    <#
+    .SYNOPSIS
+        指定したWSLディストリビューションをインストールし、起動を待機します。
+    .PARAMETER DistributionName
+        インストール・起動確認対象のWSLディストリ名（省略時は $script:Distro）
+    .OUTPUTS
+        なし（失敗時は例外をthrow）
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$DistributionName = $script:Distro
+    )
+
+    Write-Log "$DistributionName ディストリビューションをインストールします。"
+    wsl --install -d $DistributionName
+    Write-Log "$DistributionName のインストールが完了しました。"
+
+    # WSLが起動するまで待機
+    Write-Log "WSLの起動を待機しています..."
+    $retryCount = 0
+    $maxRetries = 10
+    $success = $false
+
+    while (-not $success -and $retryCount -lt $maxRetries) {
+        try {
+            Start-Sleep -Seconds 2
+            $result = wsl -d $DistributionName -- echo "WSL is ready"
+            if ($result -eq "WSL is ready") {
+                $success = $true
+                Write-Log "WSLが正常に起動しました。"
+            }
+        } catch {
+            $retryCount++
+            Write-Log "WSLの起動を待機中... ($retryCount/$maxRetries)"
+        }
+    }
+
+    if (-not $success) {
+        throw "WSLの起動を確認できませんでした。処理を中断します。"
+    }
+}
