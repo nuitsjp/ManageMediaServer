@@ -11,6 +11,8 @@ Param(
 
 $ErrorActionPreference = 'Stop'
 
+. $PSScriptRoot\Functions.ps1
+
 function Write-Log {
     param(
         [string]$Message,
