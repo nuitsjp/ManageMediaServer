@@ -8,6 +8,7 @@ set -e
 # PowerShellスクリプトから引数として渡される
 TIME_ZONE="$1"
 USER_PASSWORD="$2"
+IMMICH_EXTERNAL_LIBRARY_PATH="$3"
 
 # --- ヘルパー関数 ---
 log() {

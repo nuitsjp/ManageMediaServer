@@ -29,11 +29,11 @@ elseif (-not (Test-WSLUserExists)) {
     $UserPassword = Read-PasswordTwice
 }
 
-# パッケージ更新前に /opt/immich/docker-compose.yml の存在チェック
+# パッケージ更新前に /opt/immich/docker-compose.yml の存在チェックして、外部ライブラリパスを取得
 $ImmichExternalLibraryPath = ''
 if (-not (Test-ImmichComposeFileExists)) {
-    $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
 }
+$ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
 
 # パッケージ更新とdos2unixインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."

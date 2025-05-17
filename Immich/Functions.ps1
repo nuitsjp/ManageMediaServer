@@ -152,10 +152,14 @@ sudo '$DestinationPathOnWSL' $ArgString
     Write-Log "WSL内で以下のコマンドを実行します:" -Level "VERBOSE"
     Write-Log $WslCommands -Level "VERBOSE"
     wsl -d $script:DistroName -- bash -c "$WslCommands"
+    if ($LASTEXITCODE -ne 0) {
+        throw "WSL内でのスクリプト実行に失敗しました (終了コード: $LASTEXITCODE)"
+    }
     Write-Log "WSL内セットアップスクリプトの実行が完了しました。" -Level "INFO"
 }
 
 function Register-ImmichStartupTask {
+    [CmdletBinding()]
     param (
         [string]$StartImmichScriptPath,
         [string]$TaskName = "ImmichWSLAutoStart"
