@@ -19,16 +19,20 @@ trap {
 }
 
 # --- 2- WSLディストロの導入 ------------------------------------------------
+$UserPassword = ''
 if ((wsl -l -q) -notcontains $Distro) {
+    Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' を作成します。"
+    $UserPassword = Read-PasswordTwice
     Write-Log "$Distro ディストロを導入 …"
     wsl --install -d $Distro
 }
-
-if (-not (Test-WSLUserExists -UserName ubuntu)) {
-    Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' が存在しません。新規作成します。"
-    $password = Read-PasswordTwice
-    New-WSLUser -UserName ubuntu -Password $password
+else {
+    if (-not (Test-WSLUserExists -UserName ubuntu)) {
+        Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' が存在しません。新規作成します。"
+        $UserPassword = Read-PasswordTwice
+    }
 }
+
 
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
@@ -70,9 +74,6 @@ try {
 $DestinationScriptNameOnWSL = "setup_immich_for_distro.sh" # 汎用的な名前に変更も可
 $DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
 
-# インストールパスを固定
-$ImmichDirPath = "/opt/immich"
-
 # WSL内でスクリプトをコピーし、権限付与、改行コード変換、実行
 # dos2unix がインストールされていない場合に備えてインストールコマンドも追加
 $WslCommands = @"
@@ -80,7 +81,7 @@ sudo apt-get update && sudo apt-get install -y dos2unix && \
 cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
 dos2unix '$DestinationPathOnWSL' && \
 chmod +x '$DestinationPathOnWSL' && \
-sudo '$DestinationPathOnWSL' '$TimeZone'
+sudo '$DestinationPathOnWSL' '$TimeZone' '$UserPassword'
 "@ -replace "`r","" # PowerShellヒアストリングのCRLFをLFに（念のため）
 
 Write-Log "WSL内で以下のコマンド群を実行します:"

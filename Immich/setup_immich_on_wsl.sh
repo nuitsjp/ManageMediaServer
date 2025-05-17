@@ -7,6 +7,7 @@ set -e
 # --- パラメータ ---
 # PowerShellスクリプトから引数として渡される
 TIME_ZONE="$1"
+USER_PASSWORD="$2"
 
 # --- ヘルパー関数 ---
 log() {
@@ -55,9 +56,6 @@ log "Docker CE, CLI, containerd.io, Docker Compose plugin をインストール.
 # 今回は docker-compose-plugin を使用
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-log "ubuntu を docker グループに追加..."
-sudo usermod -aG docker ubuntu
-
 log "Immich用のディレクトリとファイルを設定..."
 IMMICH_DIR="/opt/immich"
 mkdir -p "$IMMICH_DIR"
@@ -86,7 +84,31 @@ sudo docker compose pull
 log "Immichコンテナを起動中..."
 sudo docker compose up -d
 
-log "ログインメッセージを抑制するために .hushlogin を作成..."
-touch "ubuntu/.hushlogin"
+
+# USER_PASSWORDが指定されていたらubuntuユーザーを作成しパスワードを設定
+if [ -n "$USER_PASSWORD" ]; then
+    log "ubuntuユーザーを作成または既存ユーザーのパスワードを設定..."
+    if id "ubuntu" &>/dev/null; then
+        echo "ubuntu:$USER_PASSWORD" | sudo chpasswd
+        log "既存のubuntuユーザーのパスワードを更新しました。"
+    else
+        sudo useradd -m -s /bin/bash ubuntu
+        echo "ubuntu:$USER_PASSWORD" | sudo chpasswd
+
+        log "ログインメッセージを抑制するために .hushlogin を作成..."
+        touch "/home/ubuntu/.hushlogin"
+
+        log "ubuntuのデフォルトシェルを bash に変更"
+        sudo chsh -s /bin/bash ubuntu
+
+        log "ubuntu を docker グループに追加"
+        sudo usermod -aG docker ubuntu
+
+        log "ubuntu を root グループに設定"
+        sudo usermod -aG sudo ubuntu
+
+        log "新規ubuntuユーザーを作成しパスワードを設定しました。"
+    fi
+fi
 
 exit 0
