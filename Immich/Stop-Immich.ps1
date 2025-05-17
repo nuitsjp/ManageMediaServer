@@ -17,7 +17,7 @@ if (-not (Test-Path $immichDir)) {
 }
 
 # WSL内のパスを取得
-$wslImmichDir = ConvertTo-WslPath -WindowsPath $immichDir -DistributionName $distributionName
+$wslImmichDir = Convert-WindowsPathToWSLPath -WindowsPath $immichDir
 
 # Docker Composeのバージョンを確認（新形式か旧形式か）
 & wsl -d $distributionName -- docker compose version >$null 2>&1

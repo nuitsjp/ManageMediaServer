@@ -27,7 +27,7 @@ if ((wsl -l -q) -notcontains $Distro) {
     Write-Log "$Distro ディストロを導入 …"
     wsl --install -d $Distro
 }
-elseif (-not (Test-WSLUserExists -UserName $WSLUserName -Distro $Distro)) {
+elseif (-not (Test-WSLUserExists)) {
     Write-Log "WSLディストリビューション '$Distro' にユーザー '$WSLUserName' が存在しません。新規作成します。"
     $UserPassword = Read-PasswordTwice
 }
@@ -37,7 +37,7 @@ wsl -d $Distro -- bash -c "sudo apt-get update && sudo apt-get install -y dos2un
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
-Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Distro $Distro -Arguments @($TimeZone, $UserPassword)
+Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword)
 
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
 Write-Log "Windows起動時のImmich自動起動を設定します..."

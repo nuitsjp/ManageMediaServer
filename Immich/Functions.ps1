@@ -35,18 +35,14 @@ function Read-PasswordTwice {
 
 function Test-WSLUserExists {
     [CmdletBinding()]
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$UserName = $script:WSLUserName,
-        [string]$Distro = $script:DistroName
-    )
-    Write-Log -Message "WSLディストリビューション '$Distro' にユーザー '$UserName' が存在するか確認します。" -Level "INFO"
-    $result = wsl -d $Distro getent passwd $UserName 2>$null
+    param ()
+    Write-Log -Message "WSLディストリビューション '$script:DistroName' にユーザー '$script:WSLUserName' が存在するか確認します。" -Level "INFO"
+    $result = wsl -d $script:DistroName getent passwd $script:WSLUserName 2>$null
     if (-not [string]::IsNullOrEmpty($result)) {
-        Write-Log -Message "ユーザー '$UserName' は存在します。" -Level "INFO"
+        Write-Log -Message "ユーザー '$script:WSLUserName' は存在します。" -Level "INFO"
         return $true
     } else {
-        Write-Log -Message "ユーザー '$UserName' は存在しません。" -Level "INFO"
+        Write-Log -Message "ユーザー '$script:WSLUserName' は存在しません。" -Level "INFO"
         return $false
     }
 }
@@ -55,12 +51,11 @@ function Convert-WindowsPathToWSLPath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$WindowsPath,
-        [string]$Distro = $script:DistroName
+        [string]$WindowsPath
     )
     # パスのバックスラッシュをエスケープ
     $escapedPath = $WindowsPath.Replace('\', '\\')
-    $cmd = "wsl -d $Distro -- wslpath '$escapedPath'"
+    $cmd = "wsl -d $script:DistroName -- wslpath '$escapedPath'"
     $wslPath = (Invoke-Expression $cmd).Trim().Replace('"', '')
     
     # 変換結果を確認（トラブルシューティング用）
@@ -136,8 +131,6 @@ function Invoke-WSLCopyAndRunScript {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ScriptFileName,
-        [Parameter(Mandatory = $true)]
-        [string]$Distro,
         [string[]]$Arguments = @()
     )
     # スクリプトのWindowsパス
@@ -146,7 +139,7 @@ function Invoke-WSLCopyAndRunScript {
         throw "$ScriptPathOnWindows が見つかりません。PowerShellスクリプトと同じディレクトリに配置してください。"
     }
     # WindowsパスをWSLパスに変換
-    $SourcePathOnWSL = Convert-WindowsPathToWSLPath -WindowsPath $ScriptPathOnWindows -Distro $Distro
+    $SourcePathOnWSL = Convert-WindowsPathToWSLPath -WindowsPath $ScriptPathOnWindows
     if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
         throw "WSLパスの変換結果が空です"
     }
@@ -164,6 +157,6 @@ sudo '$DestinationPathOnWSL' $ArgString
 "@ -replace "`r",""
     Write-Log "WSL内で以下のコマンド群を実行します:"
     Write-Log $WslCommands
-    wsl -d $Distro -- bash -c "$WslCommands"
+    wsl -d $script:DistroName -- bash -c "$WslCommands"
     Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
 }
