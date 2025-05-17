@@ -1,3 +1,7 @@
+# Immich用ディストロ名・ユーザー名のグローバル変数
+$script:DistroName = "Ubuntu"
+$script:WSLUserName = "ubuntu"
+
 function Write-Log {
     param(
         [string]$Message,
@@ -33,8 +37,8 @@ function Test-WSLUserExists {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [string]$UserName,
-        [string]$Distro = "Ubuntu"
+        [string]$UserName = $script:WSLUserName,
+        [string]$Distro = $script:DistroName
     )
     Write-Log -Message "WSLディストリビューション '$Distro' にユーザー '$UserName' が存在するか確認します。" -Level "INFO"
     $result = wsl -d $Distro getent passwd $UserName 2>$null
@@ -52,7 +56,7 @@ function Convert-WindowsPathToWSLPath {
     param(
         [Parameter(Mandatory = $true)]
         [string]$WindowsPath,
-        [string]$Distro = "Ubuntu"
+        [string]$Distro = $script:DistroName
     )
     # パスのバックスラッシュをエスケープ
     $escapedPath = $WindowsPath.Replace('\', '\\')

@@ -4,7 +4,6 @@
 # --- 1- パラメーター定義・ログ設定・例外処理 -----------------------------------
 [CmdletBinding()]
 Param(
-    [string]$Distro   = 'Ubuntu',
     [int]   $AppPort  = 2283,
     [string]$TimeZone = 'Asia/Tokyo'
 )
@@ -19,15 +18,17 @@ trap {
 }
 
 # --- 2- WSLディストロの導入 ------------------------------------------------
+$Distro = $script:DistroName
+$WSLUserName = $script:WSLUserName
 $UserPassword = ''
 if ((wsl -l -q) -notcontains $Distro) {
-    Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' を作成します。"
+    Write-Log "WSLディストリビューション '$Distro' にユーザー '$WSLUserName' を作成します。"
     $UserPassword = Read-PasswordTwice
     Write-Log "$Distro ディストロを導入 …"
     wsl --install -d $Distro
 }
-elseif (-not (Test-WSLUserExists -UserName ubuntu)) {
-    Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' が存在しません。新規作成します。"
+elseif (-not (Test-WSLUserExists -UserName $WSLUserName -Distro $Distro)) {
+    Write-Log "WSLディストリビューション '$Distro' にユーザー '$WSLUserName' が存在しません。新規作成します。"
     $UserPassword = Read-PasswordTwice
 }
 
@@ -51,13 +52,8 @@ try {
     }
 
     # WSLのデフォルトユーザー名を取得
-    $WSLDefaultUser = (wsl -d $Distro --exec whoami).Trim()
-    if ([string]::IsNullOrEmpty($WSLDefaultUser)) {
-        Write-Log "WSLのデフォルトユーザー名を取得できませんでした。WSLが正しくセットアップされているか確認してください。" 'ERROR'
-        throw "WSL Default User acquisition failed."
-    }
+    $WSLDefaultUser = $WSLUserName
     Write-Log "WSL Default User: $WSLDefaultUser"
-
 
     # タスクスケジューラに登録
     $TaskName = "ImmichWSLAutoStart"
@@ -77,7 +73,7 @@ try {
                     -RunLevel Highest
 
     $TaskDescription = "Automatically starts WSL ($Distro) and Immich services at system startup using $StartImmichScriptName. Runs as $CurrentWindowsUserName."
-    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`" -DistroName `"$Distro`" -WSLUserName `"$WSLDefaultUser`" -AppPort $AppPort"
+    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`""
     $Action    = New-ScheduledTaskAction   -Execute $PwshPath -Argument $TaskArguments
     $Trigger   = New-ScheduledTaskTrigger  -AtStartup
     $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `

@@ -5,10 +5,9 @@
 
 $ErrorActionPreference = 'Stop'
 
-$distributionName = "Ubuntu"
-
-# Functionsファイルの読み込み
 . $PSScriptRoot\Functions.ps1
+
+$distributionName = $script:DistroName
 
 # Immich実行ディレクトリのパス
 $immichDir = Join-Path $PSScriptRoot 'instance'
