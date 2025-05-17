@@ -13,18 +13,6 @@ $ErrorActionPreference = 'Stop'
 
 . $PSScriptRoot\Functions.ps1
 
-function Write-Log {
-    param(
-        [string]$Message,
-        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
-    )
-    switch ($Level) {
-        'INFO' { Write-Host "[INFO] $Message" -ForegroundColor Cyan }
-        'WARN' { Write-Warning $Message }
-        'ERROR'{ Write-Error $Message }
-    }
-}
-
 trap {
     Write-Log "予期せぬエラーが発生しました: $_" 'ERROR'
     exit 1
@@ -36,8 +24,10 @@ if ((wsl -l -q) -notcontains $Distro) {
     wsl --install -d $Distro
 }
 
-$password = Read-PasswordTwice
-Write-Log "WSLのユーザー名とパスワードを設定します。 $password"
+if (-not (Test-WSLUserExists -UserName hoge)) {
+    $password = Read-PasswordTwice
+}
+
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
