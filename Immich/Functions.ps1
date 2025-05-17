@@ -57,18 +57,18 @@ function New-WSLUser {
         [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
     )
 
-    # ユーザー作成とパスワード設定をスクリプトで実行（bash -c quoting 問題を回避）
-    $bashScript = @"
-sudo useradd -m $UserName
-echo "`"$($UserName):$plainPassword`"" | sudo chpasswd
-"@
-    $bashScript | wsl -d $Distro -- bash -s
+    # ユーザー作成
+    $addUserCmd = "sudo useradd -m $UserName"
+    wsl -d $Distro -- bash -c "$addUserCmd"
+
+    # パスワード設定
+    $passwdCmd = "echo '$($UserName):$plainPassword' | sudo chpasswd"
+    wsl -d $Distro -- bash -c "$passwdCmd"
 
     # 作成結果の確認
     if (Test-WSLUserExists -UserName $UserName -Distro $Distro) {
         Write-Log -Message "ユーザー '$UserName' の作成に成功しました。" -Level "INFO"
     } else {
-        Write-Log -Message "ユーザー '$UserName' の作成に失敗しました。" -Level "ERROR"
-        exit 1
+        throw "ユーザー '$UserName' の作成に失敗しました。" -Level "ERROR"
     }
 }
