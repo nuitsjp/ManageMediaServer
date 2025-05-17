@@ -31,13 +31,11 @@ elseif (-not (Test-WSLUserExists -UserName ubuntu)) {
     $UserPassword = Read-PasswordTwice
 }
 
-# ディストロ導入直後にdos2unixをインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."
 wsl -d $Distro -- bash -c "sudo apt-get update && sudo apt-get install -y dos2unix"
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
-
 Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Distro $Distro -Arguments @($TimeZone, $UserPassword)
 
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
@@ -49,10 +47,8 @@ try {
     $StartImmichScriptPath = Join-Path -Path $PSScriptRoot -ChildPath $StartImmichScriptName
 
     if (-not (Test-Path $StartImmichScriptPath)) {
-        Write-Log "$StartImmichScriptPath が見つかりません。Install-Immich.ps1 と同じディレクトリに配置してください。" 'ERROR'
-        throw "$StartImmichScriptName not found."
+        throw "$StartImmichScriptPath が見つかりません。Install-Immich.ps1 と同じディレクトリに配置してください。"
     }
-    Write-Log "自動起動用スクリプトとして '$StartImmichScriptPath' を使用します。"
 
     # WSLのデフォルトユーザー名を取得
     $WSLDefaultUser = (wsl -d $Distro --exec whoami).Trim()
