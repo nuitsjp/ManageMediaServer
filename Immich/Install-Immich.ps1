@@ -89,51 +89,7 @@ try {
 }
 
 # --- 5- LAN公開 (port-proxyとFirewall構成) -------------------------------
-# このセクションは変更なし (元のスクリプトのセクション7に相当)
-Write-Log "port-proxy と Firewall を構成 …"
-
-$wslIp = ""
-try {
-    $wslIp = (wsl -d $Distro -- hostname -I).Split() |
-             Where-Object { $_ -match '\d+\.\d+\.\d+\.\d+' } |
-             Select-Object -First 1
-} catch {
-    Write-Log "WSL IPアドレスの取得に失敗しました。WSLが実行されているか確認してください。" 'WARN'
-}
-
-
-if ($wslIp) {
-    Write-Log "WSL IPアドレス: $wslIp"
-    $existingRule = Get-NetFirewallPortFilter -Protocol TCP | Where-Object { $_.LocalPort -eq $AppPort }
-    $portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+$wslIp\s+$AppPort"
-
-    # Portproxy設定
-    if ($portProxyExists) {
-        Write-Log "既存のportproxy設定が見つかりました。更新は行いません。"
-    } else {
-        # 他のIPへの既存設定があれば削除
-        $anyExistingProxy = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+"
-        if ($anyExistingProxy) {
-            Write-Log "ポート $AppPort に対する既存のportproxy設定を削除します..."
-            netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$AppPort proto=tcp | Out-Null
-        }
-        Write-Log "portproxy を追加: 0.0.0.0:$AppPort -> $($wslIp):$AppPort"
-        netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$wslIp connectport=$AppPort proto=tcp | Out-Null
-    }
-
-    # Firewall設定
-    $firewallRuleName = "Immich (WSL Port $AppPort)"
-    if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
-        Write-Log "Firewallルール '$firewallRuleName' を追加..."
-        New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow `
-                            -Protocol TCP -LocalPort $AppPort -Profile Any | Out-Null
-    } else {
-        Write-Log "既存のFirewallルール '$firewallRuleName' が見つかりました。"
-    }
-
-} else {
-    Write-Warning "WSL IPv4 が取得できず port-proxy および Firewall の構成をスキップしました。WSL内でImmichが起動しているか、手動で確認してください。"
-}
+Set-ImmichPortProxyAndFirewall -Distro $Distro -AppPort $AppPort
 
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
 Write-Log "Windows起動時のImmich自動起動を設定します..."
