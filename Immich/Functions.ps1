@@ -67,7 +67,7 @@ function Convert-WindowsPathToWSLPath {
     return $wslPath
 }
 
-function Set-ImmichPortProxyAndFirewall {
+function Set-ImmichPortProxy {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -75,8 +75,7 @@ function Set-ImmichPortProxyAndFirewall {
         [Parameter(Mandatory = $true)]
         [int]$AppPort
     )
-    # portproxyとFirewallの設定
-    Write-Log "ポートプロキシとファイアウォールの構成を開始します..." -Level "INFO"
+    Write-Log "ポートプロキシの構成を開始します..." -Level "INFO"
     $wslIp = ""
     try {
         $wslIp = (wsl -d $Distro -- hostname -I).Split() |
@@ -104,16 +103,24 @@ function Set-ImmichPortProxyAndFirewall {
             Write-Log "portproxyを追加: 0.0.0.0:$AppPort -> $($wslIp):$AppPort" -Level "INFO"
             netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$wslIp connectport=$AppPort proto=tcp | Out-Null
         }
-        $firewallRuleName = "Immich (WSL Port $AppPort)"
-        if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
-            Write-Log "ファイアウォールルール '$firewallRuleName' を追加します..." -Level "INFO"
-            New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow `
-                                -Protocol TCP -LocalPort $AppPort -Profile Any | Out-Null
-        } else {
-            Write-Log "既存のファイアウォールルール '$firewallRuleName' が見つかりました。" -Level "INFO"
-        }
     } else {
-        Write-Log "WSL IPv4 の取得に失敗したため、port-proxy およびファイアウォールの構成をスキップしました。WSL内でImmichが起動しているか手動でご確認ください。" -Level "WARN"
+        Write-Log "WSL IPv4 の取得に失敗したため、port-proxy の構成をスキップしました。WSL内でImmichが起動しているか手動でご確認ください。" -Level "WARN"
+    }
+}
+
+function Set-ImmichFirewallRule {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$AppPort
+    )
+    $firewallRuleName = "Immich (WSL Port $AppPort)"
+    if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
+        Write-Log "ファイアウォールルール '$firewallRuleName' を追加します..." -Level "INFO"
+        New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow `
+                            -Protocol TCP -LocalPort $AppPort -Profile Any | Out-Null
+    } else {
+        Write-Log "既存のファイアウォールルール '$firewallRuleName' が見つかりました。" -Level "INFO"
     }
 }
 

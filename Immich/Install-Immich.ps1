@@ -37,6 +37,10 @@ wsl -d $script:DistroName -- bash -c "sudo apt-get update && sudo apt-get instal
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
 Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword)
 
+# ポートプロキシとファイアウォール設定
+Set-ImmichPortProxy -Distro $script:DistroName -AppPort $AppPort
+Set-ImmichFirewallRule -AppPort $AppPort
+
 # タスクスケジューラー登録
 Write-Log "Windows起動時のImmich自動起動を設定します..."
 $StartImmichScriptPath = Join-Path -Path $PSScriptRoot -ChildPath "Start-Immich.ps1"
