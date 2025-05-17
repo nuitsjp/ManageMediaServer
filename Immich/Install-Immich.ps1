@@ -36,6 +36,8 @@ if ((wsl -l -q) -notcontains $Distro) {
     wsl --install -d $Distro
 }
 
+$password = Read-PasswordTwice
+Write-Log "WSLのユーザー名とパスワードを設定します。 $password"
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
