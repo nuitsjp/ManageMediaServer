@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 . $PSScriptRoot\Functions.ps1
 
 trap {
-    Write-Log "予期せぬエラーが発生しました: $_" 'ERROR'
+    Write-Error $Message
     exit 1
 }
 
@@ -24,9 +24,10 @@ if ((wsl -l -q) -notcontains $Distro) {
     wsl --install -d $Distro
 }
 
-if (-not (Test-WSLUserExists -UserName foo)) {
+if (-not (Test-WSLUserExists -UserName ubuntu)) {
+    Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' が存在しません。新規作成します。"
     $password = Read-PasswordTwice
-    New-WSLUser -UserName foo -Password $password
+    New-WSLUser -UserName ubuntu -Password $password
 }
 
 
