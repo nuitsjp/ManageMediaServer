@@ -200,3 +200,17 @@ function Register-ImmichStartupTask {
         -ErrorAction Stop | Out-Null
     Write-Log "タスク '$TaskName' をシステム起動時に '$StartImmichScriptPath' を実行するように登録/更新しました。" -Level "INFO"
 }
+
+function Test-ImmichComposeFileExists {
+    [CmdletBinding()]
+    param()
+    Write-Log "/opt/immich/docker-compose.yml の存在を確認します..."
+    wsl -d $script:DistroName -- test -f /opt/immich/docker-compose.yml
+    if ($LASTEXITCODE -eq 0) {
+        Write-Log "/opt/immich/docker-compose.yml が存在します。" -Level 'VERBOSE'
+        return $true
+    } else {
+        Write-Log "/opt/immich/docker-compose.yml が存在しません。" -Level 'VERBOSE'
+        return $false
+    }
+}

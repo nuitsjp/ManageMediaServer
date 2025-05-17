@@ -29,6 +29,9 @@ elseif (-not (Test-WSLUserExists)) {
     $UserPassword = Read-PasswordTwice
 }
 
+# パッケージ更新前に /opt/immich/docker-compose.yml の存在チェック
+Test-ImmichComposeFileExists
+
 # パッケージ更新とdos2unixインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."
 wsl -d $script:DistroName -- bash -c "sudo apt-get update && sudo apt-get install -y dos2unix"
