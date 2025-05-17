@@ -31,7 +31,9 @@ elseif (-not (Test-WSLUserExists -UserName ubuntu)) {
     $UserPassword = Read-PasswordTwice
 }
 
-
+# ディストロ導入直後にdos2unixをインストール
+Write-Log "パッケージの更新と、dos2unixのインストールをしています..."
+wsl -d $Distro -- bash -c "sudo apt-get update && sudo apt-get install -y dos2unix"
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
@@ -57,9 +59,7 @@ $DestinationScriptNameOnWSL = "setup_immich_for_distro.sh" # 汎用的な名前�
 $DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
 
 # WSL内でスクリプトをコピーし、権限付与、改行コード変換、実行
-# dos2unix がインストールされていない場合に備えてインストールコマンドも追加
 $WslCommands = @"
-sudo apt-get update && sudo apt-get install -y dos2unix && \
 cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
 dos2unix '$DestinationPathOnWSL' && \
 chmod +x '$DestinationPathOnWSL' && \
@@ -71,7 +71,6 @@ Write-Log $WslCommands # デバッグ用に表示
 
 wsl -d $Distro -- bash -c "$WslCommands"
 Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
-Write-Log "Dockerグループへの所属を完全に有効にするには、WSLセッション($Distro)を再起動するか、WSL内で 'newgrp docker' コマンドを実行してください。"
 
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
 Write-Log "Windows起動時のImmich自動起動を設定します..."
