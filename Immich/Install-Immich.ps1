@@ -2,11 +2,11 @@
 #requires -RunAsAdministrator
 
 # --- 1- パラメーター定義・ログ設定・例外処理 -----------------------------------
+[CmdletBinding()]
 Param(
     [string]$Distro   = 'Ubuntu',
     [int]   $AppPort  = 2283,
-    [string]$TimeZone = 'Asia/Tokyo',
-    [switch]$VerboseMode
+    [string]$TimeZone = 'Asia/Tokyo'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,26 +46,15 @@ if (-not (Test-Path $WslSetupScriptPathOnWindows)) {
 }
 
 # WindowsパスをWSLパスに変換 (コピー元として使用)
-try {
-    # パスを正しく変換する
-    # 引用符を付けずにパスを渡し、結果から余分な引用符を削除
-    $WslPathCmd = "wsl -d $Distro -- wslpath '$($WslSetupScriptPathOnWindows.Replace('\', '\\'))'"
-    $SourcePathOnWSL = (Invoke-Expression $WslPathCmd).Trim().Replace('"', '')
-    
-    # 変換結果を確認（トラブルシューティング用）
-    if ($VerboseMode) {
-        Write-Log "Windows Path: $WslSetupScriptPathOnWindows"
-        Write-Log "WSL Path: $SourcePathOnWSL"
-    }
-    
-    # パスが空でないか確認
-    if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
-        throw "WSLパスの変換結果が空です"
-    }
-} catch {
-    Write-Log "WindowsパスからWSLパスへの変換に失敗しました。WSLが正しくインストールされ、$Distro が利用可能か確認してください。" 'ERROR'
-    Write-Log "エラー詳細: $($_.Exception.Message)"
-    exit 1
+$SourcePathOnWSL = Convert-WindowsPathToWSLPath -WindowsPath $WslSetupScriptPathOnWindows -Distro $Distro
+
+# 変換結果を確認（トラブルシューティング用）
+Write-Log "Windows Path: $WslSetupScriptPathOnWindows" 'Verbose'
+Write-Log "WSL Path: $SourcePathOnWSL" 'Verbose'
+
+# パスが空でないか確認
+if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
+    throw "WSLパスの変換結果が空です"
 }
 
 # WSL内のコピー先パス (例: /tmp 配下)

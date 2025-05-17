@@ -1,12 +1,13 @@
 function Write-Log {
     param(
         [string]$Message,
-        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
+        [ValidateSet('INFO','WARN','ERROR','Verbose')][string]$Level = 'INFO'
     )
     switch ($Level) {
-        'INFO' { Write-Host "[INFO] $Message" -ForegroundColor Cyan }
-        'WARN' { Write-Warning $Message }
-        'ERROR'{ Write-Error $Message }
+        'INFO'    { Write-Host "[INFO] $Message" -ForegroundColor Cyan }
+        'WARN'    { Write-Warning $Message }
+        'ERROR'   { Write-Error $Message }
+        'Verbose' { Write-Verbose $Message }
     }
 }
 
@@ -42,4 +43,17 @@ function Test-WSLUserExists {
         Write-Log -Message "ユーザー '$UserName' は存在しません。" -Level "INFO"
         return $false
     }
+}
+
+function Convert-WindowsPathToWSLPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsPath,
+        [string]$Distro = "Ubuntu"
+    )
+    # パスのバックスラッシュをエスケープ
+    $escapedPath = $WindowsPath.Replace('\', '\\')
+    $cmd = "wsl -d $Distro -- wslpath '$escapedPath'"
+    $wslPath = (Invoke-Expression $cmd).Trim().Replace('"', '')
+    return $wslPath
 }
