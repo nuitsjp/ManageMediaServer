@@ -214,3 +214,23 @@ function Test-ImmichComposeFileExists {
         return $false
     }
 }
+
+function Read-ImmichExternalLibraryPath {
+    [CmdletBinding()]
+    param(
+        [string]$Prompt = "Immichの外部ライブラリーパスを入力してください: "
+    )
+    while ($true) {
+        $inputPath = Read-Host -Prompt $Prompt
+        if ([string]::IsNullOrWhiteSpace($inputPath)) {
+            Write-Log "パスが空です。再度入力してください。" -Level 'WARN'
+            continue
+        }
+        if (Test-Path $inputPath) {
+            Write-Log "パスが存在します: $inputPath" -Level 'INFO'
+            return $inputPath
+        } else {
+            Write-Log "指定されたパスが存在しません: $inputPath" -Level 'WARN'
+        }
+    }
+}

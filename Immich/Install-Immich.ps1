@@ -30,7 +30,10 @@ elseif (-not (Test-WSLUserExists)) {
 }
 
 # パッケージ更新前に /opt/immich/docker-compose.yml の存在チェック
-Test-ImmichComposeFileExists
+$ImmichExternalLibraryPath = ''
+if (-not (Test-ImmichComposeFileExists)) {
+    $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
+}
 
 # パッケージ更新とdos2unixインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."
@@ -38,7 +41,7 @@ wsl -d $script:DistroName -- bash -c "sudo apt-get update && sudo apt-get instal
 
 # WSL内セットアップスクリプト実行
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
-Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword)
+Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword, $ImmichExternalLibraryPath)
 
 # ポートプロキシとファイアウォール設定
 Set-ImmichPortProxy -Distro $script:DistroName -AppPort $AppPort
