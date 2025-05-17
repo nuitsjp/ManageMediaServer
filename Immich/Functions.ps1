@@ -78,19 +78,27 @@ function Set-ImmichPortProxyAndFirewall {
 
     if ($wslIp) {
         Write-Log "WSL IPアドレス: $wslIp"
-        $existingRule = Get-NetFirewallPortFilter -Protocol TCP | Where-Object { $_.LocalPort -eq $AppPort }
-        $portProxyExists = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+$wslIp\s+$AppPort"
-
-        # Portproxy設定
-        if ($portProxyExists) {
-            Write-Log "既存のportproxy設定が見つかりました。更新は行いません。"
-        } else {
-            # 他のIPへの既存設定があれば削除
-            $anyExistingProxy = netsh interface portproxy show v4tov4 | Select-String "0\.0\.0\.0\s+$AppPort\s+"
-            if ($anyExistingProxy) {
-                Write-Log "ポート $AppPort に対する既存のportproxy設定を削除します..."
+        
+        # まず、このポートに対する既存のportproxy設定を確認
+        $existingProxyInfo = netsh interface portproxy show v4tov4 | 
+            Select-String "0\.0\.0\.0\s+$AppPort\s+(\d+\.\d+\.\d+\.\d+)\s+$AppPort"
+        
+        $needUpdate = $true
+        if ($existingProxyInfo) {
+            # 既存設定から現在のターゲットIPを取得
+            $existingIP = $existingProxyInfo.Matches.Groups[1].Value
+            if ($existingIP -eq $wslIp) {
+                Write-Log "既存のportproxy設定が現在のWSL IPアドレスと一致しています。更新不要。"
+                $needUpdate = $false
+            } else {
+                Write-Log "ポート $AppPort に対する既存のportproxy設定($existingIP)が現在のWSL IPアドレス($wslIp)と異なります。更新します。"
+                # 異なるIPへの既存設定を削除
                 netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$AppPort proto=tcp | Out-Null
             }
+        }
+        
+        # 設定が必要な場合は追加
+        if ($needUpdate) {
             Write-Log "portproxy を追加: 0.0.0.0:$AppPort -> $($wslIp):$AppPort"
             netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$AppPort connectaddress=$wslIp connectport=$AppPort proto=tcp | Out-Null
         }

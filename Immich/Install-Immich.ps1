@@ -88,9 +88,6 @@ try {
     exit 1
 }
 
-# --- 5- LAN公開 (port-proxyとFirewall構成) -------------------------------
-Set-ImmichPortProxyAndFirewall -Distro $Distro -AppPort $AppPort
-
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
 Write-Log "Windows起動時のImmich自動起動を設定します..."
 
@@ -132,7 +129,7 @@ try {
                     -RunLevel Highest
 
     $TaskDescription = "Automatically starts WSL ($Distro) and Immich services at system startup using $StartImmichScriptName. Runs as $CurrentWindowsUserName."
-    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`" -DistroName `"$Distro`" -WSLUserName `"$WSLDefaultUser`""
+    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`" -DistroName `"$Distro`" -WSLUserName `"$WSLDefaultUser`" -AppPort $AppPort"
     $Action    = New-ScheduledTaskAction   -Execute $PwshPath -Argument $TaskArguments
     $Trigger   = New-ScheduledTaskTrigger  -AtStartup
     $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
