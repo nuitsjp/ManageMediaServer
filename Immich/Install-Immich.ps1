@@ -32,30 +32,8 @@ trap {
 if ((wsl -l -q) -notcontains $Distro) {
     Write-Log "$Distro ディストロを導入 …"
     wsl --install -d $Distro
-
-    # --- 4- WSL対話セッション (ユーザーによる確認・初回パスワード設定用) -----------
-    # このセクションはユーザーの希望により維持
-    Write-Host @"
-
-=========== WSL対話セッション ===========
-Immichの基本的なセットアップは完了しました。
-WSLの対話セッションを開始します。
-
-WSLディストリビューションの初回起動時、またはユーザーが未設定の場合、
-デフォルトユーザーのパスワード設定などが求められることがあります。
-
-Dockerグループの変更を有効にするために `exit` してから再度ログインするか、
-`newgrp docker` を実行すると `docker` コマンドが `sudo` なしで利用可能になります。
-（上記セットアップスクリプト内で `sudo docker compose` を使用しているため、Immichは既に起動試行されています）
-
-セットアップの確認や追加設定が完了したら、'exit'と入力してWSLを終了してください。
-======================================
-
-"@ -ForegroundColor Cyan
-
-    Write-Log "WSL対話セッションを開始します..."
-    wsl -d $Distro # ここでユーザーが初回パスワード設定などを行う想定
 }
+
 
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
@@ -106,7 +84,7 @@ sudo apt-get update && sudo apt-get install -y dos2unix && \
 cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
 dos2unix '$DestinationPathOnWSL' && \
 chmod +x '$DestinationPathOnWSL' && \
-'$DestinationPathOnWSL' '$TimeZone' '$ImmichDirPath'
+sudo '$DestinationPathOnWSL' '$TimeZone'
 "@ -replace "`r","" # PowerShellヒアストリングのCRLFをLFに（念のため）
 
 Write-Log "WSL内で以下のコマンド群を実行します:"
