@@ -126,3 +126,40 @@ function Set-ImmichPortProxyAndFirewall {
         Write-Warning "WSL IPv4 が取得できず port-proxy および Firewall の構成をスキップしました。WSL内でImmichが起動しているか、手動で確認してください。"
     }
 }
+
+function Invoke-WSLCopyAndRunScript {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptFileName,
+        [Parameter(Mandatory = $true)]
+        [string]$Distro,
+        [string[]]$Arguments = @()
+    )
+    # スクリプトのWindowsパス
+    $ScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $ScriptFileName
+    if (-not (Test-Path $ScriptPathOnWindows)) {
+        throw "$ScriptPathOnWindows が見つかりません。PowerShellスクリプトと同じディレクトリに配置してください。"
+    }
+    # WindowsパスをWSLパスに変換
+    $SourcePathOnWSL = Convert-WindowsPathToWSLPath -WindowsPath $ScriptPathOnWindows -Distro $Distro
+    if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
+        throw "WSLパスの変換結果が空です"
+    }
+    # コピー先パス
+    $DestinationScriptNameOnWSL = "setup_immich_for_distro.sh"
+    $DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
+    # 引数をクォートして連結
+    $ArgString = ($Arguments | ForEach-Object { "'$_'" }) -join " "
+    # コマンド生成
+    $WslCommands = @"
+cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
+dos2unix '$DestinationPathOnWSL' && \
+chmod +x '$DestinationPathOnWSL' && \
+sudo '$DestinationPathOnWSL' $ArgString
+"@ -replace "`r",""
+    Write-Log "WSL内で以下のコマンド群を実行します:"
+    Write-Log $WslCommands
+    wsl -d $Distro -- bash -c "$WslCommands"
+    Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
+}

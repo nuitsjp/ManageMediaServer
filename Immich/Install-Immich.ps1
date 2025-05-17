@@ -38,39 +38,7 @@ wsl -d $Distro -- bash -c "sudo apt-get update && sudo apt-get install -y dos2un
 # --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
 
-# setup_immich_on_wsl.sh がこのスクリプトと同じディレクトリにあると仮定
-$WslSetupScriptName = "setup_immich_on_wsl.sh"
-$WslSetupScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $WslSetupScriptName
-
-if (-not (Test-Path $WslSetupScriptPathOnWindows)) {
-    throw "$WslSetupScriptPathOnWindows が見つかりません。PowerShellスクリプトと同じディレクトリに配置してください。"
-}
-
-# WindowsパスをWSLパスに変換 (コピー元として使用)
-$SourcePathOnWSL = Convert-WindowsPathToWSLPath -WindowsPath $WslSetupScriptPathOnWindows -Distro $Distro
-
-# パスが空でないか確認
-if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
-    throw "WSLパスの変換結果が空です"
-}
-
-# WSL内のコピー先パス (例: /tmp 配下)
-$DestinationScriptNameOnWSL = "setup_immich_for_distro.sh" # 汎用的な名前に変更も可
-$DestinationPathOnWSL = "/tmp/$DestinationScriptNameOnWSL"
-
-# WSL内でスクリプトをコピーし、権限付与、改行コード変換、実行
-$WslCommands = @"
-cp '$SourcePathOnWSL' '$DestinationPathOnWSL' && \
-dos2unix '$DestinationPathOnWSL' && \
-chmod +x '$DestinationPathOnWSL' && \
-sudo '$DestinationPathOnWSL' '$TimeZone' '$UserPassword'
-"@ -replace "`r","" # PowerShellヒアストリングのCRLFをLFに（念のため）
-
-Write-Log "WSL内で以下のコマンド群を実行します:"
-Write-Log $WslCommands # デバッグ用に表示
-
-wsl -d $Distro -- bash -c "$WslCommands"
-Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
+Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Distro $Distro -Arguments @($TimeZone, $UserPassword)
 
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
 Write-Log "Windows起動時のImmich自動起動を設定します..."
