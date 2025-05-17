@@ -26,11 +26,9 @@ if ((wsl -l -q) -notcontains $Distro) {
     Write-Log "$Distro ディストロを導入 …"
     wsl --install -d $Distro
 }
-else {
-    if (-not (Test-WSLUserExists -UserName ubuntu)) {
-        Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' が存在しません。新規作成します。"
-        $UserPassword = Read-PasswordTwice
-    }
+elseif (-not (Test-WSLUserExists -UserName ubuntu)) {
+    Write-Log "WSLディストリビューション '$Distro' にユーザー 'ubuntu' が存在しません。新規作成します。"
+    $UserPassword = Read-PasswordTwice
 }
 
 
