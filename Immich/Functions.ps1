@@ -160,3 +160,57 @@ sudo '$DestinationPathOnWSL' $ArgString
     wsl -d $script:DistroName -- bash -c "$WslCommands"
     Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
 }
+
+function Register-ImmichStartupTask {
+    param (
+        [string]$StartImmichScriptPath,
+        [string]$TaskName = "ImmichWSLAutoStart"
+    )
+    # Start-Immich.ps1 が物理的に存在することを前提とする
+    if (-not (Test-Path $StartImmichScriptPath)) {
+        throw "$StartImmichScriptPath が見つかりません。Install-Immich.ps1 と同じディレクトリに配置してください。"
+    }
+
+    $CurrentWindowsUserIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $CurrentWindowsUserName = $CurrentWindowsUserIdentity.Name
+    Write-Log "タスクの実行ユーザーとして現在のWindowsユーザー '$CurrentWindowsUserName' を使用します。"
+
+    # S4U ログオンタイプを使ってパスワード不要で登録
+    $Principal = New-ScheduledTaskPrincipal `
+                    -UserId $CurrentWindowsUserName `
+                    -LogonType S4U `
+                    -RunLevel Highest
+
+    $PwshPath = (Get-Command pwsh).Source
+    if ([string]::IsNullOrEmpty($PwshPath)) {
+        throw "pwsh.exe が見つかりませんでした。"
+    }
+
+    $TaskDescription = "Automatically starts WSL ($script:DistroName) and Immich services at system startup using Start-Immich.ps1. Runs as $CurrentWindowsUserName."
+    $TaskArguments = "-ExecutionPolicy Bypass -NoProfile -File `"$StartImmichScriptPath`""
+    $Action    = New-ScheduledTaskAction   -Execute $PwshPath -Argument $TaskArguments
+    $Trigger   = New-ScheduledTaskTrigger  -AtStartup
+    $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+                                                -DontStopIfGoingOnBatteries `
+                                                -StartWhenAvailable `
+                                                -RunOnlyIfNetworkAvailable:$false `
+                                                -ExecutionTimeLimit ([TimeSpan]::Zero) `
+                                                -RestartCount 3 `
+                                                -RestartInterval (New-TimeSpan -Minutes 5) `
+                                                -Compatibility Win8
+
+    Write-Log "既存のタスク '$TaskName' があれば削除します..."
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+    Write-Log "タスク '$TaskName' をユーザー '$CurrentWindowsUserName' で登録試行 (S4U ログオンタイプを使用します)..."
+    Register-ScheduledTask `
+        -TaskName    $TaskName `
+        -Action      $Action `
+        -Trigger     $Trigger `
+        -Principal   $Principal `
+        -Settings    $Settings `
+        -Description $TaskDescription `
+        -ErrorAction Stop | Out-Null
+
+    Write-Log "タスク '$TaskName' をシステム起動時に '$StartImmichScriptPath' を実行するように登録/更新しました。"
+}
