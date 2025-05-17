@@ -12,6 +12,7 @@ function Write-Log {
 }
 
 function Read-PasswordTwice {
+    [CmdletBinding()]
     param (
         [string]$Prompt = "パスワードを入力してください "
     )
@@ -29,6 +30,7 @@ function Read-PasswordTwice {
 }
 
 function Test-WSLUserExists {
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
         [string]$UserName,
@@ -46,6 +48,7 @@ function Test-WSLUserExists {
 }
 
 function Convert-WindowsPathToWSLPath {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$WindowsPath,
@@ -55,10 +58,16 @@ function Convert-WindowsPathToWSLPath {
     $escapedPath = $WindowsPath.Replace('\', '\\')
     $cmd = "wsl -d $Distro -- wslpath '$escapedPath'"
     $wslPath = (Invoke-Expression $cmd).Trim().Replace('"', '')
+    
+    # 変換結果を確認（トラブルシューティング用）
+    Write-Log "Windows Path: $WindowsPath" 'Verbose'
+    Write-Log "WSL Path: $wslPath" 'Verbose'
+    
     return $wslPath
 }
 
 function Set-ImmichPortProxyAndFirewall {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Distro,

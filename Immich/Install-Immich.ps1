@@ -41,16 +41,11 @@ $WslSetupScriptName = "setup_immich_on_wsl.sh"
 $WslSetupScriptPathOnWindows = Join-Path -Path $PSScriptRoot -ChildPath $WslSetupScriptName
 
 if (-not (Test-Path $WslSetupScriptPathOnWindows)) {
-    Write-Log "$WslSetupScriptPathOnWindows が見つかりません。PowerShellスクリプトと同じディレクトリに配置してください。" 'ERROR'
-    exit 1
+    throw "$WslSetupScriptPathOnWindows が見つかりません。PowerShellスクリプトと同じディレクトリに配置してください。"
 }
 
 # WindowsパスをWSLパスに変換 (コピー元として使用)
 $SourcePathOnWSL = Convert-WindowsPathToWSLPath -WindowsPath $WslSetupScriptPathOnWindows -Distro $Distro
-
-# 変換結果を確認（トラブルシューティング用）
-Write-Log "Windows Path: $WslSetupScriptPathOnWindows" 'Verbose'
-Write-Log "WSL Path: $SourcePathOnWSL" 'Verbose'
 
 # パスが空でないか確認
 if ([string]::IsNullOrEmpty($SourcePathOnWSL)) {
@@ -74,19 +69,9 @@ sudo '$DestinationPathOnWSL' '$TimeZone' '$UserPassword'
 Write-Log "WSL内で以下のコマンド群を実行します:"
 Write-Log $WslCommands # デバッグ用に表示
 
-try {
-    wsl -d $Distro -- bash -c "$WslCommands"
-    Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
-    Write-Log "Dockerグループへの所属を完全に有効にするには、WSLセッション($Distro)を再起動するか、WSL内で 'newgrp docker' コマンドを実行してください。"
-} catch {
-    Write-Log "WSL内セットアップスクリプトの実行中にエラーが発生しました。" 'ERROR'
-    Write-Log "エラー詳細: $($_.Exception.Message)"
-    # WSLコマンドの標準エラー出力を表示したい場合
-    if ($_.Exception.ErrorRecord.TargetObject -is [System.Management.Automation.ErrorRecord]) {
-        Write-Log "WSLからのエラー出力: $($_.Exception.ErrorRecord.TargetObject.Status)"
-    }
-    exit 1
-}
+wsl -d $Distro -- bash -c "$WslCommands"
+Write-Log "WSL内セットアップスクリプトの実行が完了しました。"
+Write-Log "Dockerグループへの所属を完全に有効にするには、WSLセッション($Distro)を再起動するか、WSL内で 'newgrp docker' コマンドを実行してください。"
 
 # --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
 Write-Log "Windows起動時のImmich自動起動を設定します..."
