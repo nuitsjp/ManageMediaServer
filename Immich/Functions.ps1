@@ -17,9 +17,10 @@ function Read-PasswordTwice {
     while ($true) {
         $password1 = Read-Host -AsSecureString -Prompt $Prompt
         $password2 = Read-Host -AsSecureString -Prompt "もう一度パスワードを入力してください"
-        if (([Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password1))) -eq
-            ([Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password2)))) {
-            return $password1
+        $plain1 = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password1))
+        $plain2 = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password2))
+        if ($plain1 -eq $plain2) {
+            return $plain1
         } else {
             Write-Host "パスワードが一致しません。再度入力してください。" -ForegroundColor Yellow
         }
