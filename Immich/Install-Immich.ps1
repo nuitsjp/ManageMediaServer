@@ -1,7 +1,6 @@
 #!/usr/bin/env pwsh
 #requires -RunAsAdministrator
 
-# --- 1- パラメーター定義・ログ設定・例外処理 -----------------------------------
 [CmdletBinding()]
 Param(
     [int]   $AppPort  = 2283,
@@ -17,7 +16,7 @@ trap {
     exit 1
 }
 
-# --- 2- WSLディストロの導入 ------------------------------------------------
+# WSLディストロ導入とユーザー作成
 $UserPassword = ''
 if ((wsl -l -q) -notcontains $script:DistroName) {
     Write-Log "WSLディストリビューション '$script:DistroName' にユーザー '$script:WSLUserName' を作成します。"
@@ -30,20 +29,17 @@ elseif (-not (Test-WSLUserExists)) {
     $UserPassword = Read-PasswordTwice
 }
 
+# パッケージ更新とdos2unixインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."
 wsl -d $script:DistroName -- bash -c "sudo apt-get update && sudo apt-get install -y dos2unix"
 
-# --- 3- WSL内セットアップスクリプトの実行 ------------------------------------
+# WSL内セットアップスクリプト実行
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
 Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword)
 
-# --- 7- Windows起動時のImmich自動起動設定 (Task Scheduler) ---
+# タスクスケジューラー登録
 Write-Log "Windows起動時のImmich自動起動を設定します..."
-
-$StartImmichScriptName = "Start-Immich.ps1"
-$StartImmichScriptPath = Join-Path -Path $PSScriptRoot -ChildPath $StartImmichScriptName
-
+$StartImmichScriptPath = Join-Path -Path $PSScriptRoot -ChildPath "Start-Immich.ps1"
 Register-ImmichStartupTask -StartImmichScriptPath $StartImmichScriptPath
 
-# --- (既存のスクリプトの最終的な完了メッセージやexitの前にこのセクションを配置) ---
 Write-Log "Install-Immich.ps1 の処理が完了しました。"
