@@ -42,3 +42,33 @@ function Test-WSLUserExists {
         return $false
     }
 }
+
+function New-WSLUser {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$UserName,
+        [System.Security.SecureString]$Password,
+        [string]$Distro = "Ubuntu"
+    )
+    Write-Log -Message "WSLディストリビューション '$Distro' にユーザー '$UserName' を作成します。" -Level "INFO"
+
+    # SecureStringを平文に変換
+    $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
+    )
+
+    # ユーザー作成とパスワード設定をスクリプトで実行（bash -c quoting 問題を回避）
+    $bashScript = @"
+sudo useradd -m $UserName
+echo "`"$($UserName):$plainPassword`"" | sudo chpasswd
+"@
+    $bashScript | wsl -d $Distro -- bash -s
+
+    # 作成結果の確認
+    if (Test-WSLUserExists -UserName $UserName -Distro $Distro) {
+        Write-Log -Message "ユーザー '$UserName' の作成に成功しました。" -Level "INFO"
+    } else {
+        Write-Log -Message "ユーザー '$UserName' の作成に失敗しました。" -Level "ERROR"
+        exit 1
+    }
+}

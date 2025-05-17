@@ -24,8 +24,9 @@ if ((wsl -l -q) -notcontains $Distro) {
     wsl --install -d $Distro
 }
 
-if (-not (Test-WSLUserExists -UserName hoge)) {
+if (-not (Test-WSLUserExists -UserName foo)) {
     $password = Read-PasswordTwice
+    New-WSLUser -UserName foo -Password $password
 }
 
 
