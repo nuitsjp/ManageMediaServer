@@ -22,7 +22,7 @@ $ImmichExternalLibraryPath = ''
 if ((wsl -l -q) -notcontains $script:DistroName) {
     Write-Log "WSLディストリビューション '$script:DistroName' にユーザー '$script:WSLUserName' を作成します。"
     $UserPassword = Read-PasswordTwice
-    # $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
+    $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
     Write-Log "$script:DistroName ディストロを導入 …"
     wsl --install -d $script:DistroName
 }
