@@ -35,6 +35,7 @@ elseif (-not (Test-WSLUserExists)) {
         $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
     }
 }
+$ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
 
 # パッケージ更新とdos2unixインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."

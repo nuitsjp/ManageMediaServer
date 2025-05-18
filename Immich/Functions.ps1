@@ -71,14 +71,12 @@ function Set-ImmichPortProxy {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Distro,
-        [Parameter(Mandatory = $true)]
         [int]$AppPort
     )
     Write-Log "ポートプロキシの構成を開始します..." -Level "INFO"
     $wslIp = ""
     try {
-        $wslIp = (wsl -d $Distro -- hostname -I).Split() |
+        $wslIp = (wsl -d $script:DistroName -- hostname -I).Split() |
                  Where-Object { $_ -match '\d+\.\d+\.\d+\.\d+' } |
                  Select-Object -First 1
     } catch {
@@ -232,7 +230,10 @@ function Read-ImmichExternalLibraryPath {
         }
         if (Test-Path $inputPath) {
             Write-Log "パスが存在します: $inputPath" -Level 'INFO'
-            return $inputPath
+            # WSLパスに変換して返却
+            $wslPath = Convert-WindowsPathToWSLPath -WindowsPath $inputPath
+            Write-Log "変換後のWSLパス: $wslPath" -Level 'INFO'
+            return $wslPath
         } else {
             Write-Log "指定されたパスが存在しません: $inputPath" -Level 'WARN'
         }

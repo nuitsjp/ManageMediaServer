@@ -28,7 +28,8 @@ try {
 
     # WSLのIPアドレスが変わることを考慮してport-proxy設定を更新
     Write-Log "Updating port-proxy settings with current WSL IP address..."
-    Set-ImmichPortProxyAndFirewall -Distro $DistroName -AppPort $AppPort
+    Set-ImmichPortProxy -AppPort $AppPort
+    Set-ImmichFirewallRule -AppPort $AppPort
 
     Start-Sleep -Seconds 5
 
