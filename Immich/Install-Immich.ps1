@@ -18,22 +18,23 @@ trap {
 
 # WSLディストロ導入とユーザー作成
 $UserPassword = ''
+$ImmichExternalLibraryPath = ''
 if ((wsl -l -q) -notcontains $script:DistroName) {
     Write-Log "WSLディストリビューション '$script:DistroName' にユーザー '$script:WSLUserName' を作成します。"
     $UserPassword = Read-PasswordTwice
+    # $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
     Write-Log "$script:DistroName ディストロを導入 …"
     wsl --install -d $script:DistroName
 }
 elseif (-not (Test-WSLUserExists)) {
     Write-Log "WSLディストリビューション '$script:DistroName' にユーザー '$script:WSLUserName' が存在しません。新規作成します。"
     $UserPassword = Read-PasswordTwice
-}
 
-# パッケージ更新前に /opt/immich/docker-compose.yml の存在チェックして、外部ライブラリパスを取得
-$ImmichExternalLibraryPath = ''
-if (-not (Test-ImmichComposeFileExists)) {
+    # パッケージ更新前に /opt/immich/docker-compose.yml の存在チェックして、外部ライブラリパスを取得
+    if (-not (Test-ImmichComposeFileExists)) {
+        $ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
+    }
 }
-$ImmichExternalLibraryPath = Read-ImmichExternalLibraryPath
 
 # パッケージ更新とdos2unixインストール
 Write-Log "パッケージの更新と、dos2unixのインストールをしています..."

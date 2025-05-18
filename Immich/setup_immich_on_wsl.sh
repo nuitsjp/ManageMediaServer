@@ -28,6 +28,9 @@ error_exit() {
 if [ -z "$TIME_ZONE" ]; then
     error_exit "TimeZone パラメータが設定されていません。"
 fi
+if [ ! -f "/opt/immich/docker-compose.yml" ] && [ -z "$IMMICH_EXTERNAL_LIBRARY_PATH" ]; then
+    error_exit "/opt/immich/docker-compose.yml が存在せず、かつ IMMICH_EXTERNAL_LIBRARY_PATH パラメータが未指定です。セットアップを中断します。"
+fi
 
 log "パッケージリストを更新中..."
 sudo apt update
