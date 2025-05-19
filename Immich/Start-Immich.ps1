@@ -16,31 +16,30 @@ function Write-Log {
     Write-Host "[Start-Immich] $Message"
 }
 
-Write-Log "Beginning Immich startup process..."
-
-Write-Log "Script started with Distro: '$DistroName', ImmichDir: '$script:ImmichDirWSL', User: '$WSLUserName'."
+Write-Log "Immichの起動プロセスを開始します..."
 
 try {
-    Write-Log "Ensuring WSL distro '$DistroName' is running and initiating keep-alive..."
+    Write-Log "WSLディストロ '$DistroName' が実行中であることを確認し、キープアライブを開始します..."
     wsl -d $DistroName --exec dbus-launch true
-    Write-Log "WSL distro '$DistroName' keep-alive initiated."
-
-    # WSLのIPアドレスが変わることを考慮してport-proxy設定を更新
-    Write-Log "Updating port-proxy settings with current WSL IP address..."
+    Write-Log "WSLディストロ '$DistroName' のキープアライブを開始しました。"    # WSLのIPアドレスが変わることを考慮してport-proxy設定を更新
+    Write-Log "現在のWSL IPアドレスでポートプロキシ設定を更新しています..."
     Set-ImmichPortProxy -AppPort $AppPort
-    Set-ImmichFirewallRule -AppPort $AppPort    Start-Sleep -Seconds 5
-
-    Write-Log "Attempting to start Immich services in '$script:ImmichDirWSL' as user '$WSLUserName'..."
+    Set-ImmichFirewallRule -AppPort $AppPort
+    
+    # サービス起動前に少し待機
+    Start-Sleep -Seconds 5
+    
+    Write-Log "'$script:ImmichDirWSL' でImmichサービスを '$WSLUserName' ユーザーとして起動しています..."
     $WslCommand = "cd '$script:ImmichDirWSL' && docker compose pull && docker compose up -d"
     
-    Write-Log "Executing in WSL: wsl -d $DistroName -u $WSLUserName -- bash -c $WslCommand"
+    Write-Log "WSLで実行: wsl -d $DistroName -u $WSLUserName -- bash -c $WslCommand"
     wsl -d $DistroName -u $WSLUserName -- bash -c "$WslCommand"
-    Write-Log "Immich services startup command issued for '$DistroName'."
+    Write-Log "'$DistroName' でImmichサービスの起動コマンドを実行しました。"
 
 } catch {
-    Write-Log "An error occurred during Immich startup: $($_.Exception.Message) | StackTrace: $($_.ScriptStackTrace)" -Level ERROR
+    Write-Log "Immichの起動中にエラーが発生しました: $($_.Exception.Message) | スタックトレース: $($_.ScriptStackTrace)" -Level ERROR
     exit 1
 }
 
-Write-Log "Start-Immich.ps1 finished successfully."
+Write-Log "Start-Immich.ps1 が正常に完了しました。"
 exit 0
