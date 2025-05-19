@@ -7,17 +7,9 @@ $WSLUserName = $script:WSLUserName
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Log {
-    param(
-        [string]$Message,
-        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
-    )
-    Write-Host "[Stop-Immich] $Message"
-}
-
 # 例外処理をtrapで実装
 trap {
-    Write-Log "Immich停止中にエラーが発生しました: $($_.Exception.Message) | スタックトレース: $($_.ScriptStackTrace)" -Level ERROR
+    Write-Log "Immich停止中にエラーが発生しました: $($_.Exception.Message) | スタックトレース: $($_.ScriptStackTrace)" -Level "ERROR"
     exit 1
 }
 
@@ -29,8 +21,7 @@ try {
     # WSLディストリビューションが実行中かどうかを確認（エラー処理を無効化して実行）
     $ErrorActionPreference = 'SilentlyContinue'
     $wslStatus = wsl -d $DistroName --exec echo "running" 2>$null
-    $ErrorActionPreference = 'Stop'
-    
+    $ErrorActionPreference = 'Stop'    
     if ($wslStatus -eq "running") {
         $wslRunning = $true
         Write-Log "WSLディストリビューション '$DistroName' は実行中です。"

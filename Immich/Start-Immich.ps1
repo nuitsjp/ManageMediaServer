@@ -8,14 +8,6 @@ $AppPort = 2283
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Log {
-    param(
-        [string]$Message,
-        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
-    )
-    Write-Host "[Start-Immich] $Message"
-}
-
 Write-Log "Immichの起動プロセスを開始します..."
 
 try {
@@ -27,7 +19,7 @@ try {
     Set-ImmichFirewallRule -AppPort $AppPort
     
     # サービス起動前に少し待機
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 5    
     
     Write-Log "'$script:ImmichDirWSL' でImmichサービスを '$WSLUserName' ユーザーとして起動しています..."
     $WslCommand = "cd '$script:ImmichDirWSL' && docker compose pull && docker compose up -d"
@@ -37,7 +29,7 @@ try {
     Write-Log "'$DistroName' でImmichサービスの起動コマンドを実行しました。"
 
 } catch {
-    Write-Log "Immichの起動中にエラーが発生しました: $($_.Exception.Message) | スタックトレース: $($_.ScriptStackTrace)" -Level ERROR
+    Write-Log "Immichの起動中にエラーが発生しました: $($_.Exception.Message) | スタックトレース: $($_.ScriptStackTrace)" -Level "ERROR"
     exit 1
 }
 
