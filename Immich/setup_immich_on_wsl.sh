@@ -82,12 +82,10 @@ else
     echo "TZ=$TIME_ZONE" >> .env
 fi
 
-# --- ここから追加 ---
 if [ -n "$IMMICH_EXTERNAL_LIBRARY_PATH" ]; then
     log "docker-compose.yml に外部ライブラリマウントを追加..."
     sed -i "/- \/etc\/localtime:\/etc\/localtime:ro/a\      - ${IMMICH_EXTERNAL_LIBRARY_PATH}:/usr/src/app/external-library" docker-compose.yml
 fi
-# --- ここまで追加 ---
 
 log "ImmichのDockerイメージをプル中 (数分かかることがあります)..."
 sudo docker compose pull
