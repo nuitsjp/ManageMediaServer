@@ -1,4 +1,4 @@
-$script:DistroName = "Ubuntu"
+$script:DistroName = "Ubuntu-24.04"
 $script:WSLUserName = "ubuntu"
 
 function Write-Log {
@@ -220,7 +220,7 @@ function Test-ImmichComposeFileExists {
 function Read-ImmichExternalLibraryPath {
     [CmdletBinding()]
     param(
-        [string]$Prompt = "Immichの外部ライブラリーパスを入力してください: "
+        [string]$Prompt = "Immichの外部ライブラリーパスを入力してください"
     )
     while ($true) {
         $inputPath = Read-Host -Prompt $Prompt
