@@ -52,4 +52,11 @@ Write-Log "Windows起動時のImmich自動起動を設定します..."
 $StartImmichScriptPath = Join-Path -Path $PSScriptRoot -ChildPath "Start-Immich.ps1"
 Register-ImmichStartupTask -StartImmichScriptPath $StartImmichScriptPath
 
+# インストール後にImmichを自動的に起動
+Write-Log "Immichを起動しています..."
+& "$StartImmichScriptPath"
+if ($LASTEXITCODE -ne 0) {
+    throw "Immichの起動に失敗しました。終了コード: $LASTEXITCODE"
+}
+
 Write-Log "Install-Immich.ps1 の処理が完了しました。"
