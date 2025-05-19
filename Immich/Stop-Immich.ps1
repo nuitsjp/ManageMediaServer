@@ -1,43 +1,59 @@
-#!/usr/bin/env pwsh
-# 管理者権限を推奨
+# Stop-Immich.ps1 - Dynamically generated based on Start-Immich.ps1
 
-# Windows 11のWSL上で動作しているImmichを停止するスクリプト
+. "$PSScriptRoot\Modules\Functions.ps1"
+
+$DistroName = $script:DistroName
+$WSLUserName = $script:WSLUserName
 
 $ErrorActionPreference = 'Stop'
 
-. $PSScriptRoot\Modules\Functions.ps1
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
+    )
+    Write-Host "[Stop-Immich] $Message"
+}
 
-$distributionName = $script:DistroName
-
-# Immich実行ディレクトリのパス
-$immichDir = Join-Path $PSScriptRoot 'instance'
-if (-not (Test-Path $immichDir)) {
-    Write-Error "Immich実行ディレクトリが見つかりません: $immichDir"
+# 例外処理をtrapで実装
+trap {
+    Write-Log "Immich停止中にエラーが発生しました: $($_.Exception.Message) | スタックトレース: $($_.ScriptStackTrace)" -Level ERROR
     exit 1
 }
 
-# WSL内のパスを取得
-$wslImmichDir = Convert-WindowsPathToWSLPath -WindowsPath $immichDir
+Write-Log "Immich停止処理を開始します..."
 
-# Docker Composeのバージョンを確認（新形式か旧形式か）
-& wsl -d $distributionName -- docker compose version >$null 2>&1
-$useNewCompose = $LASTEXITCODE -eq 0
-$composeCommand = if ($useNewCompose) { "docker compose" } else { "docker-compose" }
-
-# Immichサービスの状態確認
-Write-Host "Immichサービスの状態を確認しています..."
-$containersRunning = & wsl -d $distributionName -- bash -c "cd '$wslImmichDir' && $composeCommand ps -q | wc -l"
-if ([int]$containersRunning -eq 0) {
-    Write-Host "Immichサービスは既に停止しています。"
-    exit 0
+Write-Log "WSLディストリビューション '$DistroName' の実行状態を確認しています..."
+$wslRunning = $false
+try {
+    # WSLディストリビューションが実行中かどうかを確認（エラー処理を無効化して実行）
+    $ErrorActionPreference = 'SilentlyContinue'
+    $wslStatus = wsl -d $DistroName --exec echo "running" 2>$null
+    $ErrorActionPreference = 'Stop'
+    
+    if ($wslStatus -eq "running") {
+        $wslRunning = $true
+        Write-Log "WSLディストリビューション '$DistroName' は実行中です。"
+    } else {
+        Write-Log "WSLディストリビューション '$DistroName' は実行されていません。処理は不要です。"
+    }
+} catch {
+    Write-Log "WSLディストリビューション '$DistroName' は実行されていないか、利用できません。処理は不要です。"
 }
 
-# Immichサービスの停止
-Write-Host "Immichサービスを停止しています..."
-& wsl -d $distributionName -- bash -c "cd '$wslImmichDir' && $composeCommand down"
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Immichサービスの停止に失敗しました。"
-    exit 1
+if ($wslRunning) {
+    Write-Log "'$script:ImmichDirWSL'でImmichサービスを停止しています（ユーザー: '$WSLUserName'）..."
+    $WslCommand = "cd '$script:ImmichDirWSL' && docker compose down"
+
+    Write-Log "WSLで実行: wsl -d $DistroName -u $WSLUserName -- bash -c $WslCommand"
+    wsl -d $DistroName -u $WSLUserName -- bash -c "$WslCommand"
+    Write-Log "Immichサービス停止コマンドを '$DistroName' に送信しました。"
+    
+    # WSLディストリビューションを停止
+    Write-Log "WSLディストリビューション '$DistroName' を停止しています..."
+    wsl --terminate $DistroName
+    Write-Log "WSLディストリビューション '$DistroName' を停止しました。"
 }
 
-Write-Host "Immichサービスは正常に停止しました。"
+Write-Log "Stop-Immich.ps1 が正常に完了しました。"
+exit 0

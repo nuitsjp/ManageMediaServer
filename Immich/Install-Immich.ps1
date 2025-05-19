@@ -41,7 +41,7 @@ wsl -d $script:DistroName -- bash -c "sudo apt-get update && sudo apt-get instal
 
 # WSL内セットアップスクリプト実行
 Write-Log "WSL内セットアップスクリプトの準備と実行..."
-Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword, $ImmichExternalLibraryPath)
+Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword, $ImmichExternalLibraryPath, $script:ImmichDirWSL)
 
 # ポートプロキシとファイアウォール設定
 Set-ImmichPortProxy -AppPort $AppPort

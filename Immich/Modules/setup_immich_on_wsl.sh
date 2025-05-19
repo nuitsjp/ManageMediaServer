@@ -9,6 +9,12 @@ set -e
 TIME_ZONE="$1"
 USER_PASSWORD="$2"
 IMMICH_EXTERNAL_LIBRARY_PATH="$3"
+IMMICH_DIR_PATH="$4"
+
+# IMMICH_DIR_PATHが指定されていなければデフォルト値を使用
+if [ -z "$IMMICH_DIR_PATH" ]; then
+    IMMICH_DIR_PATH="/opt/immich"
+fi
 
 # --- ヘルパー関数 ---
 log() {
@@ -28,8 +34,8 @@ error_exit() {
 if [ -z "$TIME_ZONE" ]; then
     error_exit "TimeZone パラメータが設定されていません。"
 fi
-if [ ! -f "/opt/immich/docker-compose.yml" ] && [ -z "$IMMICH_EXTERNAL_LIBRARY_PATH" ]; then
-    error_exit "/opt/immich/docker-compose.yml が存在せず、かつ IMMICH_EXTERNAL_LIBRARY_PATH パラメータが未指定です。セットアップを中断します。"
+if [ ! -f "$IMMICH_DIR_PATH/docker-compose.yml" ] && [ -z "$IMMICH_EXTERNAL_LIBRARY_PATH" ]; then
+    error_exit "$IMMICH_DIR_PATH/docker-compose.yml が存在せず、かつ IMMICH_EXTERNAL_LIBRARY_PATH パラメータが未指定です。セットアップを中断します。"
 fi
 
 log "パッケージリストを更新中..."
@@ -61,11 +67,10 @@ log "Docker CE, CLI, containerd.io, Docker Compose plugin をインストール.
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 log "Immich用のディレクトリとファイルを設定..."
-IMMICH_DIR="/opt/immich"
-mkdir -p "$IMMICH_DIR"
+mkdir -p "$IMMICH_DIR_PATH"
 # cd コマンドの成功確認
-if ! cd "$IMMICH_DIR"; then
-    error_exit "$IMMICH_DIR へのディレクトリ変更に失敗しました。パスと権限を確認してください。"
+if ! cd "$IMMICH_DIR_PATH"; then
+    error_exit "$IMMICH_DIR_PATH へのディレクトリ変更に失敗しました。パスと権限を確認してください。"
 fi
 
 log "現在のディレクトリ: $(pwd)"

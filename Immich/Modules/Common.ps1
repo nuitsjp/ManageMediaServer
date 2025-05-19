@@ -1,5 +1,6 @@
 $script:DistroName = "Ubuntu-24.04"
 $script:WSLUserName = "ubuntu"
+$script:ImmichDirWSL = "/opt/immich"
 
 function Write-Log {
     param(

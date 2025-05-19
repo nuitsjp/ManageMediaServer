@@ -18,8 +18,7 @@ function Write-Log {
 
 Write-Log "Beginning Immich startup process..."
 
-$AbsoluteImmichDirWSL = '/opt/immich'
-Write-Log "Script started with Distro: '$DistroName', ImmichDir: '$AbsoluteImmichDirWSL', User: '$WSLUserName'."
+Write-Log "Script started with Distro: '$DistroName', ImmichDir: '$script:ImmichDirWSL', User: '$WSLUserName'."
 
 try {
     Write-Log "Ensuring WSL distro '$DistroName' is running and initiating keep-alive..."
@@ -29,12 +28,10 @@ try {
     # WSLのIPアドレスが変わることを考慮してport-proxy設定を更新
     Write-Log "Updating port-proxy settings with current WSL IP address..."
     Set-ImmichPortProxy -AppPort $AppPort
-    Set-ImmichFirewallRule -AppPort $AppPort
+    Set-ImmichFirewallRule -AppPort $AppPort    Start-Sleep -Seconds 5
 
-    Start-Sleep -Seconds 5
-
-    Write-Log "Attempting to start Immich services in '$AbsoluteImmichDirWSL' as user '$WSLUserName'..."
-    $WslCommand = "cd '$AbsoluteImmichDirWSL' && docker compose pull && docker compose up -d"
+    Write-Log "Attempting to start Immich services in '$script:ImmichDirWSL' as user '$WSLUserName'..."
+    $WslCommand = "cd '$script:ImmichDirWSL' && docker compose pull && docker compose up -d"
     
     Write-Log "Executing in WSL: wsl -d $DistroName -u $WSLUserName -- bash -c $WslCommand"
     wsl -d $DistroName -u $WSLUserName -- bash -c "$WslCommand"
