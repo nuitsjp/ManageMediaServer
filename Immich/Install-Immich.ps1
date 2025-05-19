@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 . $PSScriptRoot\Functions.ps1
 
 trap {
-    Write-Error $Message
+    Write-Error $_.Exception.ToString()
     exit 1
 }
 
@@ -44,7 +44,7 @@ Write-Log "WSL内セットアップスクリプトの準備と実行..."
 Invoke-WSLCopyAndRunScript -ScriptFileName "setup_immich_on_wsl.sh" -Arguments @($TimeZone, $UserPassword, $ImmichExternalLibraryPath)
 
 # ポートプロキシとファイアウォール設定
-Set-ImmichPortProxy -Distro $script:DistroName -AppPort $AppPort
+Set-ImmichPortProxy -AppPort $AppPort
 Set-ImmichFirewallRule -AppPort $AppPort
 
 # タスクスケジューラー登録
