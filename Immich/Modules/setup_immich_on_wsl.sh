@@ -7,8 +7,14 @@ set -e
 # --- パラメータ ---
 # PowerShellスクリプトから引数として渡される
 TIME_ZONE="$1"
-IMMICH_DIR_PARAM="$2"
-# DISTRO_CODENAME は lsb_release -cs で取得するため、ここでは不要になりました。
+USER_PASSWORD="$2"
+IMMICH_EXTERNAL_LIBRARY_PATH="$3"
+IMMICH_DIR_PATH="$4"
+
+# IMMICH_DIR_PATHが指定されていなければデフォルト値を使用
+if [ -z "$IMMICH_DIR_PATH" ]; then
+    IMMICH_DIR_PATH="/opt/immich"
+fi
 
 # --- ヘルパー関数 ---
 log() {
@@ -28,17 +34,8 @@ error_exit() {
 if [ -z "$TIME_ZONE" ]; then
     error_exit "TimeZone パラメータが設定されていません。"
 fi
-if [ -z "$IMMICH_DIR_PARAM" ]; then
-    error_exit "ImmichDir パラメータが設定されていません。"
-fi
-
-# IMMICH_DIR_PARAM の解決 (~/ を展開)
-# スクリプト実行ユーザーのホームディレクトリ基準で展開
-if [[ "$IMMICH_DIR_PARAM" == "~/"* ]]; then
-    # $HOME はスクリプト実行ユーザーのホームディレクトリ
-    IMMICH_DIR="$HOME/${IMMICH_DIR_PARAM#\~/}"
-else
-    IMMICH_DIR="$IMMICH_DIR_PARAM"
+if [ ! -f "$IMMICH_DIR_PATH/docker-compose.yml" ] && [ -z "$IMMICH_EXTERNAL_LIBRARY_PATH" ]; then
+    error_exit "$IMMICH_DIR_PATH/docker-compose.yml が存在せず、かつ IMMICH_EXTERNAL_LIBRARY_PATH パラメータが未指定です。セットアップを中断します。"
 fi
 
 log "パッケージリストを更新中..."
@@ -69,16 +66,11 @@ log "Docker CE, CLI, containerd.io, Docker Compose plugin をインストール.
 # 今回は docker-compose-plugin を使用
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-LINUX_USER=$(whoami)
-log "現在のユーザー ($LINUX_USER) を docker グループに追加..."
-sudo usermod -aG docker "$LINUX_USER"
-# グループ変更の即時反映に関する注意はPowerShell側で表示
-
 log "Immich用のディレクトリとファイルを設定..."
-mkdir -p "$IMMICH_DIR"
+mkdir -p "$IMMICH_DIR_PATH"
 # cd コマンドの成功確認
-if ! cd "$IMMICH_DIR"; then
-    error_exit "$IMMICH_DIR へのディレクトリ変更に失敗しました。パスと権限を確認してください。"
+if ! cd "$IMMICH_DIR_PATH"; then
+    error_exit "$IMMICH_DIR_PATH へのディレクトリ変更に失敗しました。パスと権限を確認してください。"
 fi
 
 log "現在のディレクトリ: $(pwd)"
@@ -95,16 +87,42 @@ else
     echo "TZ=$TIME_ZONE" >> .env
 fi
 
+if [ -n "$IMMICH_EXTERNAL_LIBRARY_PATH" ]; then
+    log "docker-compose.yml に外部ライブラリマウントを追加..."
+    sed -i "/- \/etc\/localtime:\/etc\/localtime:ro/a\      - ${IMMICH_EXTERNAL_LIBRARY_PATH}:/usr/src/app/external-library" docker-compose.yml
+fi
+
 log "ImmichのDockerイメージをプル中 (数分かかることがあります)..."
 sudo docker compose pull
 
 log "Immichコンテナを起動中..."
 sudo docker compose up -d
 
-log "ログインメッセージを抑制するために .hushlogin を作成..."
-touch "$HOME/.hushlogin"
 
-log "Immich用WSLセットアップスクリプトが正常に完了しました。"
-log "Dockerグループへの所属を有効にするには、WSLセッションを再起動するか、現在のセッションで 'newgrp docker' を実行する必要があるかもしれません。"
+# USER_PASSWORDが指定されていたらubuntuユーザーを作成しパスワードを設定
+if [ -n "$USER_PASSWORD" ]; then
+    log "ubuntuユーザーを作成または既存ユーザーのパスワードを設定..."
+    if id "ubuntu" &>/dev/null; then
+        echo "ubuntu:$USER_PASSWORD" | sudo chpasswd
+        log "既存のubuntuユーザーのパスワードを更新しました。"
+    else
+        sudo useradd -m -s /bin/bash ubuntu
+        echo "ubuntu:$USER_PASSWORD" | sudo chpasswd
+
+        log "ログインメッセージを抑制するために .hushlogin を作成..."
+        touch "/home/ubuntu/.hushlogin"
+
+        log "ubuntuのデフォルトシェルを bash に変更"
+        sudo chsh -s /bin/bash ubuntu
+
+        log "ubuntu を docker グループに追加"
+        sudo usermod -aG docker ubuntu
+
+        log "ubuntu を root グループに設定"
+        sudo usermod -aG sudo ubuntu
+
+        log "新規ubuntuユーザーを作成しパスワードを設定しました。"
+    fi
+fi
 
 exit 0
