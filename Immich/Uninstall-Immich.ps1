@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 #requires -RunAsAdministrator
 
-. $PSScriptRoot\Functions.ps1
+. $PSScriptRoot\Modules\Functions.ps1
 
 # Immich のアンインストール用スクリプト
 # 1. ポートプロキシ設定の削除

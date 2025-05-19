@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-. $PSScriptRoot\Functions.ps1
+. $PSScriptRoot\Modules\Functions.ps1
 
 $distributionName = $script:DistroName
 

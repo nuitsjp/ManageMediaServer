@@ -9,7 +9,7 @@ Param(
 
 $ErrorActionPreference = 'Stop'
 
-. $PSScriptRoot\Functions.ps1
+. $PSScriptRoot\Modules\Functions.ps1
 
 trap {
     Write-Error $_.Exception.ToString()
