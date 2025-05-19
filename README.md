@@ -22,15 +22,17 @@
 flowchart TD
     A[スマートフォン] -- 画像・動画アップロード --> B[クラウドストレージ]
     B -- rcloneで画像コピー --> C[Immich外部ライブラリ]
-    B -- rcloneで動画コピー --> D[バックアップストレージ]
+    B -- rcloneで動画移動 --> D[バックアップストレージ]
+    F[Jellyfin用動画] -- 手動コピー --> G[Jellyfinライブラリ]
+    G -- 自動バックアップ --> D
     D -- コピー --> C
     C -- Immichで公開 --> E[家庭内ユーザー]
-    F[Jellyfin用動画] -- 直接配置 --> G[Jellyfinライブラリ]
     G -- Jellyfinで公開 --> E
-    H[Windows 11サーバー]
-    H -. ホスト .-> C
-    H -. ホスト .-> D
-    H -. ホスト .-> G
+    subgraph H[Windows 11サーバー]
+        C
+        D
+        G
+    end
     I[Cloudflare Tunnel/Access] -- 外部アクセス制御 --> H
     J[ホワイトリスト外部ユーザー] -- 認証後アクセス --> I
 ```
@@ -52,5 +54,21 @@ flowchart TD
         D-note -.-> D
     end
 ```
+
+---
+
+## これまでの作業の概略と今後の課題
+
+### 概略
+- 本リポジトリでは、Windows 11 Home環境における家庭用メディアサーバーの構築・運用を目的とし、Immich・Jellyfin・rclone・Cloudflare Tunnel/Accessなどの構成要素を整理しました。
+- システム全体のデータフローや物理構成をMermaid図で可視化し、運用方針や各ストレージの役割も明確化しました。
+- Jellyfin用動画の運用フローや、動画のクラウドストレージからの移動・バックアップの流れも最新の運用方針に合わせて反映しています。
+
+### 今後の課題
+- Immich・Jellyfin・rclone・Cloudflare Tunnel/Accessのセットアップ手順や自動化スクリプトの整備・ドキュメント化
+- バックアップ運用や障害時のリカバリ手順の明文化
+- セキュリティ（Cloudflare Accessの詳細設定やユーザー管理）の強化
+- 運用監視・ヘルスチェックの自動化と通知仕組みの拡充
+- システム全体のテスト・検証および運用マニュアルの充実
 
 ---
