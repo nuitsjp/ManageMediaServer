@@ -1,0 +1,12 @@
+# Cloudflare Tunnel Configuration
+
+tunnel: your-tunnel-name
+credentials-file: /path/to/your/credentials/file.json
+
+ingress:
+  - hostname: your-domain.com
+    service: http://localhost:8080
+  - service: http_status:404
+
+# Optional: Add additional settings as needed
+# For example, you can specify the origin request policy or other settings here.

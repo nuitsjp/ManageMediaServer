@@ -1,10 +1,10 @@
 # 概要
 
-本リポジトリは、家庭用のメディアサーバーをWindows 11 Home環境で構築・運用するためのスクリプトや設定ファイルを管理します。家庭内のミニPCなどにWindows 11をホストとして導入し、スマートフォンで撮影した画像や動画を効率的かつ安全に管理・公開することを目的とします。
+本リポジトリは、家庭用のメディアサーバーをLinux環境で構築・運用するためのスクリプトや設定ファイルを管理します。家庭内のミニPCなどにUbuntu Serverをホストとして導入し、スマートフォンで撮影した画像や動画を効率的かつ安全に管理・公開することを目的とします。
 
 ## システム概要
 
-本システムでは、家族の画像や動画を安全かつ効率的に管理・公開するためのメディアサーバーを構築します。Windows 11 Homeをベースとし、Docker上でImmichとJellyfinを実行して、スマートフォンで撮影したメディアを一元管理します。
+本システムでは、家族の画像や動画を安全かつ効率的に管理・公開するためのメディアサーバーを構築します。Ubuntu Serverをベースとし、Docker上でImmichとJellyfinを実行して、スマートフォンで撮影したメディアを一元管理します。
 
 ### 視聴方法
 
@@ -94,4 +94,31 @@ flowchart TD
     end
 ```
 
----
+## 開発環境
+
+本プロジェクトの開発はWindows上のWSL (Windows Subsystem for Linux)を使用しています。これにより、Windows上でコーディングしながらLinuxと同等の環境でテスト・実行できるようになっています。
+
+### 開発環境構成
+
+- Windows 11 Pro - メイン開発OS
+- WSL2 - Ubuntu 22.04 LTS - Linux互換レイヤー
+- Docker Desktop for Windows (WSL2統合)
+- Visual Studio Code + Remote WSL拡張機能
+
+## Linux サーバーの物理構成
+
+```mermaid
+flowchart TD
+    subgraph LinuxServer[Ubuntu Server]
+        Root@{ shape: lin-cyl, label: "/" }
+        Home@{ shape: lin-cyl, label: "/home" }
+        Data@{ shape: lin-cyl, label: "/data" }
+
+        Root-note@{ shape: braces, label: "OS・アプリケーション" }
+        Home-note@{ shape: braces, label: "ユーザーフォルダ" }
+        Data-note@{ shape: braces, label: "Immich外部ライブラリ\nJellyfinライブラリ" }
+
+        Root-note -.-> Root
+        Home-note -.-> Home
+        Data-note -.-> Data
+    end
