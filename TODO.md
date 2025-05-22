@@ -7,16 +7,19 @@
   - [x] Windows機能の有効化（`dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart`）
   - [x] 仮想マシンプラットフォームの有効化（`dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart`）
   - [x] WSL2をデフォルトとして設定（`wsl --set-default-version 2`）
-- [ ] Ubuntu 22.04 LTS導入
-  - [ ] Microsoft Storeからインストール、または`wsl --install -d Ubuntu-22.04`
-  - [ ] 初期ユーザー設定、sudo権限確認
-- [ ] VS Codeセットアップ
-  - [ ] Remote WSL拡張機能のインストール
-  - [ ] Docker拡張機能設定
+  - [x] Install-Wsl.ps1スクリプトの完成（自動化済み）
+- [x] Ubuntu 24.04 LTS導入
+  - [x] `wsl --install -d Ubuntu-24.04`による自動インストール
+  - [x] 初期ユーザー設定、sudo権限確認
+- [ ] VS Codeセットアップ **← 次のステップ**
+  - [ ] Remote WSL拡張機能のインストール（`code --install-extension ms-vscode-remote.remote-wsl`）
+  - [ ] Docker拡張機能設定（`code --install-extension ms-azuretools.vscode-docker`）
   - [ ] Git連携設定
+  - [ ] WSL内でVS Codeを起動確認（`code .`）
 - [ ] Gitリポジトリ構成
   - [ ] WSL内でのリポジトリクローン（`git clone https://github.com/username/ManageMediaServer.git`）
   - [ ] Git認証情報の設定（SSH鍵またはPATの生成と設定）
+  - [ ] WSL内でのGit設定（`git config --global user.name "Your Name"`）
 
 ### 1.2 Linuxサーバー用コンテナ構成
 - [ ] Immich構成
