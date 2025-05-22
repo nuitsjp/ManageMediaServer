@@ -7,13 +7,9 @@
   - [x] Windows機能の有効化（`dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart`）
   - [x] 仮想マシンプラットフォームの有効化（`dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart`）
   - [x] WSL2をデフォルトとして設定（`wsl --set-default-version 2`）
-- [x] Ubuntu 22.04 LTS導入
-  - [x] Microsoft Storeからインストール、または`wsl --install -d Ubuntu-22.04`
-  - [x] 初期ユーザー設定、sudo権限確認
-- [ ] Docker Desktop for Windows設定
-  - [ ] WSL2バックエンド選択
-  - [ ] Ubuntuディストリビューションとの統合設定
-  - [ ] リソース割り当て（メモリ、CPU、ストレージ）最適化
+- [ ] Ubuntu 22.04 LTS導入
+  - [ ] Microsoft Storeからインストール、または`wsl --install -d Ubuntu-22.04`
+  - [ ] 初期ユーザー設定、sudo権限確認
 - [ ] VS Codeセットアップ
   - [ ] Remote WSL拡張機能のインストール
   - [ ] Docker拡張機能設定
