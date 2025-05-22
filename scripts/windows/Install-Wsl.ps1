@@ -61,7 +61,7 @@ function Enable-WindowsFeature {
     
     $feature = Get-WindowsOptionalFeature -Online -FeatureName $FeatureName
     if ($feature.State -eq "Enabled") {
-        
+
         Write-Log "$DisplayName は既に有効化されています" "SUCCESS"
         return $false
     }
@@ -189,25 +189,8 @@ if (-not $SkipUbuntuInstall) {
             Write-Log "$UBUNTU_DISPLAY_NAME のインストールに失敗しました。手動で実行してください: wsl --install -d $UBUNTU_DISTRO_NAME" "WARN"
         }
     }
-    
-    # Ubuntu設定確認
-    if (Test-UbuntuInstalled -and Test-UbuntuRunning) {
-        Write-Log "Ubuntu設定推奨事項:" "INFO"
-        Write-Log "  wsl -d $UBUNTU_DISTRO_NAME" "INFO"
-        Write-Log "  sudo apt update && sudo apt upgrade -y" "INFO"
-    }
 } else {
     Write-Log "$UBUNTU_DISPLAY_NAME のインストールをスキップしました" "INFO"
 }
 
 Write-Log "WSL2のセットアップが完了しました" "SUCCESS"
-
-# 次のステップ案内
-if (-not $SkipUbuntuInstall -and (Test-UbuntuInstalled)) {
-    Write-Log "次のステップ: VS Codeのセットアップ" "INFO"
-    Write-Log "  - Remote WSL拡張機能のインストール" "INFO"
-    Write-Log "  - Docker拡張機能の設定" "INFO"
-} else {
-    Write-Log "次のステップ: $UBUNTU_DISPLAY_NAME のインストール" "INFO"
-    Write-Log "コマンド: wsl --install -d $UBUNTU_DISTRO_NAME" "INFO"
-}

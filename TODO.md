@@ -11,15 +11,16 @@
 - [x] Ubuntu 24.04 LTS導入
   - [x] `wsl --install -d Ubuntu-24.04`による自動インストール
   - [x] 初期ユーザー設定、sudo権限確認
-- [ ] VS Codeセットアップ **← 次のステップ**
-  - [ ] Remote WSL拡張機能のインストール（`code --install-extension ms-vscode-remote.remote-wsl`）
-  - [ ] Docker拡張機能設定（`code --install-extension ms-azuretools.vscode-docker`）
-  - [ ] Git連携設定
-  - [ ] WSL内でVS Codeを起動確認（`code .`）
-- [ ] Gitリポジトリ構成
-  - [ ] WSL内でのリポジトリクローン（`git clone https://github.com/username/ManageMediaServer.git`）
-  - [ ] Git認証情報の設定（SSH鍵またはPATの生成と設定）
-  - [ ] WSL内でのGit設定（`git config --global user.name "Your Name"`）
+- [x] VS Codeセットアップ
+  - [x] Remote WSL拡張機能のインストール（`code --install-extension ms-vscode-remote.remote-wsl`）
+  - [x] Docker拡張機能設定（`code --install-extension ms-azuretools.vscode-docker`）
+  - [x] Git連携設定
+  - [x] WSL内でVS Codeを起動確認（`code .`）
+  - [x] Setup-VSCode.ps1スクリプトの完成（自動化済み）
+- [x] Gitリポジトリ構成
+  - [x] Windows側の既存リポジトリを利用（WSLから /mnt/d/ManageMediaServer でアクセス）
+  - [x] WSL内でのGit設定確認（Windows側の設定を継承）
+  - [x] WSLからVS Codeでプロジェクト編集確認（`cd /mnt/d/ManageMediaServer && code .`）
 
 ### 1.2 Linuxサーバー用コンテナ構成
 - [ ] Immich構成
