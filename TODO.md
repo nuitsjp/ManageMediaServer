@@ -22,37 +22,30 @@
   - [x] WSL内でのGit設定確認（Windows側の設定を継承）
   - [x] WSLからVS Codeでプロジェクト編集確認（`cd /mnt/d/ManageMediaServer && code .`）
 
-### 1.2 Linuxサーバー用コンテナ構成
+### 1.2 Linuxサーバー用コンテナ構成 **← 次のステップ**
+- [ ] WSL環境でのDocker設定（Docker Desktop不使用）
+  - [ ] WSL内に直接Dockerをインストール（`sudo apt install docker.io docker-compose-plugin`）
+  - [ ] Dockerサービスの起動と自動起動設定（`sudo systemctl start docker && sudo systemctl enable docker`）
+  - [ ] ユーザーをDockerグループに追加（`sudo usermod -aG docker $USER`）
+  - [ ] インストールスクリプト作成（`scripts/install/install-docker.sh`）
 - [ ] Immich構成
-  ```yaml
-  # docker-compose.immich.yml サンプル
-  version: '3'
-  services:
-    immich-server:
-      image: ghcr.io/immich-app/immich-server:release
-      volumes:
-        - /path/to/photos:/photos
-        - immich-data:/data
-  ```
+  - [ ] Docker Compose設定ファイルの作成（`config/docker/immich/docker-compose.yml`）
+  - [ ] 環境変数ファイルの設定（`config/docker/immich/environment.yaml`）
+  - [ ] インストールスクリプトの作成（`scripts/install/install-immich.sh`）
+  - [ ] WSL環境でのテスト起動
 - [ ] Jellyfin構成
-  ```yaml
-  # docker-compose.jellyfin.yml サンプル
-  version: '3'
-  services:
-    jellyfin:
-      image: jellyfin/jellyfin:latest
-      volumes:
-        - /path/to/media:/media
-        - jellyfin-config:/config
-  ```
+  - [ ] Docker Compose設定ファイルの作成（`config/docker/jellyfin/docker-compose.yml`）
+  - [ ] 環境変数ファイルの設定（`config/docker/jellyfin/environment.yaml`）
+  - [ ] インストールスクリプトの作成（`scripts/install/install-jellyfin.sh`）
+  - [ ] WSL環境でのテスト起動
 - [ ] Cloudflare Tunnel設定
-  - [ ] cloudflared導入（`curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb`）
-  - [ ] トンネル作成と設定（`cloudflared tunnel create media-server`）
-  - [ ] DNS CNAME設定
+  - [ ] cloudflaredインストールスクリプト作成（`scripts/install/install-cloudflared.sh`）
+  - [ ] トンネル作成と設定の自動化
+  - [ ] 設定ファイルテンプレートの作成（`config/cloudflare/tunnel_config.yaml`）
 - [ ] rclone設定
-  - [ ] rcloneインストール（`curl https://rclone.org/install.sh | sudo bash`）
-  - [ ] リモートストレージ設定（`rclone config`）
-  - [ ] 定期バックアップcronジョブ（`0 2 * * * rclone sync /path/to/data remote:backup --log-file=/var/log/rclone.log`）
+  - [ ] rcloneインストールスクリプト作成（`scripts/install/install-rclone.sh`）
+  - [ ] 設定ファイルテンプレートの作成（`config/rclone/rclone.conf`）
+  - [ ] 同期スクリプトの作成（`scripts/sync/sync-cloud-storage.sh`）
 
 ### 1.3 ディレクトリ構造設計
 - [ ] マウントポイント設計
@@ -86,7 +79,7 @@
   apt update && apt upgrade -y
   
   # 必要なツールのインストール
-  apt install -y docker.io docker-compose git curl
+  apt install -y docker.io docker-compose-plugin git curl
   
   # ユーザーをdockerグループに追加
   usermod -aG docker $USER
@@ -95,8 +88,8 @@
   mkdir -p /mnt/mediaserver/{photos,videos,music,backups,config/{immich,jellyfin,rclone}}
   ```
 - [ ] アプリケーションデプロイスクリプト
-  - [ ] Docker Composeによる一括デプロイ
-  - [ ] 設定ファイルの自動生成と配置
+  - [ ] Docker Composeによる一括デプロイ（`scripts/deploy/deploy-all.sh`）
+  - [ ] 設定ファイルの自動生成と配置（`scripts/deploy/generate-configs.sh`）
 - [ ] 監視スクリプト
   ```bash
   #!/bin/bash
@@ -109,7 +102,7 @@
   df -h /mnt/mediaserver | awk 'NR>1 {print $5 " used on " $6}'
   
   # 必要に応じて再起動
-  docker-compose -f /path/to/docker-compose.yml restart
+  docker compose -f /path/to/docker-compose.yml restart
   ```
 
 ### 1.5 テスト計画
