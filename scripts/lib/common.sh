@@ -76,22 +76,34 @@ wait_for_service() {
 
 # ディレクトリ作成
 ensure_directories() {
+    # config.shで定義されたデフォルト値を使用
+    local media_dir="${MEDIA_DIR:-/mnt/mediaserver}"
+    local photos_dir="${PHOTOS_DIR:-$media_dir/photos}"
+    local videos_dir="${VIDEOS_DIR:-$media_dir/videos}"
+    local music_dir="${MUSIC_DIR:-$media_dir/music}"
+    local backups_dir="${BACKUPS_DIR:-$media_dir/backups}"
+    local config_dir="${CONFIG_DIR:-$media_dir/config}"
+    local immich_config_dir="${IMMICH_CONFIG_DIR:-$config_dir/immich}"
+    local jellyfin_config_dir="${JELLYFIN_CONFIG_DIR:-$config_dir/jellyfin}"
+    local rclone_config_dir="${RCLONE_CONFIG_DIR:-$config_dir/rclone}"
+    
     local dirs=(
-        "/mnt/mediaserver"
-        "/mnt/mediaserver/photos"
-        "/mnt/mediaserver/videos"
-        "/mnt/mediaserver/music"
-        "/mnt/mediaserver/backups"
-        "/mnt/mediaserver/config"
-        "/mnt/mediaserver/config/immich"
-        "/mnt/mediaserver/config/jellyfin"
-        "/mnt/mediaserver/config/rclone"
+        "$media_dir"
+        "$photos_dir"
+        "$videos_dir"
+        "$music_dir"
+        "$backups_dir"
+        "$config_dir"
+        "$immich_config_dir"
+        "$jellyfin_config_dir"
+        "$rclone_config_dir"
         "$PROJECT_ROOT/logs"
+        "$PROJECT_ROOT/config"
     )
     
     for dir in "${dirs[@]}"; do
         if [[ ! -d "$dir" ]]; then
-            log_info "Creating directory: $dir"
+            log_info "ディレクトリを作成: $dir"
             sudo mkdir -p "$dir"
             sudo chown "$USER:$USER" "$dir" 2>/dev/null || true
         fi
