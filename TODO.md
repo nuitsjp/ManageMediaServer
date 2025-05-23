@@ -23,11 +23,11 @@
   - [x] WSLからVS Codeでプロジェクト編集確認（`cd /mnt/d/ManageMediaServer && code .`）
 
 ### 1.2 Linuxサーバー用コンテナ構成 **← 次のステップ**
-- [ ] WSL環境でのDocker設定（Docker Desktop不使用）
-  - [ ] WSL内に直接Dockerをインストール（`sudo apt install docker.io docker-compose-plugin`）
-  - [ ] Dockerサービスの起動と自動起動設定（`sudo systemctl start docker && sudo systemctl enable docker`）
-  - [ ] ユーザーをDockerグループに追加（`sudo usermod -aG docker $USER`）
-  - [ ] インストールスクリプト作成（`scripts/install/install-docker.sh`）
+- [x] WSL環境でのDocker設定（Docker Desktop不使用）
+  - [x] WSL内に直接Dockerをインストール（`sudo apt install docker.io docker-compose-plugin`）
+  - [x] Dockerサービスの起動と自動起動設定（`sudo systemctl start docker && sudo systemctl enable docker`）
+  - [x] ユーザーをDockerグループに追加（`sudo usermod -aG docker $USER`）
+  - [x] インストールスクリプト作成（`scripts/install/install-docker.sh`）
 - [ ] Immich構成
   - [ ] Docker Compose設定ファイルの作成（`config/docker/immich/docker-compose.yml`）
   - [ ] 環境変数ファイルの設定（`config/docker/immich/environment.yaml`）
