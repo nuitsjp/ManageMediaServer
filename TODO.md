@@ -28,11 +28,11 @@
   - [x] Dockerサービスの起動と自動起動設定（`sudo systemctl start docker && sudo systemctl enable docker`）
   - [x] ユーザーをDockerグループに追加（`sudo usermod -aG docker $USER`）
   - [x] インストールスクリプト作成（`scripts/install/install-docker.sh`）
-- [ ] Immich構成
-  - [ ] Docker Compose設定ファイルの作成（`config/docker/immich/docker-compose.yml`）
-  - [ ] 環境変数ファイルの設定（`config/docker/immich/environment.yaml`）
-  - [ ] インストールスクリプトの作成（`scripts/install/install-immich.sh`）
-  - [ ] WSL環境でのテスト起動
+- [x] Immich構成
+  - [x] Docker Compose設定ファイルの作成（`config/docker/immich/docker-compose.yml`）
+  - [x] 環境変数ファイルの設定（`config/docker/immich/environment.yaml`）
+  - [x] インストールスクリプトの作成（`scripts/install/install-immich.sh`)
+  - [ ] WSL環境でのテスト起動 **← 次のステップ**
 - [ ] Jellyfin構成
   - [ ] Docker Compose設定ファイルの作成（`config/docker/jellyfin/docker-compose.yml`）
   - [ ] 環境変数ファイルの設定（`config/docker/jellyfin/environment.yaml`）
