@@ -135,23 +135,37 @@ run_docker_uninstall() {
 
 run_full_uninstall() {
     local force=$1
+    local parent_confirmed=false
     
     if [[ "$force" != "true" ]]; then
         log_warning "全てのサービスとデータを削除しようとしています。"
         if ! confirm "本当に続行しますか？" "n"; then
             log_info "アンインストールを中止しました。"
             exit 0
+        else
+            # 親側で確認されたので子スクリプトでは確認しない
+            parent_confirmed=true
         fi
     fi
     
     log_info "完全アンインストールを開始します（依存関係の逆順）..."
     
     # 依存関係を考慮した逆順でアンインストール
-    run_rclone_uninstall "$force"
-    run_cloudflare_uninstall "$force"
-    run_jellyfin_uninstall "$force"
-    run_immich_uninstall "$force"
-    run_docker_uninstall "$force"
+    if [[ "$parent_confirmed" == "true" ]]; then
+        # 親で確認済みの場合は、子スクリプトでは確認しない（強制モードで実行）
+        run_rclone_uninstall "true"
+        run_cloudflare_uninstall "true"
+        run_jellyfin_uninstall "true"
+        run_immich_uninstall "true"
+        run_docker_uninstall "true"
+    else
+        # 強制モードまたは個別実行の場合
+        run_rclone_uninstall "$force"
+        run_cloudflare_uninstall "$force"
+        run_jellyfin_uninstall "$force"
+        run_immich_uninstall "$force"
+        run_docker_uninstall "$force"
+    fi
 }
 
 # 使用方法表示

@@ -28,6 +28,39 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# 削除されるコンポーネントを表示
+if [[ "$FORCE" != "true" ]]; then
+    log_info "このスクリプトは以下のDockerコンポーネントを削除します："
+    echo "  - Dockerエンジン (docker-ce, docker.io)"
+    echo "  - Docker CLI (docker-ce-cli)"
+    echo "  - Docker Compose プラグイン"
+    echo "  - Docker 関連ファイルと設定 (/etc/docker, /var/lib/docker)"
+    echo "  - Docker リポジトリとGPGキー"
+
+    # 実行中のコンテナとデータの状態確認
+    if command_exists docker; then
+        if [ "$(docker ps -q 2>/dev/null | wc -l)" -gt 0 ]; then
+            echo "  - 実行中のコンテナ ($(docker ps -q | wc -l)個)"
+        fi
+        
+        if [ "$(docker images -q 2>/dev/null | wc -l)" -gt 0 ]; then
+            echo "  - Dockerイメージ ($(docker images -q | wc -l)個)"
+        fi
+        
+        if [ "$(docker volume ls -q 2>/dev/null | wc -l)" -gt 0 ]; then
+            echo "  - Dockerボリューム ($(docker volume ls -q | wc -l)個)"
+        fi
+    fi
+
+    # アンインストールの確認
+    if ! confirm "上記のDockerコンポーネントをすべてアンインストールしてよろしいですか？" "n"; then
+        log_info "アンインストールを中止しました"
+        exit 0
+    fi
+else
+    log_info "強制モードが有効: 確認なしでDockerとすべての関連コンポーネントを削除します"
+fi
+
 # Dockerが実行中か確認
 if is_service_running docker; then
     log_warning "Dockerサービスが実行中です"
@@ -36,50 +69,20 @@ if is_service_running docker; then
     if command_exists docker && [ "$(docker ps -q 2>/dev/null | wc -l)" -gt 0 ]; then
         log_warning "実行中のDockerコンテナがあります"
         docker ps
-        
-        if [[ "$FORCE" != "true" ]]; then
-            if ! confirm "実行中のコンテナを停止してよろしいですか？" "n"; then
-                log_info "アンインストールを中止しました"
-                exit 0
-            fi
-        fi
-        
         log_info "すべてのコンテナを停止しています..."
         docker stop $(docker ps -q) 2>/dev/null || true
     fi
     
-    # Dockerイメージがあるか確認
+    # Dockerイメージの削除
     if command_exists docker && [ "$(docker images -q 2>/dev/null | wc -l)" -gt 0 ]; then
-        log_warning "Dockerイメージが存在します"
-        
-        if [[ "$FORCE" != "true" ]]; then
-            if ! confirm "すべてのDockerイメージを削除してよろしいですか？" "n"; then
-                log_info "イメージを残したままアンインストールします"
-            else
-                log_info "すべてのDockerイメージを削除しています..."
-                docker rmi -f $(docker images -q) 2>/dev/null || true
-            fi
-        else
-            log_info "すべてのDockerイメージを削除しています..."
-            docker rmi -f $(docker images -q) 2>/dev/null || true
-        fi
+        log_info "すべてのDockerイメージを削除しています..."
+        docker rmi -f $(docker images -q) 2>/dev/null || true
     fi
     
-    # Dockerボリュームがあるか確認
+    # Dockerボリュームの削除
     if command_exists docker && [ "$(docker volume ls -q 2>/dev/null | wc -l)" -gt 0 ]; then
-        log_warning "Dockerボリュームが存在します"
-        
-        if [[ "$FORCE" != "true" ]]; then
-            if ! confirm "すべてのDockerボリュームを削除してよろしいですか？ これによりデータが失われる可能性があります" "n"; then
-                log_info "ボリュームを残したままアンインストールします"
-            else
-                log_info "すべてのDockerボリュームを削除しています..."
-                docker volume rm $(docker volume ls -q) 2>/dev/null || true
-            fi
-        else
-            log_info "すべてのDockerボリュームを削除しています..."
-            docker volume rm $(docker volume ls -q) 2>/dev/null || true
-        fi
+        log_info "すべてのDockerボリュームを削除しています..."
+        docker volume rm $(docker volume ls -q) 2>/dev/null || true
     fi
     
     # Dockerネットワークの削除（デフォルトネットワーク以外）
@@ -93,37 +96,27 @@ if is_service_running docker; then
     systemctl disable docker 2>/dev/null || true
 fi
 
-# アンインストール確認
-if [[ "$FORCE" != "true" ]]; then
-    if ! confirm "Dockerをアンインストールしてよろしいですか？" "n"; then
-        log_info "アンインストールを中止しました"
-        exit 0
-    fi
-fi
-
 # Dockerの設定ファイル・データディレクトリのバックアップ
-if [[ -d "/etc/docker" || -d "/var/lib/docker" ]]; then
-    log_info "Docker設定の保存先をチェックしています..."
+if [[ "$FORCE" != "true" && (-d "/etc/docker" || -d "/var/lib/docker") ]]; then
+    log_info "Docker設定のバックアップを作成しています..."
     
-    if [[ "$FORCE" != "true" ]]; then
-        if confirm "Docker設定ファイルとデータディレクトリをバックアップしますか？" "y"; then
-            BACKUP_DIR="/tmp/docker-backup-$(date +%Y%m%d%H%M%S)"
-            log_info "バックアップを作成しています: $BACKUP_DIR"
-            mkdir -p "$BACKUP_DIR"
-            
-            if [[ -d "/etc/docker" ]]; then
-                cp -r /etc/docker "$BACKUP_DIR/" 2>/dev/null || true
-            fi
-            
-            # /var/lib/dockerは巨大な可能性があるため、設定ファイルのみバックアップ
-            if [[ -f "/var/lib/docker/daemon.json" ]]; then
-                mkdir -p "$BACKUP_DIR/var-lib-docker"
-                cp /var/lib/docker/daemon.json "$BACKUP_DIR/var-lib-docker/" 2>/dev/null || true
-            fi
-            
-            log_success "バックアップを作成しました: $BACKUP_DIR"
-        fi
+    # 設定バックアップは自動的に行う
+    BACKUP_DIR="/tmp/docker-backup-$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$BACKUP_DIR"
+    
+    if [[ -d "/etc/docker" ]]; then
+        cp -r /etc/docker "$BACKUP_DIR/" 2>/dev/null || true
     fi
+    
+    # /var/lib/dockerは巨大な可能性があるため、設定ファイルのみバックアップ
+    if [[ -f "/var/lib/docker/daemon.json" ]]; then
+        mkdir -p "$BACKUP_DIR/var-lib-docker"
+        cp /var/lib/docker/daemon.json "$BACKUP_DIR/var-lib-docker/" 2>/dev/null || true
+    fi
+    
+    log_success "バックアップを作成しました: $BACKUP_DIR"
+else
+    log_info "強制モードが有効: バックアップをスキップします"
 fi
 
 # Docker関連パッケージの検出とアンインストール
@@ -185,27 +178,16 @@ if [[ -f /usr/share/keyrings/docker-archive-keyring.gpg ]]; then
     rm -f /usr/share/keyrings/docker-archive-keyring.gpg
 fi
 
-# ユーザーをdockerグループから削除（オプション）
-if [[ "$FORCE" != "true" ]]; then
-    if [[ -n "$SUDO_USER" ]] && getent group docker | grep -q "\b${SUDO_USER}\b"; then
-        if confirm "ユーザー $SUDO_USER をdockerグループから削除しますか？" "y"; then
-            log_info "ユーザー $SUDO_USER をdockerグループから削除しています..."
-            gpasswd -d "$SUDO_USER" docker 2>/dev/null || true
-        fi
-    fi
-else
-    if [[ -n "$SUDO_USER" ]] && getent group docker | grep -q "\b${SUDO_USER}\b"; then
-        log_info "ユーザー $SUDO_USER をdockerグループから削除しています..."
-        gpasswd -d "$SUDO_USER" docker 2>/dev/null || true
-    fi
+# ユーザーをdockerグループから削除
+if [[ -n "$SUDO_USER" ]] && getent group docker | grep -q "\b${SUDO_USER}\b"; then
+    log_info "ユーザー $SUDO_USER をdockerグループから削除しています..."
+    gpasswd -d "$SUDO_USER" docker 2>/dev/null || true
 fi
 
-# dockerグループの削除（オプション）
+# dockerグループの削除
 if getent group docker > /dev/null; then
-    if [[ "$FORCE" == "true" ]] || confirm "dockerグループを削除しますか？" "y"; then
-        log_info "dockerグループを削除しています..."
-        groupdel docker 2>/dev/null || true
-    fi
+    log_info "dockerグループを削除しています..."
+    groupdel docker 2>/dev/null || true
 fi
 
 # WSL特有の設定を削除
