@@ -14,78 +14,131 @@
 - **WSL/Linuxサーバー差異**: 必要に応じて環境判定で分岐処理
 
 ### 設定管理
-- **デフォルト値**: config.shに集約して管理
+- **環境変数方式**: 物理パス差分を環境変数で完全吸収
 - **機密情報**: 当面はデフォルト値を使用（Immich PostgreSQLパスワードなど）
-- **設定ファイル**: .envファイルでの管理、将来的なカスタマイズ対応を考慮
+- **設定ファイル**: config/env/配下で環境別管理
 
 ### UI/UX
 - **プログレス表示**: 各処理ステップでログ出力、詳細はquietオプションで抑制
 - **中断・再開機能**: 実装しない（冪等性により再実行で対応）
 - **対話モード**: 実装しない（事前設定に依存）
 
-## アーキテクチャ
+## 統一論理構成
 
-### ディレクトリ構造
+開発環境（WSL）と本番環境（Ubuntu Server）で同一の論理構成を使用します。
+
+### 統一ディレクトリ構成
+
 ```
-scripts/
-├── setup.sh                 # メインエントリーポイント
-├── uninstall.sh             # メインアンインストールスクリプト
-├── lib/
-│   ├── common.sh            # 共通ライブラリ（ログ、ユーティリティ）
-│   └── config.sh            # 設定管理ライブラリ
-├── install/
-│   ├── install-docker.sh    # Docker インストール
-│   ├── install-immich.sh    # Immich セットアップ
-│   ├── install-jellyfin.sh  # Jellyfin セットアップ
-│   ├── install-cloudflared.sh # Cloudflare Tunnel セットアップ
-│   └── install-rclone.sh    # rclone セットアップ
-├── uninstall/
-│   ├── uninstall-docker.sh
-│   ├── uninstall-immich.sh
-│   ├── uninstall-jellyfin.sh
-│   ├── uninstall-cloudflared.sh
-│   └── uninstall-rclone.sh
-├── deploy/
-│   ├── deploy-all.sh        # 全サービス一括デプロイ
-│   └── generate-configs.sh  # 設定ファイル自動生成
-└── sync/
-    └── sync-cloud-storage.sh # クラウドストレージ同期
+${PROJECT_ROOT}/            # プロジェクトルート
+├── docs/                   # ドキュメント
+├── docker/                 # Docker Compose設定
+│   ├── dev/               # 開発環境用
+│   └── prod/              # 本番環境用
+├── config/                 # 設定ファイル・テンプレート
+│   └── env/               # 環境別設定
+│       ├── dev.env        # 開発環境用パス設定
+│       ├── prod.env       # 本番環境用パス設定
+│       └── common.env     # 共通設定
+├── scripts/               # 運用スクリプト
+│   ├── setup/             # セットアップスクリプト（共通）
+│   ├── lib/               # 共通ライブラリ
+│   │   ├── common.sh      # ログ、ユーティリティ
+│   │   ├── config.sh      # 設定管理
+│   │   └── env-loader.sh  # 環境変数読み込み
+│   ├── install/           # インストールスクリプト
+│   ├── uninstall/         # アンインストールスクリプト
+│   ├── deploy/            # デプロイスクリプト
+│   └── sync/              # 同期スクリプト
+└── README.md
+
+${DATA_ROOT}/               # データルート（環境変数で指定）
+├── immich/                 # Immich外部ライブラリ
+├── jellyfin/               # Jellyfinライブラリ
+├── temp/                   # 一時作業領域
+└── config/                 # 実行時設定
+    └── rclone/
+
+${BACKUP_ROOT}/             # バックアップルート（環境変数で指定）
+├── media/                  # メディアバックアップ
+├── config/                 # 設定バックアップ
+└── system/                 # システムバックアップ
 ```
+
+### 環境別パス設定
+
+#### 開発環境（WSL）
+```bash
+# config/env/dev.env
+PROJECT_ROOT="/mnt/d/ManageMediaServer"
+DATA_ROOT="$HOME/dev-data"
+BACKUP_ROOT="$HOME/dev-backup"
+COMPOSE_FILE="docker/dev/docker-compose.yml"
+```
+
+#### 本番環境（Ubuntu Server）
+```bash
+# config/env/prod.env
+PROJECT_ROOT="/home/mediaserver/ManageMediaServer"
+DATA_ROOT="/mnt/data"
+BACKUP_ROOT="/mnt/backup"
+COMPOSE_FILE="docker/prod/immich/docker-compose.yml"
+```
+
+## アーキテクチャ
 
 ### スクリプト呼び出し方式
 ```bash
 # インストール
-# 全体セットアップ
-./setup.sh
-
-# カテゴリー別セットアップ
-./setup.sh docker
-./setup.sh immich
-./setup.sh jellyfin
-./setup.sh cloudflare
-./setup.sh rclone
+./scripts/setup.sh                    # 全体セットアップ
+./scripts/setup.sh docker immich      # カテゴリー別セットアップ
 
 # アンインストール
-# 全体アンインストール（依存関係逆順）
-./uninstall.sh
+./scripts/uninstall.sh               # 全体アンインストール
+./scripts/uninstall.sh docker --force # 強制アンインストール
+```
 
-# カテゴリー別アンインストール
-./uninstall.sh docker
-./uninstall.sh immich
-./uninstall.sh jellyfin
-./uninstall.sh cloudflare
-./uninstall.sh rclone
+## 物理パス差分吸収 📁
 
-# 強制アンインストール（確認スキップ）
-./uninstall.sh all --force
-./uninstall.sh docker --force
+### 実装方針: 環境変数 + 設定ファイル方式
+
+**データフロー:**
+```
+config/env/dev.env → env-loader.sh → 環境変数展開 → 各スクリプトで利用
+config/env/prod.env →              → シェル環境永続化
+```
+
+### 環境検出ロジック
+
+```bash
+# scripts/lib/env-loader.sh
+detect_environment() {
+    if grep -qE "(Microsoft|WSL)" /proc/version 2>/dev/null; then
+        echo "dev"
+    elif [ -f /etc/os-release ] && grep -q "Ubuntu" /etc/os-release; then
+        echo "prod"
+    else
+        echo "unknown"
+    fi
+}
+
+# 適切な設定ファイル読み込み
+load_environment() {
+    local env_type=$(detect_environment)
+    local config_file="${PROJECT_ROOT:-$(dirname "$0")/../..}/config/env/${env_type}.env"
+    
+    if [ -f "$config_file" ]; then
+        source "$config_file"
+        export PROJECT_ROOT DATA_ROOT BACKUP_ROOT COMPOSE_FILE
+    else
+        log_error "設定ファイルが見つかりません: $config_file"
+    fi
+}
 ```
 
 ## 技術仕様
 
 ### 共通スクリプト構造
-全てのインストールスクリプトは以下の統一構造に従う：
-
 ```bash
 #!/bin/bash
 set -euo pipefail
@@ -94,19 +147,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 共通ライブラリ読み込み
-source "$SCRIPT_DIR/../lib/common.sh" || { echo "[ERROR] common.sh の読み込みに失敗しました。" >&2; exit 1; }
-source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに失敗しました。"
+source "$SCRIPT_DIR/../lib/common.sh" || { echo "[ERROR] common.sh の読み込みに失敗" >&2; exit 1; }
+source "$SCRIPT_DIR/../lib/env-loader.sh" || log_error "env-loader.sh の読み込みに失敗"
 
-# 事前チェック関数
-pre_check() {
-    # 権限確認、依存関係チェック、設定値検証
-}
-
-# インストール済みチェック関数
-is_already_installed() {
-    # 冪等性のためのチェックロジック
-    # 戻り値: 0=インストール済み, 1=未インストール
-}
+# 環境変数読み込み
+load_environment
 
 # メイン処理
 main() {
@@ -118,23 +163,15 @@ main() {
     # 冪等性チェック
     if is_already_installed; then
         log_success "[サービス名]は既にインストール済みです"
-        show_version_info  # オプション
         return 0
     fi
     
-    # インストール処理
+    # インストール処理（環境変数を利用）
     install_service
-    
-    # 設定適用
-    configure_service
-    
-    # 動作確認
-    verify_installation
     
     log_success "=== [サービス名] インストール完了 ==="
 }
 
-# エントリーポイント
 main "$@"
 ```
 
@@ -142,7 +179,6 @@ main "$@"
 
 #### ログ機能
 ```bash
-# ログレベル別出力関数
 log_info()    # 青色: 情報メッセージ
 log_success() # 緑色: 成功メッセージ
 log_warning() # 黄色: 警告メッセージ
@@ -152,67 +188,65 @@ log_debug()   # 灰色: デバッグメッセージ（DEBUG=1時のみ）
 
 #### ユーティリティ関数
 ```bash
-# コマンド存在確認
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# サービス起動待機
 wait_for_service() {
     local service_name=$1
     local timeout=${2:-30}
     # systemctl is-active でサービス状態を確認
 }
 
-# ディレクトリ作成
 ensure_dir_exists() {
     local dir=$1
     [ -d "$dir" ] || mkdir -p "$dir"
 }
-
-# 確認プロンプト（アンインストール時のみ使用）
-confirm_action() {
-    local message=$1
-    # ユーザー確認を求める
-}
 ```
 
-### 設定管理 (config.sh)
+### 設定管理統合 (config.sh + env-loader.sh)
 
 ```bash
+# scripts/lib/config.sh - アプリケーション固有設定
 # システム設定
 export OS_NAME="Ubuntu"
 export OS_VERSION="24.04"
 export TIME_ZONE="${TIME_ZONE:-Asia/Tokyo}"
 
-# パス設定
-export BASE_DIR="${BASE_DIR:-/opt/services}"
-export DATA_DIR="${DATA_DIR:-/var/lib/services}"
-
-# Docker設定
-export INSTALL_DOCKER_COMPOSE_STANDALONE="${INSTALL_DOCKER_COMPOSE_STANDALONE:-false}"
-
-# Immich設定
-export IMMICH_DIR_PATH="${IMMICH_DIR_PATH:-${BASE_DIR}/immich}"
-export IMMICH_UPLOAD_LOCATION="${IMMICH_UPLOAD_LOCATION:-${DATA_DIR}/immich/library}"
-export IMMICH_EXTERNAL_LIBRARY_PATH="${IMMICH_EXTERNAL_LIBRARY_PATH:-}"
+# Immich設定（環境変数ベースパスを利用）
+export IMMICH_DIR_PATH="${DATA_ROOT}/immich"
 export IMMICH_DB_PASSWORD="${IMMICH_DB_PASSWORD:-postgres}"
 
 # Jellyfin設定
-export JELLYFIN_CONFIG_PATH="${JELLYFIN_CONFIG_PATH:-${BASE_DIR}/jellyfin/config}"
-export JELLYFIN_CACHE_PATH="${JELLYFIN_CACHE_PATH:-${BASE_DIR}/jellyfin/cache}"
-export JELLYFIN_MEDIA_PATH="${JELLYFIN_MEDIA_PATH:-${DATA_DIR}/media}"
+export JELLYFIN_CONFIG_PATH="${DATA_ROOT}/jellyfin/config"
+export JELLYFIN_MEDIA_PATH="${DATA_ROOT}/jellyfin/movies"
 
 # Cloudflare設定
 export CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
 export CLOUDFLARE_TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-homelab-tunnel}"
 
 # rclone設定
-export RCLONE_CONFIG_PATH="${RCLONE_CONFIG_PATH:-${BASE_DIR}/rclone/rclone.conf}"
+export RCLONE_CONFIG_PATH="${DATA_ROOT}/config/rclone/rclone.conf"
 export RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
 ```
 
-### 冪等性の実装パターン
+### Docker Compose連携
+```bash
+# 自動生成される docker/dev/.env.local
+PROJECT_ROOT=/mnt/d/ManageMediaServer
+DATA_ROOT=/home/user/dev-data
+BACKUP_ROOT=/home/user/dev-backup
+```
+
+```yaml
+# docker/dev/docker-compose.yml
+services:
+  immich:
+    volumes:
+      - "${DATA_ROOT}/immich:/usr/src/app/upload"
+```
+
+## 冪等性の実装パターン
 
 #### パターン1: コマンド存在確認
 ```bash
@@ -224,8 +258,7 @@ is_already_installed() {
 #### パターン2: 設定ファイル存在確認
 ```bash
 is_already_installed() {
-    [ -f "${IMMICH_DIR_PATH}/docker-compose.yml" ] && \
-    [ -f "${IMMICH_DIR_PATH}/.env" ]
+    [ -f "${DATA_ROOT}/immich/docker-compose.yml" ]
 }
 ```
 
@@ -236,69 +269,36 @@ is_already_installed() {
 }
 ```
 
-#### パターン4: 複合条件確認
-```bash
-is_already_installed() {
-    [ -f "${CONFIG_FILE}" ] && \
-    docker ps --format '{{.Names}}' | grep -q "^${SERVICE_NAME}$"
-}
-```
-
-### エラーハンドリング戦略
-
-1. **即座に停止**: `set -euo pipefail` により、エラー時は即座に停止
-2. **明確なエラーメッセージ**: `log_error` で原因を明示してから終了
-3. **クリーンアップ不要**: 部分的な状態でも再実行で上書き可能
-4. **依存関係チェック**: `pre_check()` で事前に依存関係を確認
-
-### 環境判定と分岐処理
-
-```bash
-# WSL環境の判定
-is_wsl() {
-    grep -qE "(Microsoft|WSL)" /proc/version 2>/dev/null
-}
-
-# 環境別処理の例
-if is_wsl; then
-    # WSL固有の設定
-    configure_wsl_specific_settings
-else
-    # 通常のLinuxサーバー設定
-    configure_linux_server_settings
-fi
-```
-
 ## 実装優先順位
 
 ### Phase 1: 基盤整備
-1. 共通ライブラリ（common.sh, config.sh）
-2. メインスクリプト（setup.sh）
-3. Docker インストールスクリプト
+1. 環境変数システム（env-loader.sh, config/env/）
+2. 共通ライブラリ（common.sh, config.sh）
+3. メインスクリプト（setup.sh）
 
 ### Phase 2: アプリケーション
-1. Immich セットアップ
-2. Jellyfin セットアップ
-3. 基本動作確認
+1. Docker インストールスクリプト
+2. Immich セットアップ
+3. Jellyfin セットアップ
 
 ### Phase 3: 外部連携
-1. Cloudflare Tunnel セットアップ
-2. rclone セットアップ
+1. rclone セットアップ
+2. Cloudflare Tunnel セットアップ
 3. 同期スクリプト
 
 ### Phase 4: 運用支援
-1. アンインストールスクリプト（個別・一括）
+1. アンインストールスクリプト
 2. デプロイスクリプト
-3. 監視・ヘルスチェック（将来実装）
+3. 監視・ヘルスチェック
 
 ## コーディング規約
 
 ### 命名規則
-- **関数名**: snake_case（例: `install_docker`, `wait_for_service`）
+- **関数名**: snake_case（例: `install_docker`, `load_environment`）
 - **変数名**: 
-  - グローバル/環境変数: UPPER_SNAKE_CASE（例: `IMMICH_DIR_PATH`）
+  - グローバル/環境変数: UPPER_SNAKE_CASE（例: `DATA_ROOT`）
   - ローカル変数: snake_case（例: `local service_name`）
-- **ファイル名**: kebab-case（例: `install-docker.sh`）
+- **ファイル名**: kebab-case（例: `env-loader.sh`）
 
 ### コメント規則
 ```bash
