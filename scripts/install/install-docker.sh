@@ -1,19 +1,12 @@
 #!/bin/bash
-#
-# WSL環境やLinuxサーバーにDockerをインストールするスクリプト
-# Docker Desktopを使わずにネイティブインストールを行います
-#
+# WSL環境やLinuxサーバーにDockerとDocker Composeをインストールするスクリプト
 
-# スクリプトのディレクトリを取得
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/../.." &> /dev/null && pwd )"
 
-# 共通ライブラリを読み込む
 source "$SCRIPT_DIR/../lib/common.sh"
 
-# スクリプトの説明
 log_info "Docker インストールスクリプトを開始します"
-log_info "このスクリプトは WSL 環境や Linux サーバーに Docker をインストールします"
 
 # 管理者権限チェック
 if [ "$(id -u)" -ne 0 ]; then
@@ -22,64 +15,53 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-# Dockerがすでにインストールされているか確認
+# 既存のDockerインストールを確認
 if command_exists docker && command_exists docker-compose; then
-  log_success "Docker と Docker Compose がすでにインストールされています"
+  log_success "Docker と Docker Compose は既にインストール済み"
   log_info "Docker: $(docker --version)"
   log_info "Docker Compose: $(docker compose version)"
   
-  # サービスの状態を確認
+  # サービスの状態確認
   if is_service_running docker; then
-    log_success "Docker サービスは実行中です"
+    log_success "Docker サービス実行中"
   else
-    log_warning "Docker サービスが停止しています。開始します..."
+    log_warning "Docker サービスが停止しています。開始..."
     systemctl start docker
     systemctl enable docker
     wait_for_service docker
   fi
   
-  # ユーザーがdockerグループに所属しているか確認
+  # ユーザーのdockerグループ所属確認
   if [ -n "$SUDO_USER" ] && id -nG "$SUDO_USER" | grep -qw "docker"; then
     log_success "ユーザー $SUDO_USER は docker グループに所属しています"
   else
-    log_warning "ユーザーが docker グループに所属していません。追加します..."
+    log_warning "ユーザーを docker グループに追加..."
     if [ -n "$SUDO_USER" ]; then
       usermod -aG docker "$SUDO_USER"
-      log_info "ユーザー $SUDO_USER を docker グループに追加しました"
-      log_warning "グループ設定を反映するには、次のいずれかを実行してください:"
-      log_info "  1. 一度ログアウトしてから再度ログインする"
-      log_info "  2. 現在のシェルセッションで次のコマンドを実行する: newgrp docker"
-      log_info "  3. 新しいターミナルウィンドウを開く"
+      log_warning "設定反映にはログアウト/再ログインか 'newgrp docker' が必要です"
       
-      # 現在のユーザーがWSL環境にいるかを確認
+      # WSL環境確認
       if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
-        log_info "WSL環境を検出しました。WSLを再起動すると設定が確実に反映されます:"
-        log_info "  Windowsコマンドプロンプトで: wsl --shutdown"
-        log_info "  その後、WSLを再起動してください"
+        log_info "WSL環境: 'wsl --shutdown' で再起動すると確実に反映されます"
       fi
     fi
   fi
   
-  log_success "Dockerのセットアップは完了しています"
-  log_info "スクリプトを終了します"
+  log_success "Dockerセットアップ完了"
   exit 0
 fi
 
-# システムアップデート
+# システムパッケージの更新とインストール
 log_info "システムパッケージを更新しています..."
 apt update && apt upgrade -y
 
-# 必要なパッケージの事前インストール
-log_info "必要な依存パッケージをインストールしています..."
+log_info "依存パッケージをインストール..."
 apt install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
 
-# Docker GPGキーの追加
-log_info "Docker公式のGPGキーを追加しています..."
+# Docker GPGキーとリポジトリの追加
+log_info "Docker公式リポジトリを設定..."
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-# Dockerリポジトリの追加
-log_info "Dockerリポジトリを追加しています..."
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 # Docker Engineのインストール
@@ -87,83 +69,68 @@ log_info "Dockerパッケージのインストールを開始します..."
 apt update
 apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# Dockerサービスの起動と自動起動設定
+# サービスの起動と自動起動設定
 log_info "Dockerサービスを起動して自動起動を設定しています..."
 systemctl start docker
 systemctl enable docker
 wait_for_service docker 60
 
-# Dockerグループの作成（既に存在していれば何もしない）
+# dockerグループの作成と現在のユーザーを追加
 if ! getent group docker > /dev/null; then
   log_info "dockerグループを作成しています..."
   groupadd docker
 fi
 
-# 現在のユーザーをdockerグループに追加
 if [ -n "$SUDO_USER" ]; then
   log_info "ユーザー $SUDO_USER をdockerグループに追加しています..."
   usermod -aG docker "$SUDO_USER"
   
-  log_warning "グループ設定を反映するには、次のいずれかを実行してください:"
-  log_info "  1. 一度ログアウトしてから再度ログインする"
-  log_info "  2. 現在のシェルセッションで次のコマンドを実行する: newgrp docker"
-  log_info "  3. 新しいターミナルウィンドウを開く"
+  log_warning "グループ設定を反映するには再ログインか次のコマンドが必要です: newgrp docker"
   
-  # 現在のユーザーがWSL環境にいるかを確認
+  # WSL環境の確認と追加情報
   if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
-    log_info "WSL環境を検出しました。WSLを再起動すると設定が確実に反映されます:"
-    log_info "  Windowsコマンドプロンプトで: wsl --shutdown"
-    log_info "  その後、WSLを再起動してください"
+    log_info "WSL環境を検出しました。反映には 'wsl --shutdown' の実行が必要です"
   fi
 else
   log_warning "sudoから実行されていないため、ユーザーをdockerグループに追加できません"
-  log_info "手動で以下のコマンドを実行してください:"
-  log_info "  sudo usermod -aG docker your_username"
+  log_info "手動で以下を実行: sudo usermod -aG docker your_username"
 fi
 
-# Docker Composeのインストール確認
+# Docker Composeの確認とインストール
 if command_exists docker-compose; then
-  log_success "Docker Compose (スタンドアロン) がインストールされています: $(docker-compose --version)"
+  log_success "Docker Compose (スタンドアロン): $(docker-compose --version)"
 elif command -v docker compose > /dev/null; then
-  log_success "Docker Compose Plugin がインストールされています: $(docker compose version)"
+  log_success "Docker Compose Plugin: $(docker compose version)"
 else
-  log_warning "Docker Compose がインストールされていません、インストールします..."
+  log_warning "Docker Compose をインストールします..."
   apt install -y docker-compose-plugin
-  log_success "Docker Compose Plugin をインストールしました: $(docker compose version)"
+  log_success "Docker Compose Plugin: $(docker compose version)"
 fi
 
-# Dockerのバージョン確認
-log_success "Dockerのインストールが完了しました: $(docker --version)"
-
-# 動作確認
-log_info "Dockerの動作確認を行います..."
+# インストール完了と動作確認
+log_success "Dockerのインストール完了: $(docker --version)"
+log_info "Dockerの動作確認..."
 docker run --rm hello-world
-
 log_success "Dockerが正常に動作しています"
-log_info "次のステップ: Immich や Jellyfin のコンテナをセットアップします"
 
 # 環境特有の設定
 detect_and_configure_environment() {
-  # WSL環境の検出
+  # WSL環境の場合
   if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
-    log_info "WSL環境を検出しました。WSL固有の設定を適用します..."
+    log_info "WSL環境を検出、WSL固有の設定を適用..."
     
-    # WSL2のメモリ制限設定
+    # WSL2のリソース制限設定
     if [ ! -f /etc/wsl.conf ] || ! grep -q "\[wsl2\]" /etc/wsl.conf; then
-      log_info "WSL設定ファイルを作成しています..."
       cat > /etc/wsl.conf << EOF
 [wsl2]
 memory=8GB
 processors=4
 swap=2GB
 EOF
-      log_info "WSL設定ファイルを作成しました。次回WSL起動時に適用されます。"
-    else
-      log_info "WSL設定ファイルは既に存在します。既存の設定を維持します。"
+      log_info "WSL設定ファイルを作成しました"
     fi
     
-    # WSL用のDocker固有設定
-    log_info "WSL用のDockerデーモン設定を適用します..."
+    # WSL用のDockerデーモン設定
     if [ ! -f /etc/docker/daemon.json ] || ! grep -q "storage-driver" /etc/docker/daemon.json; then
       mkdir -p /etc/docker
       cat > /etc/docker/daemon.json << EOF
@@ -176,14 +143,11 @@ EOF
   }
 }
 EOF
-      log_info "Dockerデーモン設定を作成しました。"
       systemctl restart docker
       wait_for_service docker
     fi
   else
-    log_info "通常のLinux環境を検出しました。"
-    
-    # 通常のLinuxサーバー用の設定（必要に応じて）
+    # 通常のLinuxサーバー用の設定
     if [ ! -f /etc/docker/daemon.json ]; then
       mkdir -p /etc/docker
       cat > /etc/docker/daemon.json << EOF
@@ -195,7 +159,6 @@ EOF
   }
 }
 EOF
-      log_info "Dockerデーモン設定を作成しました。"
       systemctl restart docker
       wait_for_service docker
     fi
