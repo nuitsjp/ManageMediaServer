@@ -35,7 +35,7 @@ DEFAULT_USE_CLOUDFLARE_TUNNEL="true"
 DEFAULT_LOCAL_DOMAIN="media.local"
 
 # 設定ファイルパス
-CONFIG_ENV_FILE="${PROJECT_ROOT}/config/.env"
+CONFIG_ENV_FILE="${PROJECT_ROOT:-$(dirname $(dirname $(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)))}/config/.env"
 
 # 設定の初期化
 initialize_config() {
