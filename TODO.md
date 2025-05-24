@@ -3,32 +3,32 @@
 ## フェーズ1: 基盤構築 🏗️
 
 ### 必須（高優先度）
-- [ ] **統合セットアップスクリプト作成**
-  - [ ] `scripts/setup/auto-setup.sh` - 環境自動判定
-  - [ ] `scripts/setup/setup-dev.sh` - 開発環境セットアップ
-  - [ ] `scripts/setup/setup-prod.sh` - 本番環境セットアップ
-  - [ ] **環境変数設定の自動化** ⭐ 物理パス差分吸収の核心
-    - [ ] 環境検出ロジック（WSL vs Ubuntu Server）
-    - [ ] 適切な環境変数ファイル生成（.env.local）
-    - [ ] シェル環境への環境変数設定（.bashrc/.profile）
+- [x] **統合セットアップスクリプト作成** ✅
+  - [x] `scripts/setup/auto-setup.sh` - 環境自動判定 ✅
+  - [x] `scripts/setup/setup-dev.sh` - 開発環境セットアップ ✅
+  - [x] `scripts/setup/setup-prod.sh` - 本番環境セットアップ ✅
+  - [x] **環境変数設定の自動化** ⭐ 物理パス差分吸収の核心 ✅
+    - [x] 環境検出ロジック（WSL vs Ubuntu Server） ✅
+    - [x] 適切な環境変数ファイル生成（.env.local） ✅
+    - [x] シェル環境への環境変数設定（.bashrc/.profile） ✅
 
-- [ ] **物理ディレクトリ差分吸収機構** ⭐ 新規追加
-  - [ ] `config/env/` ディレクトリ作成
-  - [ ] `config/env/dev.env` - 開発環境用パス設定テンプレート
-  - [ ] `config/env/prod.env` - 本番環境用パス設定テンプレート
-  - [ ] `scripts/common/env-loader.sh` - 環境変数読み込みライブラリ
-  - [ ] すべてのスクリプトでの環境変数利用統一
+- [x] **物理ディレクトリ差分吸収機構** ⭐ 新規追加 ✅
+  - [x] `config/env/` ディレクトリ作成 ✅
+  - [x] `config/env/dev.env` - 開発環境用パス設定テンプレート ✅
+  - [x] `config/env/prod.env` - 本番環境用パス設定テンプレート ✅
+  - [x] `scripts/lib/env-loader.sh` - 環境変数読み込みライブラリ ✅
+  - [x] すべてのスクリプトでの環境変数利用統一 ✅
 
-- [ ] **Docker設定作成**
-  - [ ] `docker/dev/docker-compose.yml` - 開発環境用
-  - [ ] `docker/dev/.env.example` - 開発環境用環境変数テンプレート
-  - [ ] `docker/prod/immich/docker-compose.yml` - 本番Immich用
-  - [ ] `docker/prod/jellyfin/docker-compose.yml` - 本番Jellyfin用
+- [x] **Docker設定作成** ✅ **完了**
+  - [x] `docker/dev/docker-compose.yml` - 開発環境用 ✅
+  - [x] `docker/dev/.env.example` - 開発環境用環境変数テンプレート ✅
+  - [x] `docker/prod/immich/docker-compose.yml` - 本番Immich用 ✅
+  - [x] `docker/prod/jellyfin/docker-compose.yml` - 本番Jellyfin用 ✅
 
-- [ ] **基本設定ファイル**
-  - [ ] `config/rclone/rclone.conf.example` - rclone設定テンプレート
-  - [ ] `config/systemd/rclone-sync.service` - systemdサービス設定
-  - [ ] `config/systemd/rclone-sync.timer` - systemdタイマー設定
+- [x] **基本設定ファイル** ✅ **完了**
+  - [x] `config/rclone/rclone.conf.example` - rclone設定テンプレート ✅
+  - [x] `config/systemd/rclone-sync.service` - systemdサービス設定 ✅ (setup-prod.shで自動生成)
+  - [x] `config/systemd/rclone-sync.timer` - systemdタイマー設定 ✅ (setup-prod.shで自動生成)
 
 ### 推奨（中優先度）
 - [ ] **ドキュメント統合**
@@ -115,17 +115,53 @@
 ## 進捗管理
 
 ### 現在のフェーズ
-- 🔄 **フェーズ1: 基盤構築** （進行中）
+- ✅ **フェーズ1: 基盤構築** (**100%完了!** 🎉)
+  - ✅ 統合セットアップスクリプト完成
+  - ✅ 環境変数システム完成  
+  - ✅ 開発環境Docker設定完成
+  - ✅ 本番環境Docker設定完成
+  - ✅ 設定ファイルテンプレート完成
+  - ⏳ **WSL実地テスト待ち** ⭐ フェーズ2開始準備完了
+
+### 次のマイルストーン 
+- 🔄 **フェーズ2: 開発環境検証** (準備完了・開始待ち)
 
 ### 完了済み
 - ✅ システム設計・アーキテクチャ設計
 - ✅ ドキュメント構造設計
 - ✅ 統一構成方針決定
+- ✅ **フェーズ1: 基盤構築 完全完了** 🎉
+  - ✅ 統合セットアップスクリプト実装
+    - ✅ 環境自動判定機能（WSL vs Ubuntu Server）
+    - ✅ 環境変数システム（物理パス差分完全吸収）
+    - ✅ 共通ライブラリ（common.sh, env-loader.sh, config.sh）
+    - ✅ 開発環境セットアップ完全版
+    - ✅ 本番環境セットアップ完全版
+  - ✅ **Docker Compose設定完全版**
+    - ✅ 開発環境設定（完全版 docker-compose.yml）
+    - ✅ 本番Immich設定
+    - ✅ 本番Jellyfin設定
+    - ✅ 開発用便利スクリプト（start/stop/reset）
+    - ✅ 改行コード自動変換機能
+  - ✅ **設定ファイルテンプレート**
+    - ✅ rclone設定テンプレート
+    - ✅ systemd設定（スクリプト内で自動生成）
 
 ### 直近の優先タスク（今週）
-1. [ ] `scripts/setup/auto-setup.sh` 作成
-2. [ ] `docker/dev/docker-compose.yml` 作成
-3. [ ] WSL開発環境での動作確認
+1. [x] **不足ファイル作成** ✅ **完了**
+   - [x] `docker/prod/immich/docker-compose.yml` 作成 ✅
+   - [x] `docker/prod/jellyfin/docker-compose.yml` 作成 ✅
+   - [x] `config/rclone/rclone.conf.example` テンプレート作成 ✅
+
+2. [ ] **WSL開発環境での実地テスト** ⭐ **現在のメインタスク**
+   - [ ] `./scripts/setup/auto-setup.sh` の実行テスト
+   - [ ] Docker Composeでのサービス起動確認  
+   - [ ] 改行コード問題の解決確認
+   - [ ] 基本動作フロー確認
+
+3. [ ] **フェーズ2移行** 
+   - [ ] 実地テスト完了後にフェーズ2（開発環境検証）開始
+   - [ ] 問題があれば修正してフェーズ1完了
 
 ### 注意事項・メモ
 - 開発環境と本番環境の論理構成統一を最優先

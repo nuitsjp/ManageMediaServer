@@ -1,0 +1,52 @@
+# rclone設定ファイルテンプレート
+# このファイルをコピーして実際の設定を行ってください
+
+# Google Driveの設定例
+[gdrive]
+type = drive
+scope = drive.readonly
+# client_id = your_client_id
+# client_secret = your_client_secret
+# token = {"access_token":"","token_type":"Bearer","refresh_token":"","expiry":""}
+
+# OneDriveの設定例
+[onedrive]
+type = onedrive
+# client_id = your_client_id
+# client_secret = your_client_secret
+# token = {"access_token":"","token_type":"bearer","refresh_token":"","expiry":""}
+
+# 開発・テスト用ローカル設定
+[local-test]
+type = local
+# 開発環境でのテスト用設定
+
+# Amazon S3の設定例
+[s3]
+type = s3
+provider = AWS
+# access_key_id = your_access_key
+# secret_access_key = your_secret_key
+# region = your_region
+
+# Dropboxの設定例
+[dropbox]
+type = dropbox
+# client_id = your_client_id
+# client_secret = your_client_secret
+# token = {"access_token":"","token_type":"bearer","refresh_token":"","expiry":""}
+
+# 設定手順:
+# 1. このファイルを適切な場所にコピー
+#    開発環境: $DATA_ROOT/config/rclone/rclone.conf
+#    本番環境: $DATA_ROOT/config/rclone/rclone.conf
+# 
+# 2. rclone config コマンドで対話的に設定
+#    rclone config
+#
+# 3. または手動でクライアントIDとシークレットを設定
+#
+# 注意:
+# - このファイルには機密情報を含めないでください
+# - 実際の認証情報は環境変数または実際の設定ファイルで管理
+# - バージョン管理には含めないでください (.gitignore で除外)
