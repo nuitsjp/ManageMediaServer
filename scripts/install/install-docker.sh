@@ -30,70 +30,34 @@ if command_exists docker && command_exists docker-compose; then
     systemctl enable docker
     wait_for_service docker
   fi
-  
-  # ユーザーのdockerグループ所属確認
-  if [ -n "$SUDO_USER" ] && id -nG "$SUDO_USER" | grep -qw "docker"; then
-    log_success "ユーザー $SUDO_USER は docker グループに所属しています"
-  else
-    log_warning "ユーザーを docker グループに追加..."
-    if [ -n "$SUDO_USER" ]; then
-      usermod -aG docker "$SUDO_USER"
-      log_warning "設定反映にはログアウト/再ログインか 'newgrp docker' が必要です"
-      
-      # WSL環境確認
-      if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
-        log_info "WSL環境: 'wsl --shutdown' で再起動すると確実に反映されます"
-      fi
-    fi
-  fi
-  
-  log_success "Dockerセットアップ完了"
-  exit 0
-fi
-
-# システムパッケージの更新とインストール
-log_info "システムパッケージを更新しています..."
-apt update && apt upgrade -y
-
-log_info "依存パッケージをインストール..."
-apt install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
-
-# Docker GPGキーとリポジトリの追加
-log_info "Docker公式リポジトリを設定..."
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# Docker Engineのインストール
-log_info "Dockerパッケージのインストールを開始します..."
-apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-# サービスの起動と自動起動設定
-log_info "Dockerサービスを起動して自動起動を設定しています..."
-systemctl start docker
-systemctl enable docker
-wait_for_service docker 60
-
-# dockerグループの作成と現在のユーザーを追加
-if ! getent group docker > /dev/null; then
-  log_info "dockerグループを作成しています..."
-  groupadd docker
-fi
-
-if [ -n "$SUDO_USER" ]; then
-  log_info "ユーザー $SUDO_USER をdockerグループに追加しています..."
-  usermod -aG docker "$SUDO_USER"
-  
-  log_warning "グループ設定を反映するには再ログインか次のコマンドが必要です: newgrp docker"
-  
-  # WSL環境の確認と追加情報
-  if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
-    log_info "WSL環境を検出しました。反映には 'wsl --shutdown' の実行が必要です"
-  fi
 else
-  log_warning "sudoから実行されていないため、ユーザーをdockerグループに追加できません"
-  log_info "手動で以下を実行: sudo usermod -aG docker your_username"
+  log_info "Dockerをインストールします..."
+  # システムパッケージの更新とインストール
+  apt update && apt upgrade -y
+  apt install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+
+  # Docker GPGキーとリポジトリの追加
+  log_info "Docker公式リポジトリを設定..."
+  mkdir -p /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes -o /usr/share/keyrings/docker-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  # Docker Engineのインストール
+  log_info "Dockerパッケージのインストールを開始します..."
+  apt update
+  apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+  # サービスの起動と自動起動設定
+  log_info "Dockerサービスを起動して自動起動を設定しています..."
+  systemctl start docker
+  systemctl enable docker
+  wait_for_service docker 60
+fi
+
+# dockerグループ作成とユーザー追加
+if [ -n "$SUDO_USER" ]; then
+  usermod -aG docker "$SUDO_USER"
+  log_warning "再ログイン後または 'newgrp docker' で反映されます"
 fi
 
 # Docker Composeの確認とインストール
@@ -115,7 +79,6 @@ log_success "Dockerが正常に動作しています"
 
 # 環境特有の設定
 detect_and_configure_environment() {
-  # WSL環境の場合
   if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
     log_info "WSL環境を検出、WSL固有の設定を適用..."
     
