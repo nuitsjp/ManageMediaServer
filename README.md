@@ -1,6 +1,6 @@
 # 概要
 
-本リポジトリは、家庭用のメディアサーバーをLinux環境で構築・運用するためのスクリプトや設定ファイルを管理します。家庭内のミニPCなどにUbuntu Serverをホストとして導入し、スマートフォンで撮影した画像や動画を効率的かつ安全に管理・公開することを目的とします。
+本リポジトリは、家庭用のメディアサーバーをLinux環境で構築・運用するためのスクリプトや設定ファイルを管理します。家庭内のミニPCなどにUbuntu Serverを導入し、スマートフォンで撮影した画像や動画を効率的かつ安全に管理・公開することを目的とします。
 
 ## システム概要
 
@@ -12,9 +12,9 @@
 
 ### データフロー
 
-スマートフォンで撮影した画像や動画は、端末内のクラウドストレージアプリ（Google Photos、OneDriveなど）によって自動的にクラウドストレージにアップロードされます。**Windows 11サーバー上で動作するrclone**がインターネット上のクラウドストレージに接続し、画像や動画ファイルを検出して**ホームネットワーク内**のImmich外部ライブラリにダウンロードします。その際、動画はクラウドストレージから取得後に削除されます。ダウンロードされた動画はImmich外部ライブラリからバックアップストレージにもバックアップを取ります。
+スマートフォンで撮影した画像や動画は、端末内のクラウドストレージアプリ（Google Photos、OneDriveなど）によって自動的にクラウドストレージにアップロードされます。**Linuxサーバー上で動作するrclone**がインターネット上のクラウドストレージに接続し、画像や動画ファイルを検出して**ホームネットワーク内**のImmich外部ライブラリにダウンロードします。その際、動画はクラウドストレージから取得後に削除されます。ダウンロードされた動画はImmich外部ライブラリからバックアップストレージにもバックアップを取ります。
 
-長尺動画については、Windows 11クライアントから手動でJellyfinライブラリにコピーし、Jellyfinを通じて視聴します。Jellyfinライブラリのデータもバックアップストレージにバックアップを取ります。
+長尺動画については、クライアントPCから手動でJellyfinライブラリにコピーし、Jellyfinを通じて視聴します。Jellyfinライブラリのデータもバックアップストレージにバックアップを取ります。
 
 以下の構成図は、データの流れと主要コンポーネントの関係を示します：
 
@@ -22,11 +22,11 @@
 flowchart TB
 
     subgraph HomeNetwork[Home network]
-        subgraph Win11Client[Windows 11クライアント]
+        subgraph ClientPC[クライアントPC]
             MovieSource[Jellyfin用動画]
         end
 
-        subgraph MediaServer[Windows 11 Home サーバー]
+        subgraph LinuxServer[Ubuntu Server]
             ImmichLibrary[Immich外部ライブラリ]
             BackupStorage@{ shape: lin-cyl, label: "バックアップストレージ" }
             JellyfinLib[Jellyfinライブラリ]
@@ -35,7 +35,6 @@ flowchart TB
             Jellyfin
         end
     end
-
 
     subgraph ClientNetwork[Home network or Internet]
         Smartphone[スマートフォン]
@@ -78,47 +77,178 @@ flowchart TB
 
 ---
 
-## Windows 11サーバーの物理構成
-
-```mermaid
-flowchart TD
-    subgraph Windows11[Windows 11サーバー]
-        C@{ shape: lin-cyl, label: "Cドライブ" }
-        D@{ shape: lin-cyl, label: "Dドライブ" }
-
-        C-note@{ shape: braces, label: "OS・アプリケーション\nバックアップ" }
-        D-note@{ shape: braces, label: "Immich外部ライブラリ\nJellyfinライブラリ" }
-
-        C-note -.-> C
-        D-note -.-> D
-    end
-```
-
 ## 開発環境
 
-本プロジェクトの開発はWindows上のWSL (Windows Subsystem for Linux)を使用しています。これにより、Windows上でコーディングしながらLinuxと同等の環境でテスト・実行できるようになっています。
+本プロジェクトの開発はWindows上のWSL (Windows Subsystem for Linux)を使用してLinux環境で開発・テストを行い、本番環境のUbuntu Serverにデプロイします。
 
 ### 開発環境構成
 
 - Windows 11 Pro - メイン開発OS
-- WSL2 - Ubuntu 22.04 LTS - Linux互換レイヤー
-- Docker Desktop for Windows (WSL2統合)
-- Visual Studio Code + Remote WSL拡張機能
+- WSL2 - Ubuntu 22.04 LTS - 開発・テスト環境
+- Docker Desktop for Windows (WSL2統合) - コンテナ開発
+- Visual Studio Code + Remote WSL拡張機能 - エディタ
 
-## Linux サーバーの物理構成
+### 本番環境構成
+
+- Ubuntu Server 22.04 LTS - メディアサーバーOS
+- Docker + Docker Compose - コンテナランタイム
+- Immich + Jellyfin - メディア管理アプリケーション
+- rclone - クラウドストレージ連携（ネイティブインストール）
+
+### rclone構成
+
+rcloneはネイティブインストールで運用します。systemdサービスとして実行することで、安定した定期同期を実現します。
+
+**特徴:**
+- システム起動時の自動実行（systemdサービス）
+- 直接的なファイルアクセス権限管理
+- 軽量なCPU・メモリ使用量
+- systemd journalとの統合ログ管理
+
+```bash
+# インストール
+curl https://rclone.org/install.sh | sudo bash
+```
+
+## サーバーの物理構成
 
 ```mermaid
 flowchart TD
     subgraph LinuxServer[Ubuntu Server]
-        Root@{ shape: lin-cyl, label: "/" }
-        Home@{ shape: lin-cyl, label: "/home" }
-        Data@{ shape: lin-cyl, label: "/data" }
+        subgraph PrimaryDisk[プライマリディスク - SSD/NVMe]
+            Root@{ shape: lin-cyl, label: "/" }
+            Home@{ shape: lin-cyl, label: "/home" }
+            Var@{ shape: lin-cyl, label: "/var" }
+            DataMount@{ shape: lin-cyl, label: "/mnt/data" }
+        end
+        
+        subgraph BackupDisk[バックアップディスク - HDD]
+            BackupMount@{ shape: lin-cyl, label: "/mnt/backup" }
+        end
 
-        Root-note@{ shape: braces, label: "OS・アプリケーション" }
-        Home-note@{ shape: braces, label: "ユーザーフォルダ" }
-        Data-note@{ shape: braces, label: "Immich外部ライブラリ\nJellyfinライブラリ" }
+        Root-note@{ shape: braces, label: "OS・システムファイル\nパッケージ・カーネル" }
+        Home-note@{ shape: braces, label: "ユーザーフォルダ\nDocker Compose設定\nrclone設定・ログ" }
+        Var-note@{ shape: braces, label: "Docker・システムログ\nアプリケーションデータ" }
+        Data-note@{ shape: braces, label: "Immich外部ライブラリ\nJellyfinライブラリ\n作業用一時ファイル" }
+        Backup-note@{ shape: braces, label: "メディアファイルバックアップ\nシステム設定バックアップ" }
 
         Root-note -.-> Root
         Home-note -.-> Home
-        Data-note -.-> Data
+        Var-note -.-> Var
+        Data-note -.-> DataMount
+        Backup-note -.-> BackupMount
     end
+```
+
+### ディスク配置戦略
+
+#### プライマリディスク（高速SSD/NVMe推奨）
+- **役割**: 運用・パフォーマンス重視
+- **容量**: 500GB～1TB
+- **内容**: OS、アプリケーション、アクティブなメディアライブラリ
+
+#### バックアップディスク（大容量HDD）
+- **役割**: 保護・保管重視
+- **容量**: 2TB～
+- **内容**: メディアファイルバックアップ、システム設定バックアップ
+
+### 詳細ディレクトリ構成
+
+```
+/                           # プライマリディスク（ルートパーティション）
+├── home/
+│   └── mediaserver/        # メディアサーバー管理ユーザー
+│       ├── docker/         # Docker Compose設定
+│       │   ├── immich/     # Immich設定・compose.yml
+│       │   └── jellyfin/   # Jellyfin設定・compose.yml
+│       ├── rclone/         # rclone設定（ネイティブ版）
+│       │   ├── config/     # rclone設定ファイル
+│       │   │   └── rclone.conf
+│       │   ├── logs/       # rclone実行ログ
+│       │   └── scripts/    # rclone実行スクリプト
+│       │       ├── sync-photos.sh
+│       │       └── sync-videos.sh
+│       └── scripts/        # システム運用スクリプト
+│           ├── backup.sh   # バックアップスクリプト
+│           ├── setup.sh    # 初期セットアップ
+│           └── maintenance.sh  # 定期メンテナンス
+├── etc/
+│   └── systemd/system/     # systemdサービス設定
+│       ├── rclone-sync.service  # rclone同期サービス
+│       └── rclone-sync.timer    # rclone定期実行タイマー
+├── var/
+│   ├── lib/docker/         # Dockerイメージ・コンテナデータ
+│   └── log/                # システム・アプリケーションログ
+└── mnt/
+    ├── data/               # プライマリディスク（データパーティション）
+    │   ├── immich/         # Immich外部ライブラリ
+    │   │   ├── photos/     # 画像ファイル
+    │   │   └── videos/     # 動画ファイル
+    │   ├── jellyfin/       # Jellyfinライブラリ
+    │   │   └── movies/     # 長尺動画ファイル
+    │   └── temp/           # 一時作業ディレクトリ
+    │       ├── upload/     # rcloneダウンロード一時領域
+    │       └── processing/ # 動画変換・処理一時領域
+    └── backup/             # バックアップディスク
+        ├── media/          # メディアファイルバックアップ
+        │   ├── immich/     # Immich動画のバックアップ
+        │   └── jellyfin/   # Jellyfin動画のバックアップ
+        ├── config/         # 設定ファイルバックアップ
+        │   ├── docker/     # Docker設定バックアップ
+        │   └── rclone/     # rclone設定バックアップ
+        └── system/         # システムバックアップ
+            └── snapshots/  # システムスナップショット
+```
+
+### マウント設定例
+
+```bash
+# /etc/fstab の設定例
+/dev/sda1  /           ext4  defaults           0  1
+/dev/sda2  /mnt/data   ext4  defaults,noatime   0  2
+/dev/sdb1  /mnt/backup ext4  defaults,noatime   0  2
+```
+
+### 権限・セキュリティ設定
+
+```bash
+# ディレクトリ作成と権限設定
+sudo mkdir -p /mnt/{data,backup}
+sudo chown -R mediaserver:mediaserver /mnt/data
+sudo chown -R mediaserver:mediaserver /mnt/backup
+sudo chmod -R 755 /mnt/data
+sudo chmod -R 750 /mnt/backup
+```
+
+### systemdサービス設定例
+
+```bash
+# /etc/systemd/system/rclone-sync.service
+[Unit]
+Description=rclone sync service
+After=network.target
+
+[Service]
+Type=oneshot
+User=mediaserver
+ExecStart=/home/mediaserver/rclone/scripts/sync-photos.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# /etc/systemd/system/rclone-sync.timer
+[Unit]
+Description=Run rclone sync every 30 minutes
+Requires=rclone-sync.service
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
