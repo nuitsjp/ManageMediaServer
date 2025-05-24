@@ -39,15 +39,24 @@ if command_exists docker && command_exists docker-compose; then
   fi
   
   # ユーザーがdockerグループに所属しているか確認
-  if [ -n "$SUDO_USER" ] && getent group docker | grep -q "\b${SUDO_USER}\b"; then
+  if [ -n "$SUDO_USER" ] && id -nG "$SUDO_USER" | grep -qw "docker"; then
     log_success "ユーザー $SUDO_USER は docker グループに所属しています"
   else
     log_warning "ユーザーが docker グループに所属していません。追加します..."
     if [ -n "$SUDO_USER" ]; then
-      usermod -aG docker $SUDO_USER
+      usermod -aG docker "$SUDO_USER"
       log_info "ユーザー $SUDO_USER を docker グループに追加しました"
-      log_warning "グループ設定を反映するには、一度ログアウトするか、以下のコマンドを実行してください:"
-      log_info "  newgrp docker"
+      log_warning "グループ設定を反映するには、次のいずれかを実行してください:"
+      log_info "  1. 一度ログアウトしてから再度ログインする"
+      log_info "  2. 現在のシェルセッションで次のコマンドを実行する: newgrp docker"
+      log_info "  3. 新しいターミナルウィンドウを開く"
+      
+      # 現在のユーザーがWSL環境にいるかを確認
+      if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
+        log_info "WSL環境を検出しました。WSLを再起動すると設定が確実に反映されます:"
+        log_info "  Windowsコマンドプロンプトで: wsl --shutdown"
+        log_info "  その後、WSLを再起動してください"
+      fi
     fi
   fi
   
@@ -93,10 +102,19 @@ fi
 # 現在のユーザーをdockerグループに追加
 if [ -n "$SUDO_USER" ]; then
   log_info "ユーザー $SUDO_USER をdockerグループに追加しています..."
-  usermod -aG docker $SUDO_USER
+  usermod -aG docker "$SUDO_USER"
   
-  log_warning "グループ設定を反映するには、一度ログアウトするか、以下のコマンドを実行してください:"
-  log_info "  newgrp docker"
+  log_warning "グループ設定を反映するには、次のいずれかを実行してください:"
+  log_info "  1. 一度ログアウトしてから再度ログインする"
+  log_info "  2. 現在のシェルセッションで次のコマンドを実行する: newgrp docker"
+  log_info "  3. 新しいターミナルウィンドウを開く"
+  
+  # 現在のユーザーがWSL環境にいるかを確認
+  if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
+    log_info "WSL環境を検出しました。WSLを再起動すると設定が確実に反映されます:"
+    log_info "  Windowsコマンドプロンプトで: wsl --shutdown"
+    log_info "  その後、WSLを再起動してください"
+  fi
 else
   log_warning "sudoから実行されていないため、ユーザーをdockerグループに追加できません"
   log_info "手動で以下のコマンドを実行してください:"
