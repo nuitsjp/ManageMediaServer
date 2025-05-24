@@ -1,0 +1,28 @@
+# Jellyfin Media Server Docker Compose Configuration
+version: '3.8'
+
+services:
+  jellyfin:
+    container_name: jellyfin
+    image: jellyfin/jellyfin:latest
+    user: ${JELLYFIN_USER_ID:-1000}:${JELLYFIN_GROUP_ID:-1000}
+    environment:
+      - JELLYFIN_PublishedServerUrl=${JELLYFIN_PUBLISHED_SERVER_URL:-http://localhost:8096}
+      - TZ=${TZ:-Asia/Tokyo}
+    volumes:
+      - ${JELLYFIN_CONFIG_PATH:-./config}:/config
+      - ${JELLYFIN_CACHE_PATH:-./cache}:/cache
+      - ${JELLYFIN_MEDIA_PATH:-./media}:/media
+      - ${JELLYFIN_TEMP_PATH:-./temp}:/temp
+    ports:
+      - "${JELLYFIN_PORT:-8096}:8096"
+      - "${JELLYFIN_HTTPS_PORT:-8920}:8920" # HTTPS
+      - "${JELLYFIN_DLNA_PORT:-1900}:1900/udp" # DLNA
+      - "${JELLYFIN_DISCOVERY_PORT:-7359}:7359/udp" # Service discovery
+    restart: unless-stopped
+    # Optional: Enable hardware acceleration
+    # devices:
+    #   - /dev/dri:/dev/dri # Intel QuickSync
+    #   - /dev/dvb:/dev/dvb # TV tuners
+    # Optional: Enable network mode host for better DLNA discovery
+    # network_mode: host

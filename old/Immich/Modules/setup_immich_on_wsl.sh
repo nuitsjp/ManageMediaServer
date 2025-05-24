@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # setup_immich_on_wsl.sh
 
 # エラーが発生したらスクリプトを終了する

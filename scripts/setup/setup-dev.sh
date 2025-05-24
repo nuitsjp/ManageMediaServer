@@ -60,11 +60,11 @@ install_system_packages() {
 install_docker() {
     log_info "=== Docker CE インストール ==="
     
-    # 既存インストールチェック
-    if command_exists docker && command_exists docker-compose; then
+    # 既存インストールチェック（新しい docker compose 形式に対応）
+    if command_exists docker && docker compose version >/dev/null 2>&1; then
         log_info "Dockerは既にインストール済みです"
         docker --version
-        docker-compose --version
+        docker compose version
         return 0
     fi
     
@@ -157,94 +157,31 @@ EOF
 prepare_docker_compose() {
     log_info "=== Docker Compose設定準備 ==="
     
-    local compose_dir="$PROJECT_ROOT/docker/dev"
-    ensure_dir_exists "$compose_dir"
+    # 新しい構造では各サービスのディレクトリが既に存在している前提
+    # .envファイルの生成は auto-setup.sh で実行済み
     
-    # docker-compose.yml作成（基本的な設定）
-    local compose_file="$compose_dir/docker-compose.yml"
-    if [ ! -f "$compose_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        cat > "$compose_file" << 'EOF'
-# 開発環境用 Docker Compose設定
-version: '3.8'
-
-services:
-  immich-server:
-    container_name: immich_server
-    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
-    command: ['start.sh', 'immich']
-    volumes:
-      - ${DATA_ROOT}/immich/library:/usr/src/app/upload
-      - ${DATA_ROOT}/immich/external:/usr/src/app/external:ro
-      - /etc/localtime:/etc/localtime:ro
-    env_file:
-      - .env.local
-    depends_on:
-      - redis
-      - database
-    restart: always
-    ports:
-      - "2283:3001"
-
-  immich-microservices:
-    container_name: immich_microservices  
-    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
-    command: ['start.sh', 'microservices']
-    volumes:
-      - ${DATA_ROOT}/immich/library:/usr/src/app/upload
-      - ${DATA_ROOT}/immich/external:/usr/src/app/external:ro
-      - /etc/localtime:/etc/localtime:ro
-    env_file:
-      - .env.local
-    depends_on:
-      - redis
-      - database
-    restart: always
-
-  immich-machine-learning:
-    container_name: immich_machine_learning
-    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
-    volumes:
-      - ${DATA_ROOT}/immich/model-cache:/cache
-    env_file:
-      - .env.local
-    restart: always
-
-  redis:
-    container_name: immich_redis
-    image: redis:6.2-alpine@sha256:84882e87b54734154586e5f8abd4dce69fe7311315e2fc6d67c29614c8de2672
-    restart: always
-
-  database:
-    container_name: immich_postgres
-    image: tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0
-    environment:
-      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
-      POSTGRES_USER: postgres
-      POSTGRES_DB: immich
-    volumes:
-      - ${DATA_ROOT}/immich/postgres:/var/lib/postgresql/data
-    restart: always
-
-  jellyfin:
-    container_name: jellyfin
-    image: jellyfin/jellyfin:latest
-    user: 1000:1000
-    network_mode: 'host'
-    volumes:
-      - ${JELLYFIN_CONFIG_PATH}:/config
-      - ${JELLYFIN_MEDIA_PATH}:/media
-      - ${DATA_ROOT}/temp:/temp
-    environment:
-      - JELLYFIN_PublishedServerUrl=http://localhost:8096
-    restart: unless-stopped
-
-networks:
-  default:
-    name: immich-dev
-EOF
-        log_success "Docker Compose設定ファイルを作成しました: $compose_file"
-    else
-        log_info "Docker Compose設定ファイルは既に存在します"
+    local immich_dir="$PROJECT_ROOT/docker/immich"
+    local jellyfin_dir="$PROJECT_ROOT/docker/jellyfin"
+    
+    if [ ! -d "$immich_dir" ] || [ ! -d "$jellyfin_dir" ]; then
+        log_error "Docker設定ディレクトリが見つかりません"
+        log_error "Immich: $immich_dir"
+        log_error "Jellyfin: $jellyfin_dir"
+        log_error "プロジェクトの統合構造を確認してください"
+        return 1
+    fi
+    
+    # .envファイルの存在確認
+    if [ ! -f "$immich_dir/.env" ]; then
+        log_error "Immich .envファイルが見つかりません: $immich_dir/.env"
+        log_info "auto-setup.sh を先に実行してください"
+        return 1
+    fi
+    
+    if [ ! -f "$jellyfin_dir/.env" ]; then
+        log_error "Jellyfin .envファイルが見つかりません: $jellyfin_dir/.env"
+        log_info "auto-setup.sh を先に実行してください"
+        return 1
     fi
     
     log_success "Docker Compose設定準備完了"
@@ -272,7 +209,14 @@ source "$SCRIPT_DIR/../lib/env-loader.sh"
 log_info "=== 開発サービス起動 ==="
 
 cd "$PROJECT_ROOT"
-docker compose -f docker/dev/docker-compose.yml up -d
+
+# Immichサービス起動
+log_info "Immichを起動中..."
+docker compose -f docker/immich/docker-compose.yml up -d
+
+# Jellyfinサービス起動
+log_info "Jellyfinを起動中..."
+docker compose -f docker/jellyfin/docker-compose.yml up -d
 
 log_success "サービス起動完了"
 log_info "Immich: http://localhost:2283"
@@ -294,7 +238,14 @@ source "$SCRIPT_DIR/../lib/common.sh"
 log_info "=== 開発サービス停止 ==="
 
 cd "$PROJECT_ROOT"
-docker compose -f docker/dev/docker-compose.yml down
+
+# Jellyfinサービス停止
+log_info "Jellyfinを停止中..."
+docker compose -f docker/jellyfin/docker-compose.yml down
+
+# Immichサービス停止
+log_info "Immichを停止中..."
+docker compose -f docker/immich/docker-compose.yml down
 
 log_success "サービス停止完了"
 EOF

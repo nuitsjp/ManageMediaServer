@@ -3,10 +3,14 @@ logs/
 work/
 secrets.ps1
 
-# Immich
-.env
-
 downloads/
+
+# Environment files (contain sensitive data)
+.env
+.env.local
+*.env.local
+docker/*/.env
+docker/**/.env
 
 # Created by https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=visualstudio,visualstudiocode

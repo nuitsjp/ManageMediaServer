@@ -148,42 +148,70 @@ prepare_directories() {
 deploy_config_files() {
     log_info "=== 設定ファイル展開 ==="
     
-    # .env.local ファイル生成（Docker Compose用）
-    local env_local_file="$PROJECT_ROOT/docker/dev/.env.local"
+    # Immich .envファイル生成
+    generate_immich_env
     
-    if [ ! -f "$env_local_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        cat > "$env_local_file" << EOF
-# 自動生成された環境変数ファイル
-# 生成日時: $(date '+%Y-%m-%d %H:%M:%S')
-
-PROJECT_ROOT=$PROJECT_ROOT
-DATA_ROOT=$DATA_ROOT
-BACKUP_ROOT=$BACKUP_ROOT
-
-# Immich設定
-IMMICH_UPLOAD_LOCATION=$IMMICH_DIR_PATH/library
-IMMICH_EXTERNAL_LIBRARY_PATH=$IMMICH_DIR_PATH/external
-IMMICH_DB_PASSWORD=${IMMICH_DB_PASSWORD:-postgres}
-
-# Jellyfin設定
-JELLYFIN_CONFIG_PATH=$JELLYFIN_CONFIG_PATH
-JELLYFIN_MEDIA_PATH=$JELLYFIN_MEDIA_PATH
-
-# rclone設定
-RCLONE_CONFIG_PATH=$RCLONE_CONFIG_PATH
-
-# タイムゾーン
-TZ=${TIME_ZONE:-Asia/Tokyo}
-EOF
-        log_success ".env.local ファイルを生成しました: $env_local_file"
-    else
-        log_info ".env.local は既に存在します（--force で強制上書き可能）"
-    fi
+    # Jellyfin .envファイル生成
+    generate_jellyfin_env
     
     # シェル環境に環境変数設定を追加
     setup_shell_environment
     
     log_success "設定ファイル展開完了"
+}
+
+# Immich用.envファイル生成
+generate_immich_env() {
+    local immich_env_file="$PROJECT_ROOT/docker/immich/.env"
+    local immich_example_file="$PROJECT_ROOT/docker/immich/.env.example"
+    
+    if [ ! -f "$immich_env_file" ] || [ "${FORCE:-false}" = "true" ]; then
+        if [ -f "$immich_example_file" ]; then
+            # .env.exampleをベースにして環境固有の値を設定
+            cp "$immich_example_file" "$immich_env_file"
+            
+            # 環境固有の値を設定
+            sed -i "s|UPLOAD_LOCATION=.*|UPLOAD_LOCATION=${IMMICH_DIR_PATH}/library|" "$immich_env_file"
+            sed -i "s|DB_DATA_LOCATION=.*|DB_DATA_LOCATION=${IMMICH_DIR_PATH}/postgres|" "$immich_env_file"
+            sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=${IMMICH_DB_PASSWORD:-postgres}|" "$immich_env_file"
+            
+            # 外部ライブラリパスのコメントアウトを解除（必要に応じて）
+            if [ -n "${IMMICH_EXTERNAL_PATH:-}" ]; then
+                sed -i "s|# EXTERNAL_PATH=.*|EXTERNAL_PATH=${IMMICH_EXTERNAL_PATH}|" "$immich_env_file"
+            fi
+            
+            log_success "Immich .envファイルを生成しました: $immich_env_file"
+        else
+            log_error "Immich .env.exampleファイルが見つかりません: $immich_example_file"
+        fi
+    else
+        log_info "Immich .envは既に存在します（--force で強制上書き可能）"
+    fi
+}
+
+# Jellyfin用.envファイル生成
+generate_jellyfin_env() {
+    local jellyfin_env_file="$PROJECT_ROOT/docker/jellyfin/.env"
+    local jellyfin_example_file="$PROJECT_ROOT/docker/jellyfin/.env.example"
+    
+    if [ ! -f "$jellyfin_env_file" ] || [ "${FORCE:-false}" = "true" ]; then
+        if [ -f "$jellyfin_example_file" ]; then
+            # .env.exampleをベースにして環境固有の値を設定
+            cp "$jellyfin_example_file" "$jellyfin_env_file"
+            
+            # 環境固有の値を設定
+            sed -i "s|JELLYFIN_CONFIG_PATH=.*|JELLYFIN_CONFIG_PATH=${JELLYFIN_CONFIG_PATH}|" "$jellyfin_env_file"
+            sed -i "s|JELLYFIN_MEDIA_PATH=.*|JELLYFIN_MEDIA_PATH=${JELLYFIN_MEDIA_PATH}|" "$jellyfin_env_file"
+            sed -i "s|JELLYFIN_CACHE_PATH=.*|JELLYFIN_CACHE_PATH=${DATA_ROOT}/jellyfin/cache|" "$jellyfin_env_file"
+            sed -i "s|JELLYFIN_TEMP_PATH=.*|JELLYFIN_TEMP_PATH=${DATA_ROOT}/temp|" "$jellyfin_env_file"
+            
+            log_success "Jellyfin .envファイルを生成しました: $jellyfin_env_file"
+        else
+            log_error "Jellyfin .env.exampleファイルが見つかりません: $jellyfin_example_file"
+        fi
+    else
+        log_info "Jellyfin .envは既に存在します（--force で強制上書き可能）"
+    fi
 }
 
 # シェル環境設定
