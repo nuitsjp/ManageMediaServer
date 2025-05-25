@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 共通ライブラリ読み込み
 source "$SCRIPT_DIR/../lib/common.sh" || { echo "[ERROR] common.sh の読み込みに失敗" >&2; exit 1; }
-source "$SCRIPT_DIR/../lib/env-loader.sh" || log_error "env-loader.sh の読み込みに失敗"
+source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに失敗"
 source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに失敗"
 
 # 環境変数読み込み

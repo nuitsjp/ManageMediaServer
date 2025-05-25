@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
-source "$SCRIPT_DIR/../lib/env-loader.sh"
+source "$SCRIPT_DIR/../lib/config.sh"
 
 log_warning "開発データをリセットします"
 log_warning "この操作により以下のデータが削除されます:"

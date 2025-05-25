@@ -84,6 +84,17 @@ is_wsl() {
     grep -qE "(Microsoft|WSL)" /proc/version 2>/dev/null
 }
 
+# 環境判定（統合された機能）
+detect_environment() {
+    if is_wsl; then
+        echo "dev"
+    elif [ -f /etc/os-release ] && grep -q "Ubuntu" /etc/os-release; then
+        echo "prod"
+    else
+        echo "unknown"
+    fi
+}
+
 # 権限チェック
 check_root() {
     if [ "$(id -u)" != "0" ]; then

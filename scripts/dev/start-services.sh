@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib/common.sh"
-source "$SCRIPT_DIR/../lib/env-loader.sh"
+source "$SCRIPT_DIR/../lib/config.sh"
 
 log_info "=== 開発サービス起動 ==="
 
