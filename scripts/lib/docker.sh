@@ -85,11 +85,18 @@ EOF
 
 # Docker Compose構造作成
 create_docker_compose_structure() {
-    local service_name=$1
-    local compose_dir="$PROJECT_ROOT/docker/$service_name"
+    log_info "Docker Compose構造を準備中..."
     
-    ensure_dir_exists "$compose_dir"
-    log_info "Docker Compose構造を準備しました: $compose_dir"
+    # 必要なディレクトリを作成
+    local services=("immich" "jellyfin")
+    
+    for service in "${services[@]}"; do
+        local compose_dir="$PROJECT_ROOT/docker/$service"
+        ensure_dir_exists "$compose_dir"
+        log_debug "Docker Compose構造を準備しました: $compose_dir"
+    done
+    
+    log_success "Docker Compose構造の準備が完了しました"
 }
 
 # Docker検証

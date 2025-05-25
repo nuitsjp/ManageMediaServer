@@ -19,6 +19,9 @@ load_environment() {
         source "$env_config"
         export PROJECT_ROOT DATA_ROOT BACKUP_ROOT COMPOSE_FILE
         export IMMICH_DIR_PATH JELLYFIN_CONFIG_PATH JELLYFIN_MEDIA_PATH RCLONE_CONFIG_PATH
+        
+        # アプリケーション詳細設定を初期化
+        initialize_app_config
     else
         echo "[ERROR] 設定ファイルが見つかりません: $env_config" >&2
         exit 1
@@ -28,23 +31,26 @@ load_environment() {
 # Docker設定
 export INSTALL_DOCKER_COMPOSE_STANDALONE="${INSTALL_DOCKER_COMPOSE_STANDALONE:-false}"
 
-# Immich詳細設定
-export IMMICH_UPLOAD_LOCATION="${IMMICH_DIR_PATH}/library"
-export IMMICH_EXTERNAL_LIBRARY_PATH="${IMMICH_DIR_PATH}/external"
+# 詳細設定初期化関数（環境変数読み込み後に呼び出し）
+initialize_app_config() {
+    # Immich詳細設定
+    export IMMICH_UPLOAD_LOCATION="${IMMICH_DIR_PATH}/library"
+    export IMMICH_EXTERNAL_LIBRARY_PATH="${IMMICH_DIR_PATH}/external"
 
-# Jellyfin詳細設定
-export JELLYFIN_CACHE_PATH="${DATA_ROOT}/jellyfin/cache"
+    # Jellyfin詳細設定
+    export JELLYFIN_CACHE_PATH="${DATA_ROOT}/jellyfin/cache"
 
-# Cloudflare詳細設定
-export CLOUDFLARE_CONFIG_PATH="${DATA_ROOT}/config/cloudflared"
+    # Cloudflare詳細設定
+    export CLOUDFLARE_CONFIG_PATH="${DATA_ROOT}/config/cloudflared"
 
-# rclone詳細設定
-export RCLONE_LOG_PATH="${DATA_ROOT}/config/rclone/logs"
+    # rclone詳細設定
+    export RCLONE_LOG_PATH="${DATA_ROOT}/config/rclone/logs"
 
-# systemd設定（本番環境のみ）
-if [ "$(detect_environment 2>/dev/null)" = "prod" ]; then
-    export SYSTEMD_CONFIG_PATH="/etc/systemd/system"
-fi
+    # systemd設定（本番環境のみ）
+    if [ "$(detect_environment 2>/dev/null)" = "prod" ]; then
+        export SYSTEMD_CONFIG_PATH="/etc/systemd/system"
+    fi
+}
 
 # 設定ファイル展開機能（auto-setup.shから移動）
 
