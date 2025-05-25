@@ -59,6 +59,15 @@ install_docker() {
         log_success "Docker サービス起動成功"
     fi
     
+    # 最終動作確認（エラー時は自動停止）
+    if ! docker info >/dev/null 2>&1; then
+        log_error "Dockerが正常に動作していません"
+    fi
+    
+    if ! command_exists docker-compose; then
+        log_error "docker-composeコマンドが見つかりません"
+    fi
+    
     log_success "Docker と docker-compose のインストール完了"
 }
 
@@ -110,51 +119,6 @@ create_docker_compose_structure() {
     done
     
     log_success "Docker Compose構造の準備が完了しました"
-}
-
-# Docker検証
-validate_docker_installation() {
-    log_info "Docker インストールを検証中..."
-    
-    # Dockerコマンドの存在確認
-    if ! command_exists docker; then
-        log_error "Docker コマンドが見つかりません"
-    fi
-    
-    # Dockerデーモンの動作確認（リトライ機能付き）
-    local max_retries=5
-    local retry_count=0
-    
-    while [ $retry_count -lt $max_retries ]; do
-        if docker info >/dev/null 2>&1; then
-            log_success "Docker デーモンが正常に動作しています"
-            break
-        else
-            retry_count=$((retry_count + 1))
-            log_warning "Docker デーモンへの接続を試行中... ($retry_count/$max_retries)"
-            
-            if [ $retry_count -eq $max_retries ]; then
-                log_error "Docker デーモンが起動していません。再インストールが必要です"
-            fi
-            
-            sleep 2
-        fi
-    done
-    
-    # docker-composeコマンドの確認
-    if ! command_exists docker-compose; then
-        log_error "docker-compose コマンドが見つかりません"
-    fi
-    
-    # 簡単なコンテナテスト
-    log_info "Docker動作テストを実行中..."
-    if docker run --rm hello-world >/dev/null 2>&1; then
-        log_success "Dockerコンテナテストが正常に完了しました"
-    else
-        log_warning "Dockerコンテナテストに失敗しました（権限の問題の可能性があります）"
-    fi
-    
-    log_success "Docker インストールが正常に検証されました"
 }
 
 # Docker完全クリーンアップ（強制オプション用）

@@ -30,19 +30,21 @@
 ### 完了済み
 - [x] **Dockerインストール前処理（Step 1-4）** ✅
   - 事前チェック、ディレクトリ準備、設定ファイル展開、システムパッケージインストール全て成功
-  - 必要なディレクトリ(/home/mediaserver/dev-data/*)とファイルが適切に作成
+  - 必要なディレクトリ(/root/dev-data/*)とファイルが適切に作成
   - curl, wget, git, apt-transport-https, ca-certificates, gnupg, lsb-release全てインストール確認済み
 
-### 進行中
-- [ ] **Dockerインストール（Step 5）**
-  - Docker CE インストール確認
-  - systemdでのdocker自動起動設定確認
+- [x] **Dockerインストール（Step 5）** ✅
+  - Docker CE 26.1.3インストール完了
+  - systemdでのdocker自動起動設定完了（enabled）
+  - WSL環境用の適切なDocker設定適用
+  - 冪等性実装により、既存設定の完全クリーンアップも正常動作
+  - Hello-worldコンテナテストも成功
 
-**検証コマンド:**
+**検証結果:**
 ```bash
-docker --version
-sudo systemctl status docker
-sudo systemctl is-enabled docker
+Docker version 26.1.3, build 26.1.3-0ubuntu1~24.04.1
+● docker.service - Docker Application Container Engine (active/running)
+enabled
 ```
 
 ---

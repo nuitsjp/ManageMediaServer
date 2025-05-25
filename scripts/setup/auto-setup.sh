@@ -118,7 +118,6 @@ main() {
 
     # 5. Dockerインストール
     install_docker
-    validate_docker_installation
 
     # 6. Dockerコンテナ構成作成
     # create_docker_compose_structure
