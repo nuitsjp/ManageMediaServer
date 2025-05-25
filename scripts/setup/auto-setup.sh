@@ -373,6 +373,8 @@ EOF
 
 create_docker_compose_service() {
     log_info "Docker Compose systemdサービスを作成中..."
+    local env_type=$(detect_environment)
+    local compose_dir="docker/${env_type}"
     # Immich
     cat << EOF | tee "$SYSTEMD_CONFIG_PATH/immich.service"
 [Unit]
@@ -385,8 +387,8 @@ Type=oneshot
 RemainAfterExit=yes
 User=mediaserver
 WorkingDirectory=$PROJECT_ROOT
-ExecStart=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml up -d
-ExecStop=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml down
+ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/immich/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/immich/docker-compose.yml down
 StandardOutput=journal
 StandardError=journal
 
@@ -405,8 +407,8 @@ Type=oneshot
 RemainAfterExit=yes
 User=mediaserver
 WorkingDirectory=$PROJECT_ROOT
-ExecStart=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml up -d
-ExecStop=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml down
+ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/jellyfin/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/jellyfin/docker-compose.yml down
 StandardOutput=journal
 StandardError=journal
 
@@ -557,17 +559,16 @@ main() {
     install_rclone
 
     # 環境別セットアップ
+    setup_systemd_services
     if [ "$env_type" = "prod" ]; then
         log_info "=== 本番環境セットアップ ==="
-        setup_systemd_services
         bash "$SCRIPT_DIR/setup-prod.sh" $script_args
     else
         log_info "=== 開発環境セットアップ ==="
-        log_info "開発サービスを起動中..."
-        (cd "$PROJECT_ROOT" && docker compose -f docker/dev/docker-compose.yml up -d)
-        # 開発用スクリプトはリポジトリに含まれるため生成不要
-        # 必要ならsystemd関連セットアップ処理もここで呼び出し
     fi
+    # サービス起動
+    log_info "=== サービス起動 ==="
+    systemctl start immich.service jellyfin.service
 
     log_success "=== 自動セットアップ完了 ==="
     
