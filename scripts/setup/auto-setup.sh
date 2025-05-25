@@ -158,6 +158,9 @@ prepare_directories() {
 deploy_config_files() {
     log_info "=== 設定ファイル展開 ==="
     
+    # Docker Composeファイル作成
+    create_docker_compose_files
+    
     # Immich .envファイル生成
     generate_immich_env
     
@@ -170,57 +173,159 @@ deploy_config_files() {
     log_success "設定ファイル展開完了"
 }
 
-# Immich用.envファイル生成
-generate_immich_env() {
-    local immich_env_file="$PROJECT_ROOT/docker/immich/.env"
-    local immich_example_file="$PROJECT_ROOT/docker/immich/.env.example"
+# Docker Composeファイル作成
+create_docker_compose_files() {
+    local env_type=$(detect_environment)
     
-    if [ ! -f "$immich_env_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        if [ -f "$immich_example_file" ]; then
-            # .env.exampleをベースにして環境固有の値を設定
-            cp "$immich_example_file" "$immich_env_file"
-            
-            # 環境固有の値を設定
-            sed -i "s|UPLOAD_LOCATION=.*|UPLOAD_LOCATION=${IMMICH_DIR_PATH}/library|" "$immich_env_file"
-            sed -i "s|DB_DATA_LOCATION=.*|DB_DATA_LOCATION=${IMMICH_DIR_PATH}/postgres|" "$immich_env_file"
-            sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=${IMMICH_DB_PASSWORD:-postgres}|" "$immich_env_file"
-            
-            # 外部ライブラリパスのコメントアウトを解除（必要に応じて）
-            if [ -n "${IMMICH_EXTERNAL_PATH:-}" ]; then
-                sed -i "s|# EXTERNAL_PATH=.*|EXTERNAL_PATH=${IMMICH_EXTERNAL_PATH}|" "$immich_env_file"
-            fi
-            
-            log_success "Immich .envファイルを生成しました: $immich_env_file"
-        else
-            log_error "Immich .env.exampleファイルが見つかりません: $immich_example_file"
-        fi
+    log_info "Docker Composeファイルを作成中..."
+    
+    # 統一パス構成に基づいて作成
+    create_immich_docker_compose
+    create_jellyfin_docker_compose
+    
+    log_success "Docker Composeファイル作成完了"
+}
+
+# Immich用Docker Composeファイル作成
+create_immich_docker_compose() {
+    local compose_file="$PROJECT_ROOT/docker/immich/docker-compose.yml"
+    local compose_dir="$(dirname "$compose_file")"
+    
+    # ディレクトリ作成
+    ensure_dir_exists "$compose_dir"
+    
+    if [ ! -f "$compose_file" ] || [ "${FORCE:-false}" = "true" ]; then
+        log_info "Immich用Docker Composeファイルを作成中..."
+        
+        cat > "$compose_file" << EOF
+# Immich Docker Compose設定
+version: '3.8'
+
+services:
+  immich-server:
+    container_name: immich_server
+    image: ghcr.io/immich-app/immich-server:\${IMMICH_VERSION:-release}
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - database
+    restart: always
+    ports:
+      - "2283:3001"
+    volumes:
+      - \${UPLOAD_LOCATION}:/usr/src/app/upload
+      - \${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_HOSTNAME=database
+      - DB_USERNAME=\${DB_USERNAME}
+      - DB_DATABASE_NAME=\${DB_DATABASE_NAME}
+      - REDIS_HOSTNAME=redis
+
+  immich-microservices:
+    container_name: immich_microservices
+    image: ghcr.io/immich-app/immich-server:\${IMMICH_VERSION:-release}
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - database
+    restart: always
+    volumes:
+      - \${UPLOAD_LOCATION}:/usr/src/app/upload
+      - \${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_HOSTNAME=database
+      - DB_USERNAME=\${DB_USERNAME}
+      - DB_DATABASE_NAME=\${DB_DATABASE_NAME}
+      - REDIS_HOSTNAME=redis
+    command: ['start.sh', 'microservices']
+
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    image: ghcr.io/immich-app/immich-machine-learning:\${IMMICH_VERSION:-release}
+    restart: always
+    volumes:
+      - model-cache:/cache
+
+  redis:
+    container_name: immich_redis
+    image: redis:6.2-alpine@sha256:70a7a5b641117670beae0d80658430853896b5ef269ccf00d1827427e3263fa3
+    restart: always
+
+  database:
+    container_name: immich_postgres
+    image: tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0
+    env_file:
+      - .env
+    environment:
+      POSTGRES_PASSWORD: \${DB_PASSWORD}
+      POSTGRES_USER: \${DB_USERNAME}
+      POSTGRES_DB: \${DB_DATABASE_NAME}
+    volumes:
+      - \${DB_DATA_LOCATION}:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  model-cache:
+
+networks:
+  default:
+    name: immich
+EOF
+        
+        log_success "Immich用Docker Composeファイルを作成しました: $compose_file"
     else
-        log_info "Immich .envは既に存在します（--force で強制上書き可能）"
+        log_info "Immich用Docker Composeファイルは既に存在します"
     fi
 }
 
-# Jellyfin用.envファイル生成
-generate_jellyfin_env() {
-    local jellyfin_env_file="$PROJECT_ROOT/docker/jellyfin/.env"
-    local jellyfin_example_file="$PROJECT_ROOT/docker/jellyfin/.env.example"
+# Jellyfin用Docker Composeファイル作成
+create_jellyfin_docker_compose() {
+    local compose_file="$PROJECT_ROOT/docker/jellyfin/docker-compose.yml"
+    local compose_dir="$(dirname "$compose_file")"
     
-    if [ ! -f "$jellyfin_env_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        if [ -f "$jellyfin_example_file" ]; then
-            # .env.exampleをベースにして環境固有の値を設定
-            cp "$jellyfin_example_file" "$jellyfin_env_file"
-            
-            # 環境固有の値を設定
-            sed -i "s|JELLYFIN_CONFIG_PATH=.*|JELLYFIN_CONFIG_PATH=${JELLYFIN_CONFIG_PATH}|" "$jellyfin_env_file"
-            sed -i "s|JELLYFIN_MEDIA_PATH=.*|JELLYFIN_MEDIA_PATH=${JELLYFIN_MEDIA_PATH}|" "$jellyfin_env_file"
-            sed -i "s|JELLYFIN_CACHE_PATH=.*|JELLYFIN_CACHE_PATH=${DATA_ROOT}/jellyfin/cache|" "$jellyfin_env_file"
-            sed -i "s|JELLYFIN_TEMP_PATH=.*|JELLYFIN_TEMP_PATH=${DATA_ROOT}/temp|" "$jellyfin_env_file"
-            
-            log_success "Jellyfin .envファイルを生成しました: $jellyfin_env_file"
-        else
-            log_error "Jellyfin .env.exampleファイルが見つかりません: $jellyfin_example_file"
-        fi
+    # ディレクトリ作成
+    ensure_dir_exists "$compose_dir"
+    
+    if [ ! -f "$compose_file" ] || [ "${FORCE:-false}" = "true" ]; then
+        log_info "Jellyfin用Docker Composeファイルを作成中..."
+        
+        cat > "$compose_file" << EOF
+# Jellyfin Docker Compose設定
+version: '3.8'
+
+services:
+  jellyfin:
+    container_name: jellyfin_server
+    image: jellyfin/jellyfin:latest
+    env_file:
+      - .env
+    restart: always
+    ports:
+      - "8096:8096"
+      - "8920:8920"  # HTTPS
+      - "7359:7359/udp"  # Discovery
+      - "1900:1900/udp"  # Discovery
+    volumes:
+      - \${JELLYFIN_CONFIG_PATH}:/config
+      - \${JELLYFIN_CACHE_PATH}:/cache
+      - \${JELLYFIN_MEDIA_PATH}:/media:ro
+      - \${JELLYFIN_TEMP_PATH}:/tmp
+    environment:
+      - JELLYFIN_PublishedServerUrl=\${JELLYFIN_PUBLISHED_SERVER_URL}
+    user: "\${JELLYFIN_USER_ID:-1000}:\${JELLYFIN_GROUP_ID:-1000}"
+
+networks:
+  default:
+    name: jellyfin
+EOF
+        
+        log_success "Jellyfin用Docker Composeファイルを作成しました: $compose_file"
     else
-        log_info "Jellyfin .envは既に存在します（--force で強制上書き可能）"
+        log_info "Jellyfin用Docker Composeファイルは既に存在します"
     fi
 }
 
@@ -252,13 +357,14 @@ EOF
         log_info "環境変数設定を .bashrc に追加しました"
     fi
     
-    # 開発環境: WSLログイン時にコンテナを自動起動
-    if [ "$env_type" = "dev" ] && ! grep -q "docker compose -f docker/dev/docker-compose.yml up -d" "$HOME/.bashrc"; then
+    # 開発環境用の自動起動設定は統一構成に対応
+    if [ "$env_type" = "dev" ] && ! grep -q "docker compose -f docker/immich/docker-compose.yml up -d" "$HOME/.bashrc"; then
         cat >> "$HOME/.bashrc" << 'EOF'
 
 # 開発環境起動時のサービス自動起動
-if [ -f "$PROJECT_ROOT/docker/dev/docker-compose.yml" ]; then
-    (cd "$PROJECT_ROOT" && docker compose -f docker/dev/docker-compose.yml up -d)
+if [ -f "$PROJECT_ROOT/docker/immich/docker-compose.yml" ]; then
+    (cd "$PROJECT_ROOT" && docker compose -f docker/immich/docker-compose.yml up -d)
+    (cd "$PROJECT_ROOT" && docker compose -f docker/jellyfin/docker-compose.yml up -d)
 fi
 EOF
         log_info "開発環境サービス自動起動設定を .bashrc に追加しました"
@@ -374,7 +480,8 @@ EOF
 create_docker_compose_service() {
     log_info "Docker Compose systemdサービスを作成中..."
     local env_type=$(detect_environment)
-    local compose_dir="docker/${env_type}"
+    
+    # 統一パス構成に対応
     # Immich
     cat << EOF | tee "$SYSTEMD_CONFIG_PATH/immich.service"
 [Unit]
@@ -387,8 +494,8 @@ Type=oneshot
 RemainAfterExit=yes
 User=mediaserver
 WorkingDirectory=$PROJECT_ROOT
-ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/immich/docker-compose.yml up -d
-ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/immich/docker-compose.yml down
+ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/docker/immich/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/docker/immich/docker-compose.yml down
 StandardOutput=journal
 StandardError=journal
 
@@ -407,8 +514,8 @@ Type=oneshot
 RemainAfterExit=yes
 User=mediaserver
 WorkingDirectory=$PROJECT_ROOT
-ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/jellyfin/docker-compose.yml up -d
-ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/$compose_dir/jellyfin/docker-compose.yml down
+ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/docker/jellyfin/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/docker/jellyfin/docker-compose.yml down
 StandardOutput=journal
 StandardError=journal
 
@@ -591,7 +698,8 @@ show_next_steps() {
 1. 新しいターミナルを開く（環境変数反映のため）
 2. サービス起動:
    cd $PROJECT_ROOT
-   docker compose -f docker/dev/docker-compose.yml up -d
+   docker compose -f docker/immich/docker-compose.yml up -d
+   docker compose -f docker/jellyfin/docker-compose.yml up -d
 
 3. 接続確認:
    - Immich: http://localhost:2283

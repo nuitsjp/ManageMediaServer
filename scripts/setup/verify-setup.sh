@@ -146,9 +146,11 @@ check_container_status() {
         if docker ps -a --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | grep -E "(immich|jellyfin)" >/dev/null 2>&1; then
             log_info "停止中のコンテナ:"
             docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "(immich|jellyfin)" | sed 's/^/  /'
+            log_info "コンテナを起動する場合は --start-containers オプションを使用してください"
         else
             log_error "immich/jellyfinコンテナが見つかりません"
             log_info "Docker Composeでコンテナを作成してください"
+            log_info "自動作成・起動する場合は --start-containers オプションを使用してください"
         fi
     fi
     
@@ -327,10 +329,72 @@ show_troubleshooting() {
 EOF
 }
 
+# Docker Composeファイル確認・バリデーション
+validate_docker_compose_files() {
+    log_info "=== Docker Composeファイルバリデーション ==="
+    
+    local compose_files=(
+        "$PROJECT_ROOT/docker/immich/docker-compose.yml"
+        "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml"
+    )
+    
+    for compose_file in "${compose_files[@]}"; do
+        if [ -f "$compose_file" ]; then
+            log_info "検証中: $(basename "$(dirname "$compose_file")")"
+            
+            # docker-compose config でバリデーション
+            if (cd "$(dirname "$compose_file")" && docker-compose config >/dev/null 2>&1); then
+                log_success "設定ファイル有効: $compose_file"
+            else
+                log_warning "設定ファイルに問題があります: $compose_file"
+                log_info "詳細確認: cd $(dirname "$compose_file") && docker-compose config"
+            fi
+        else
+            log_warning "ファイルが見つかりません: $compose_file"
+        fi
+    done
+}
+
+# コンテナ起動機能
+start_containers() {
+    log_info "=== コンテナ起動 ==="
+    
+    local compose_files=(
+        "$PROJECT_ROOT/docker/immich/docker-compose.yml"
+        "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml"
+    )
+    
+    for compose_file in "${compose_files[@]}"; do
+        if [ -f "$compose_file" ]; then
+            local service_name=$(basename "$(dirname "$compose_file")")
+            log_info "${service_name} コンテナを起動中..."
+            
+            if (cd "$(dirname "$compose_file")" && docker-compose up -d); then
+                log_success "${service_name} コンテナ起動完了"
+            else
+                log_error "${service_name} コンテナ起動に失敗しました"
+                log_info "ログ確認: cd $(dirname "$compose_file") && docker-compose logs"
+            fi
+        else
+            log_error "Docker Composeファイルが見つかりません: $compose_file"
+        fi
+    done
+    
+    # 起動待機
+    log_info "サービス起動を待機中..."
+    sleep 10
+    
+    # 再度状態確認
+    check_container_status
+    check_ports
+    check_network_connectivity
+}
+
 # メイン処理
 main() {
     local show_guide=false
     local show_troubleshooting=false
+    local start_containers_flag=false
     
     # 引数解析
     while [[ $# -gt 0 ]]; do
@@ -344,6 +408,9 @@ main() {
             --troubleshooting)
                 show_troubleshooting=true
                 ;;
+            --start-containers)
+                start_containers_flag=true
+                ;;
             --help|-h)
                 cat << EOF
 セットアップ検証スクリプト
@@ -355,6 +422,7 @@ main() {
     --debug              デバッグモード
     --guide              起動ガイドを表示
     --troubleshooting    トラブルシューティング情報を表示
+    --start-containers   コンテナを自動起動
     --help, -h           このヘルプを表示
 EOF
                 exit 0
@@ -378,9 +446,16 @@ EOF
     check_docker_compose  
     check_config_files
     check_directories
+    validate_docker_compose_files
     check_container_status
-    check_ports
-    check_network_connectivity
+    
+    # コンテナ起動オプション
+    if [ "$start_containers_flag" = "true" ]; then
+        start_containers
+    else
+        check_ports
+        check_network_connectivity
+    fi
     
     if [ "$show_guide" = "true" ]; then
         show_startup_guide
@@ -394,14 +469,18 @@ EOF
     
     # サマリー表示
     log_info "=== 確認結果サマリー ==="
-    log_info "次のコマンドでサービスを起動してください:"
-    local env_type=$(detect_environment)
-    if [ "$env_type" = "dev" ]; then
-        log_info "  cd $PROJECT_ROOT"
-        log_info "  docker compose -f docker/immich/docker-compose.yml up -d"
-        log_info "  docker compose -f docker/jellyfin/docker-compose.yml up -d"
-    else
-        log_info "  sudo systemctl start immich jellyfin"
+    if [ "$start_containers_flag" != "true" ]; then
+        log_info "次のコマンドでサービスを起動してください:"
+        local env_type=$(detect_environment)
+        if [ "$env_type" = "dev" ]; then
+            log_info "  cd $PROJECT_ROOT"
+            log_info "  docker compose -f docker/immich/docker-compose.yml up -d"
+            log_info "  docker compose -f docker/jellyfin/docker-compose.yml up -d"
+            log_info ""
+            log_info "または自動起動: $0 --start-containers"
+        else
+            log_info "  sudo systemctl start immich jellyfin"
+        fi
     fi
     
     log_info "詳細ガイド: $0 --guide"
