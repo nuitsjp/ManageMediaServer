@@ -295,22 +295,21 @@ install_system_packages() {
 install_docker() {
     log_info "=== Docker のインストール ==="
     
-    # 既存の Docker があれば削除
-    if command_exists docker; then
-        apt remove -y docker docker-engine docker.io containerd runc || true
-    fi
+    # 既存の Docker および containerd パッケージを削除して競合を回避
+    log_info "既存の Docker 関連パッケージを削除中..."
+    apt remove -y docker docker-engine docker.io containerd containerd.io runc || true
     
     # パッケージリスト更新
     apt update -y
-    
+
     # docker.io と docker-compose をインストール
-    if ! dpkg -l | grep -qw docker.io; then
-        apt install -y docker.io
-    fi
-    if ! dpkg -l | grep -qw docker-compose; then
-        apt install -y docker-compose
-    fi
-    
+    local docker_pkgs=("docker.io" "docker-compose")
+    for pkg in "${docker_pkgs[@]}"; do
+        if ! dpkg -l | grep -qw "$pkg"; then
+            apt install -y "$pkg"
+        fi
+    done
+
     # docker グループにユーザーを追加
     usermod -aG docker "$USER"
     
@@ -508,9 +507,13 @@ main() {
         echo "1. 事前チェック"
         echo "2. ディレクトリ準備"
         echo "3. 設定ファイル展開"
-        echo "4. 環境別セットアップスクリプト実行"
+        echo "4. 環境別セットアップ"
         echo "   - 環境: $env_type"
-        echo "   - スクリプト: $SCRIPT_DIR/setup-$env_type.sh"
+        if [ "$env_type" = "prod" ]; then
+            echo "   - スクリプト: $SCRIPT_DIR/setup-prod.sh"
+        else
+            echo "   - 開発環境: scripts/dev にある既存スクリプトを参照してください"
+        fi
         log_info "実際の実行を行う場合は --dry-run オプションを外してください"
         exit 0
     fi
