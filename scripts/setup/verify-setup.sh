@@ -51,9 +51,8 @@ check_config_files() {
     
     local env_type=$(detect_environment)
     
-    # .envファイル確認
+    # Immich .envファイル確認
     local immich_env="$PROJECT_ROOT/docker/immich/.env"
-    local jellyfin_env="$PROJECT_ROOT/docker/jellyfin/.env"
     
     if [ -f "$immich_env" ]; then
         log_success "Immich .env ファイル存在: $immich_env"
@@ -63,13 +62,8 @@ check_config_files() {
         log_error "Immich .env ファイルが見つかりません: $immich_env"
     fi
     
-    if [ -f "$jellyfin_env" ]; then
-        log_success "Jellyfin .env ファイル存在: $jellyfin_env"
-        log_debug "内容プレビュー:"
-        head -5 "$jellyfin_env" | sed 's/^/  /'
-    else
-        log_error "Jellyfin .env ファイルが見つかりません: $jellyfin_env"
-    fi
+    # Jellyfin設定確認（.env不要）
+    log_info "Jellyfin設定: 公式Docker Composeファイルを使用（.env不要）"
     
     # Docker Composeファイル確認（統一パス構成）
     local compose_files=(
@@ -80,6 +74,11 @@ check_config_files() {
     for compose_file in "${compose_files[@]}"; do
         if [ -f "$compose_file" ]; then
             log_success "Docker Compose ファイル存在: $compose_file"
+            
+            # Jellyfinの場合は公式ファイル使用を明記
+            if [[ "$compose_file" == *"jellyfin"* ]]; then
+                log_info "Jellyfin: 公式Docker Composeファイル使用"
+            fi
         else
             log_warning "Docker Compose ファイルが見つかりません: $compose_file"
         fi
@@ -224,16 +223,17 @@ show_startup_guide() {
    docker compose -f docker/immich/docker-compose.yml up -d
    docker compose -f docker/jellyfin/docker-compose.yml up -d
 
-4. または統合起動（今後実装予定）:
-   # docker compose -f docker/dev-compose.yml up -d
-
-5. ログ確認:
+4. ログ確認:
    docker compose -f docker/immich/docker-compose.yml logs -f
    docker compose -f docker/jellyfin/docker-compose.yml logs -f
 
-6. サービス停止:
+5. サービス停止:
    docker compose -f docker/immich/docker-compose.yml down
    docker compose -f docker/jellyfin/docker-compose.yml down
+
+設定について:
+- Immich: .envファイルで設定管理
+- Jellyfin: 公式docker-compose.ymlを直接編集
 
 現在の問題:
 EOF
@@ -243,7 +243,7 @@ EOF
             missing_files+=("docker/immich/docker-compose.yml")
         fi
         if [ ! -f "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml" ]; then
-            missing_files+=("docker/jellyfin/docker-compose.yml")
+            missing_files+=("docker/jellyfin/docker-compose.yml（公式ファイル）")
         fi
         
         if [ ${#missing_files[@]} -gt 0 ]; then
@@ -289,9 +289,10 @@ show_troubleshooting() {
    - 確認: docker ps (権限エラーが出なければOK)
 
 2. Docker Composeファイルが見つからない:
+   - Immich: 自動生成されるdocker-compose.yml + .env
+   - Jellyfin: 公式docker-compose.ymlを手動配置（.env不要）
    - 確認: ls -la $PROJECT_ROOT/docker/immich/
    - 確認: ls -la $PROJECT_ROOT/docker/jellyfin/
-   - 作成: テンプレートから各ディレクトリのdocker-compose.ymlを作成
 
 3. 環境設定ファイルが見つからない:
    - 確認: ls -la $PROJECT_ROOT/config/env/
@@ -308,20 +309,22 @@ show_troubleshooting() {
    - Docker状態確認: sudo systemctl status docker
 
 6. 設定ファイルの問題:
-   - .envファイル再生成: auto-setup.sh --force
+   - Immich .envファイル再生成: auto-setup.sh --force
+   - Jellyfin設定変更: docker/jellyfin/docker-compose.yml を直接編集
 
 7. ディレクトリ権限の問題:
    - 権限修正: sudo chown -R \$USER:\$USER $DATA_ROOT
+
+設定ファイル構成:
+- Immich: docker/immich/docker-compose.yml + .env（自動生成）
+- Jellyfin: docker/jellyfin/docker-compose.yml（公式ファイル、.env不要）
+- 環境設定: config/env/dev.env, config/env/prod.env
+- データ: \$DATA_ROOT (環境変数で指定)
 
 現在の環境状態:
 - 環境: $(detect_environment)
 - Dockerグループ: $(groups | grep -o docker || echo "なし")
 - Docker権限: $(docker ps >/dev/null 2>&1 && echo "OK" || echo "エラー")
-
-設計方針に基づく構成:
-- Docker設定: docker/immich/, docker/jellyfin/ (環境共通)
-- 環境設定: config/env/dev.env, config/env/prod.env
-- データ: \$DATA_ROOT (環境変数で指定)
 
 詳細ログは以下で確認:
    export DEBUG=1

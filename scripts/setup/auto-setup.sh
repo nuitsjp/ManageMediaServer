@@ -290,43 +290,60 @@ create_jellyfin_docker_compose() {
     # ディレクトリ作成
     ensure_dir_exists "$compose_dir"
     
-    if [ ! -f "$compose_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        log_info "Jellyfin用Docker Composeファイルを作成中..."
+    # 既存の公式ファイルがある場合は保持（.env不要）
+    if [ -f "$compose_file" ]; then
+        log_success "Jellyfin用Docker Composeファイルは既に存在します（公式ファイル使用）: $compose_file"
+        log_info "Jellyfinは.envファイルを使用せず、公式ファイルをそのまま利用します"
+        return 0
+    fi
+    
+    # ファイルが存在しない場合はエラー（公式ファイル配置を前提）
+    log_error "Jellyfin用Docker Composeファイルが見つかりません: $compose_file"
+    log_info "公式のdocker-compose.ymlファイルを配置してください"
+    log_info "参考: https://jellyfin.org/docs/general/installation/container"
+    return 1
+}
+
+# Immich用.envファイル生成
+generate_immich_env() {
+    log_info "=== Immich環境設定 ==="
+    
+    local env_file="$PROJECT_ROOT/docker/immich/.env"
+    
+    # ディレクトリ作成
+    ensure_dir_exists "$(dirname "$env_file")"
+    
+    if [ ! -f "$env_file" ] || [ "${FORCE:-false}" = "true" ]; then
+        log_info ".envファイルを生成中..."
         
-        cat > "$compose_file" << EOF
-# Jellyfin Docker Compose設定
-version: '3.8'
+        cat > "$env_file" << EOF
+# Immich 環境変数設定
+# 自動生成日時: $(date '+%Y-%m-%d %H:%M:%S')
 
-services:
-  jellyfin:
-    container_name: jellyfin_server
-    image: jellyfin/jellyfin:latest
-    env_file:
-      - .env
-    restart: always
-    ports:
-      - "8096:8096"
-      - "8920:8920"  # HTTPS
-      - "7359:7359/udp"  # Discovery
-      - "1900:1900/udp"  # Discovery
-    volumes:
-      - \${JELLYFIN_CONFIG_PATH}:/config
-      - \${JELLYFIN_CACHE_PATH}:/cache
-      - \${JELLYFIN_MEDIA_PATH}:/media:ro
-      - \${JELLYFIN_TEMP_PATH}:/tmp
-    environment:
-      - JELLYFIN_PublishedServerUrl=\${JELLYFIN_PUBLISHED_SERVER_URL}
-    user: "\${JELLYFIN_USER_ID:-1000}:\${JELLYFIN_GROUP_ID:-1000}"
+# データベース設定
+DB_HOSTNAME=database
+DB_USERNAME=immich
+DB_DATABASE_NAME=immich
 
-networks:
-  default:
-    name: jellyfin
+# Redis設定
+REDIS_HOSTNAME=redis
+
+# アップロード設定
+UPLOAD_LOCATION=/data/immich/upload
+EXTERNAL_PATH=/data/immich/external
 EOF
         
-        log_success "Jellyfin用Docker Composeファイルを作成しました: $compose_file"
+        log_success ".envファイルを作成しました: $env_file"
     else
-        log_info "Jellyfin用Docker Composeファイルは既に存在します"
+        log_info ".envファイルは既に存在します"
     fi
+}
+
+# Jellyfin用.envファイル生成
+generate_jellyfin_env() {
+    # Jellyfinは.envファイルを使用しないため、何もしない
+    log_info "Jellyfin設定: 公式Docker Composeファイルを使用（.env不要）"
+    log_info "設定変更が必要な場合は docker/jellyfin/docker-compose.yml を直接編集してください"
 }
 
 # シェル環境設定
