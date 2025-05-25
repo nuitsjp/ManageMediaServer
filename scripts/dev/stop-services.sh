@@ -11,12 +11,19 @@ log_info "=== 開発サービス停止 ==="
 
 cd "$PROJECT_ROOT"
 
+# Docker権限の一時的な解決
+USE_SUDO=""
+if ! docker info >/dev/null 2>&1; then
+    log_warning "Docker権限がありません。sudoを使用します"
+    USE_SUDO="sudo"
+fi
+
 # Jellyfinサービス停止
 log_info "Jellyfinを停止中..."
-docker compose -f docker/jellyfin/docker-compose.yml down
+$USE_SUDO docker compose -f docker/jellyfin/docker-compose.yml down
 
 # Immichサービス停止
 log_info "Immichを停止中..."
-docker compose -f docker/immich/docker-compose.yml down
+$USE_SUDO docker compose -f docker/immich/docker-compose.yml down
 
 log_success "サービス停止完了"

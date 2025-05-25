@@ -12,13 +12,20 @@ log_info "=== 開発サービス起動 ==="
 
 cd "$PROJECT_ROOT"
 
+# Docker権限の一時的な解決
+USE_SUDO=""
+if ! docker info >/dev/null 2>&1; then
+    log_warning "Docker権限がありません。sudoを使用します"
+    USE_SUDO="sudo"
+fi
+
 # Immichサービス起動
 log_info "Immichを起動中..."
-docker compose -f docker/immich/docker-compose.yml up -d
+$USE_SUDO docker compose -f docker/immich/docker-compose.yml up -d
 
 # Jellyfinサービス起動
 log_info "Jellyfinを起動中..."
-docker compose -f docker/jellyfin/docker-compose.yml up -d
+$USE_SUDO docker compose -f docker/jellyfin/docker-compose.yml up -d
 
 log_success "サービス起動完了"
 log_info "Immich: http://localhost:2283"

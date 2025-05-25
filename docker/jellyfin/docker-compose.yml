@@ -1,5 +1,4 @@
 # Jellyfin Media Server Docker Compose Configuration
-version: '3.8'
 
 services:
   jellyfin:

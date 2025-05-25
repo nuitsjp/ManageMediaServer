@@ -17,9 +17,18 @@ if ! confirm_action "本当にリセットしますか？"; then
     exit 0
 fi
 
+# Docker権限の一時的な解決
+USE_SUDO=""
+if ! docker info >/dev/null 2>&1; then
+    log_warning "Docker権限がありません。sudoを使用します"
+    USE_SUDO="sudo"
+fi
+
 # サービス停止
 log_info "サービスを停止中..."
-"$SCRIPT_DIR/stop-services.sh"
+cd "$(dirname "$SCRIPT_DIR")"
+$USE_SUDO docker compose -f docker/jellyfin/docker-compose.yml down 2>/dev/null || true
+$USE_SUDO docker compose -f docker/immich/docker-compose.yml down 2>/dev/null || true
 
 # データディレクトリ削除・再作成
 log_info "データディレクトリをリセット中..."

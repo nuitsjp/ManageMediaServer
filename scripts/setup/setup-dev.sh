@@ -315,6 +315,52 @@ setup_permissions() {
     log_success "権限設定完了"
 }
 
+# サービス起動テスト
+test_services() {
+    log_info "=== サービス起動テスト ==="
+    
+    # Docker権限の一時的な解決
+    local use_sudo=""
+    if ! docker info >/dev/null 2>&1; then
+        log_warning "Docker権限がありません。sudoを使用してテストします"
+        use_sudo="sudo"
+    fi
+    
+    # Immichサービステスト起動
+    log_info "Immichサービスをテスト起動中..."
+    if $use_sudo docker compose -f "$PROJECT_ROOT/docker/immich/docker-compose.yml" up -d; then
+        log_success "Immichサービスが正常に起動しました"
+        
+        # サービス状態確認
+        sleep 5
+        local containers=$($use_sudo docker ps --filter "name=immich" --format "table {{.Names}}\t{{.Status}}")
+        log_info "起動中のコンテナ:"
+        echo "$containers"
+        
+        # Jellyfinサービステスト起動
+        log_info "Jellyfinサービスをテスト起動中..."
+        if $use_sudo docker compose -f "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml" up -d; then
+            log_success "Jellyfinサービスが正常に起動しました"
+            
+            # 全サービス状態確認
+            sleep 3
+            local all_containers=$($use_sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}")
+            log_info "起動中の全コンテナ:"
+            echo "$all_containers"
+            
+            log_success "全サービスが正常に起動しています"
+            log_info "アクセス可能なサービス:"
+            log_info "- Immich: http://localhost:2283"
+            log_info "- Jellyfin: http://localhost:8096"
+            
+        else
+            log_error "Jellyfinサービスの起動に失敗しました"
+        fi
+    else
+        log_error "Immichサービスの起動に失敗しました"
+    fi
+}
+
 # 動作確認
 verify_installation() {
     log_info "=== 動作確認 ==="
@@ -325,7 +371,7 @@ verify_installation() {
         if docker info >/dev/null 2>&1; then
             log_success "Docker は正常に動作しています"
         else
-            log_warning "Docker デーモンが起動していません（Dockerグループ変更後の再ログインが必要な可能性があります）"
+            log_warning "Docker権限に問題があります（Dockerグループ変更後の再ログインが必要）"
         fi
     else
         log_error "Docker のインストールに失敗しました"
@@ -373,6 +419,7 @@ main() {
         shift
     done
     
+    
     log_info "=== 開発環境（WSL）セットアップ開始 ==="
     
     # WSL環境チェック
@@ -388,6 +435,9 @@ main() {
     
     # 動作確認
     verify_installation
+    
+    # サービス起動テスト
+    test_services
     
     log_success "=== 開発環境セットアップ完了 ==="
     
