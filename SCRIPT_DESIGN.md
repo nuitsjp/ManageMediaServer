@@ -33,8 +33,8 @@
 ${PROJECT_ROOT}/            # プロジェクトルート
 ├── docs/                   # ドキュメント
 ├── docker/                 # Docker Compose設定
-│   ├── dev/               # 開発環境用
-│   └── prod/              # 本番環境用
+│   ├── immich/             # immich境用
+│   └── jellyfin/           # jellyfin用
 ├── config/                 # 設定ファイル・テンプレート
 │   └── env/               # 環境別設定
 │       ├── dev.env        # 開発環境用パス設定
