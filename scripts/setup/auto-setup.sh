@@ -317,6 +317,100 @@ install_rclone() {
     log_success "rcloneのインストールが完了しました"
 }
 
+# systemdサービス設定（本番環境用）
+setup_systemd_services() {
+    log_info "=== systemdサービス設定 ==="
+    create_rclone_sync_service
+    create_docker_compose_service
+    setup_systemd_timers
+    log_success "systemdサービス設定完了"
+}
+
+create_rclone_sync_service() {
+    log_info "rclone同期サービスを作成中..."
+    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/rclone-sync.service"
+[Unit]
+Description=rclone sync media files
+After=network.target
+
+[Service]
+Type=oneshot
+User=$(whoami)
+Environment=RCLONE_CONFIG=$RCLONE_CONFIG_PATH
+ExecStart=/usr/bin/rclone sync ${RCLONE_REMOTE_NAME}:/ $DATA_ROOT/immich/external --log-file=$RCLONE_LOG_PATH/sync.log --log-level INFO
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+EOF
+    log_success "rclone同期サービスを作成しました"
+}
+
+create_docker_compose_service() {
+    log_info "Docker Compose systemdサービスを作成中..."
+    # Immich
+    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/immich.service"
+[Unit]
+Description=Immich Media Server
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=$(whoami)
+WorkingDirectory=$PROJECT_ROOT
+ExecStart=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml down
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    # Jellyfin
+    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/jellyfin.service"
+[Unit]
+Description=Jellyfin Media Server
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=$(whoami)
+WorkingDirectory=$PROJECT_ROOT
+ExecStart=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml down
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    log_success "Docker Compose systemdサービスを作成しました"
+}
+
+setup_systemd_timers() {
+    log_info "systemdタイマーを設定中..."
+    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/rclone-sync.timer"
+[Unit]
+Description=Run rclone sync hourly
+Requires=rclone-sync.service
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable rclone-sync.timer
+    log_success "systemdタイマー設定完了"
+}
+
 # 環境チェック（WSL または Ubuntu Server）
 check_environment() {
     local env_type=$1
@@ -333,6 +427,28 @@ check_environment() {
         fi
     fi
     log_success "環境チェック完了: $env_type"
+}
+
+# ユーザー・権限確認（mediaserverユーザー必須）
+check_user_permissions() {
+    log_info "=== ユーザー・権限確認 ==="
+    # 現在のユーザーがmediaserver出ない場合は強制終了
+    if [ "$(id -un)" != "mediaserver" ]; then
+        # rootならユーザー作成を提案
+        if [ "$(id -u)" = "0" ] && ! id mediaserver &>/dev/null; then
+            log_info "mediaserver ユーザーを作成しますか？"
+            if confirm_action "mediaserver ユーザーを作成しますか？"; then
+                useradd -m -s /bin/bash mediaserver
+                usermod -aG docker,sudo mediaserver
+                chown mediaserver:mediaserver /home/mediaserver
+                chmod 755 /home/mediaserver
+                log_success "mediaserver ユーザーを作成しました"
+            fi
+        fi
+        log_warning "mediaserver ユーザーで実行してください"
+        log_info "sudo -u mediaserver -i で切り替えて再実行してください"
+        exit 0
+    fi
 }
 
 # メイン処理
@@ -373,7 +489,10 @@ main() {
     
     # 環境変数読み込み（既にenv-loaderで実行済みだが明示的に）
     local env_type=$(detect_environment)
-    
+
+    # ← 追加: mediaserverユーザー確認
+    check_user_permissions
+
     # 環境情報表示
     show_environment_info "$env_type"
     
@@ -418,6 +537,7 @@ main() {
     # 環境別セットアップ
     if [ "$env_type" = "prod" ]; then
         log_info "=== 本番環境セットアップ ==="
+        setup_systemd_services
         bash "$SCRIPT_DIR/setup-prod.sh" $script_args
     else
         log_info "=== 開発環境セットアップ ==="

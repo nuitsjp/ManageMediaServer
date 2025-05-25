@@ -13,53 +13,6 @@ source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに
 # 環境変数読み込み
 load_environment
 
-# ユーザー・権限確認
-check_user_permissions() {
-    log_info "=== ユーザー・権限確認 ==="
-    
-    # root実行チェック
-    if [ "$(id -u)" = "0" ]; then
-        log_warning "rootユーザーで実行されています"
-        log_info "本番環境では専用ユーザー（mediaserver）での実行を推奨します"
-        
-        # mediaserverユーザー作成確認
-        if ! id "mediaserver" &>/dev/null; then
-            log_info "mediaserver ユーザーを作成しますか？"
-            if confirm_action "mediaserver ユーザーを作成しますか？"; then
-                create_mediaserver_user
-            fi
-        fi
-    fi
-    
-    # sudo権限確認
-    if ! sudo -n true 2>/dev/null; then
-        log_error "sudo権限が必要です。現在のユーザーがsudoグループに属していることを確認してください"
-    fi
-    
-    log_success "ユーザー・権限確認完了"
-}
-
-# mediaserverユーザー作成
-create_mediaserver_user() {
-    log_info "mediaserver ユーザーを作成中..."
-    
-    # ユーザー作成
-    useradd -m -s /bin/bash mediaserver
-    
-    # sudoグループに追加
-    usermod -aG sudo mediaserver
-    
-    # ホームディレクトリ権限設定
-    chown mediaserver:mediaserver /home/mediaserver
-    chmod 755 /home/mediaserver
-    
-    log_success "mediaserver ユーザーを作成しました"
-    log_warning "以下のコマンドでmediaserverユーザーに切り替えてから再実行してください:"
-    log_info "sudo -u mediaserver -i"
-    log_info "cd $PROJECT_ROOT && ./scripts/setup/setup-prod.sh"
-    exit 0
-}
-
 # ディスク構成確認・セットアップ
 setup_disk_configuration() {
     log_info "=== ディスク構成確認・セットアップ ==="
@@ -94,121 +47,6 @@ setup_disk_configuration() {
     fi
     
     log_success "ディスク構成セットアップ完了"
-}
-
-# systemdサービス設定
-setup_systemd_services() {
-    log_info "=== systemdサービス設定 ==="
-    
-    # rclone同期サービス作成
-    create_rclone_sync_service
-    
-    # Docker Compose用systemdサービス作成
-    create_docker_compose_service
-    
-    # タイマー設定
-    setup_systemd_timers
-    
-    log_success "systemdサービス設定完了"
-}
-
-# rclone同期systemdサービス作成
-create_rclone_sync_service() {
-    log_info "rclone同期サービスを作成中..."
-    
-    # サービスファイル作成
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/rclone-sync.service"
-[Unit]
-Description=rclone sync media files
-After=network.target
-
-[Service]
-Type=oneshot
-User=$(whoami)
-Environment=RCLONE_CONFIG=$RCLONE_CONFIG_PATH
-ExecStart=/usr/bin/rclone sync ${RCLONE_REMOTE_NAME}:/ $DATA_ROOT/immich/external --log-file=$RCLONE_LOG_PATH/sync.log --log-level INFO
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=default.target
-EOF
-    
-    log_success "rclone同期サービスを作成しました"
-}
-
-# Docker Compose systemdサービス作成
-create_docker_compose_service() {
-    log_info "Docker Compose systemdサービスを作成中..."
-    
-    # Immichサービス
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/immich.service"
-[Unit]
-Description=Immich Media Server
-Requires=docker.service
-After=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-User=$(whoami)
-WorkingDirectory=$PROJECT_ROOT
-ExecStart=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml up -d
-ExecStop=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml down
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    # Jellyfinサービス
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/jellyfin.service"
-[Unit]
-Description=Jellyfin Media Server
-Requires=docker.service
-After=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-User=$(whoami)
-WorkingDirectory=$PROJECT_ROOT
-ExecStart=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml up -d
-ExecStop=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml down
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    log_success "Docker Compose systemdサービスを作成しました"
-}
-
-# systemdタイマー設定
-setup_systemd_timers() {
-    log_info "systemdタイマーを設定中..."
-    
-    # rclone同期タイマー（毎時実行）
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/rclone-sync.timer"
-[Unit]
-Description=Run rclone sync hourly
-Requires=rclone-sync.service
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-    
-    # systemdサービス・タイマー有効化
-    sudo systemctl daemon-reload
-    sudo systemctl enable rclone-sync.timer
-    
-    log_success "systemdタイマー設定完了"
 }
 
 # ファイアウォール設定
@@ -396,12 +234,8 @@ main() {
     
     log_info "=== 本番環境（Ubuntu Server）セットアップ開始 ==="
 
-    # ユーザー・権限確認
-    check_user_permissions
-
     # --- インストール処理は auto-setup.sh 側で実施済み ---
     setup_disk_configuration
-    setup_systemd_services
     setup_firewall
     setup_security
     prepare_production_compose
