@@ -81,42 +81,6 @@ create_mediaserver_user() {
     exit 0
 }
 
-# システムパッケージ更新・インストール
-install_system_packages() {
-    log_info "=== システムパッケージ更新・インストール ==="
-    
-    # パッケージリスト更新
-    log_info "パッケージリストを更新中..."
-    sudo apt update
-    
-    # システム更新
-    log_info "システムパッケージを更新中..."
-    sudo apt upgrade -y
-    
-    # 基本パッケージインストール
-    log_info "基本パッケージをインストール中..."
-    sudo apt install -y \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release \
-        git \
-        htop \
-        tree \
-        jq \
-        unzip \
-        wget \
-        apt-transport-https \
-        software-properties-common \
-        ufw \
-        fail2ban \
-        logrotate \
-        cron \
-        rsync
-    
-    log_success "システムパッケージのインストール完了"
-}
-
 # ディスク構成確認・セットアップ
 setup_disk_configuration() {
     log_info "=== ディスク構成確認・セットアップ ==="
@@ -151,117 +115,6 @@ setup_disk_configuration() {
     fi
     
     log_success "ディスク構成セットアップ完了"
-}
-
-# Docker CE インストール（本番環境用）
-install_docker_production() {
-    log_info "=== Docker CE インストール（本番環境用） ==="
-    
-    # 既存インストールチェック
-    if command_exists docker && command_exists docker-compose; then
-        log_info "Dockerは既にインストール済みです"
-        docker --version
-        docker-compose --version
-        return 0
-    fi
-    
-    # 古いDockerパッケージ削除
-    log_info "古いDockerパッケージを削除中..."
-    sudo apt remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
-    
-    # DockerのGPGキー追加
-    log_info "DockerのGPGキーを追加中..."
-    sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    
-    # Dockerリポジトリ追加
-    log_info "Dockerリポジトリを追加中..."
-    echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-        $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # パッケージリスト更新
-    sudo apt update
-    
-    # Docker CE インストール
-    log_info "Docker CE をインストール中..."
-    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    
-    # ユーザーをdockerグループに追加
-    log_info "ユーザーをdockerグループに追加中..."
-    sudo usermod -aG docker "$(whoami)"
-    
-    # Docker サービス起動・有効化
-    log_info "Dockerサービスを起動・有効化中..."
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    
-    # Docker設定最適化（本番環境用）
-    setup_docker_production_config
-    
-    log_success "Docker CE のインストール完了"
-}
-
-# Docker本番設定
-setup_docker_production_config() {
-    log_info "Docker本番環境設定を適用中..."
-    
-    # Docker daemon設定
-    sudo mkdir -p /etc/docker
-    cat << EOF | sudo tee /etc/docker/daemon.json
-{
-    "log-driver": "json-file",
-    "log-opts": {
-        "max-size": "100m",
-        "max-file": "3"
-    },
-    "storage-driver": "overlay2",
-    "live-restore": true
-}
-EOF
-    
-    # Dockerサービス再起動
-    sudo systemctl restart docker
-    
-    log_success "Docker本番環境設定完了"
-}
-
-# rclone インストール（本番環境用）
-install_rclone_production() {
-    log_info "=== rclone インストール（本番環境用） ==="
-    
-    # 既存インストールチェック
-    if command_exists rclone; then
-        log_info "rcloneは既にインストール済みです"
-        rclone version
-        return 0
-    fi
-    
-    # rclone インストール
-    log_info "rclone をインストール中..."
-    curl https://rclone.org/install.sh | sudo bash
-    
-    # 設定ディレクトリ作成
-    ensure_dir_exists "$(dirname "$RCLONE_CONFIG_PATH")"
-    ensure_dir_exists "$RCLONE_LOG_PATH"
-    
-    # 本番用設定ファイル作成
-    if [ ! -f "$RCLONE_CONFIG_PATH" ]; then
-        cat > "$RCLONE_CONFIG_PATH" << EOF
-# rclone設定ファイル（本番環境用）
-# クラウドストレージ設定は 'rclone config' で設定してください
-#
-# 推奨設定:
-# [gdrive]
-# type = drive
-# scope = drive.readonly
-# ...
-EOF
-        log_info "rclone設定ファイルを作成しました: $RCLONE_CONFIG_PATH"
-        log_warning "実際のクラウドストレージとの連携は 'rclone config' で設定してください"
-    fi
-    
-    log_success "rclone のインストール完了"
 }
 
 # systemdサービス設定
@@ -544,7 +397,7 @@ verify_production_installation() {
 # メイン処理
 main() {
     local force=false
-    
+
     # 引数解析
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -563,26 +416,24 @@ main() {
     done
     
     log_info "=== 本番環境（Ubuntu Server）セットアップ開始 ==="
-    
+
     # 本番環境チェック
     check_production_environment
-    
+
     # ユーザー・権限確認
     check_user_permissions
-    
-    # セットアップ処理実行
-    install_system_packages
+
+    # --- インストール処理は auto-setup.sh 側で実施済み ---
     setup_disk_configuration
-    install_docker_production
-    install_rclone_production
+
     setup_systemd_services
     setup_firewall
     setup_security
     prepare_production_compose
-    
+
     # 動作確認
     verify_production_installation
-    
+
     log_success "=== 本番環境セットアップ完了 ==="
     
     # 次のステップ案内

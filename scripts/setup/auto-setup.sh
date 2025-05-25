@@ -283,29 +283,28 @@ install_system_packages() {
 
 # Docker CEインストール
 install_docker() {
-    log_info "=== Docker CEのインストール ==="
+    log_info "=== Docker のインストール ==="
     
-    # 既存のDockerがインストールされている場合はアンインストール
-    if command_exists "docker"; then
+    # 既存の Docker があれば削除
+    if command_exists docker; then
         apt remove -y docker docker-engine docker.io containerd runc || true
     fi
-    
-    # Dockerの公式GPGキーを追加
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-    
-    # Dockerリポジトリを追加
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
     
     # パッケージリスト更新
     apt update -y
     
-    # Docker CEインストール
-    apt install -y docker-ce docker-ce-cli containerd.io
+    # docker.io と docker-compose をインストール
+    if ! dpkg -l | grep -qw docker.io; then
+        apt install -y docker.io
+    fi
+    if ! dpkg -l | grep -qw docker-compose; then
+        apt install -y docker-compose
+    fi
     
-    # Dockerグループにユーザーを追加
-    usermod -aG docker $USER
+    # docker グループにユーザーを追加
+    usermod -aG docker "$USER"
     
-    log_success "Docker CEのインストールが完了しました"
+    log_success "Docker と docker-compose のインストール完了"
 }
 
 # rcloneインストール
@@ -316,73 +315,6 @@ install_rclone() {
     curl https://rclone.org/install.sh | sudo bash
     
     log_success "rcloneのインストールが完了しました"
-}
-
-# 開発用スクリプト生成
-create_dev_scripts() {
-    log_info "=== 開発用スクリプトの生成 ==="
-    
-    local scripts_dir="$PROJECT_ROOT/scripts"
-    
-    # スクリプトディレクトリが存在しない場合は作成
-    ensure_dir_exists "$scripts_dir"
-    
-    # start-services.sh の生成
-    cat > "$scripts_dir/start-services.sh" << 'EOF'
-#!/bin/bash
-# サービス起動スクリプト
-
-# 環境変数読み込み
-source "$(dirname "$0")/../lib/common.sh"
-
-# Immich サービス起動
-docker compose -f "$PROJECT_ROOT/docker/dev/docker-compose.yml" up -d
-
-# Jellyfin サービス起動
-docker compose -f "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml" up -d
-
-echo "サービスが起動しました。"
-EOF
-    
-    # stop-services.sh の生成
-    cat > "$scripts_dir/stop-services.sh" << 'EOF'
-#!/bin/bash
-# サービス停止スクリプト
-
-# 環境変数読み込み
-source "$(dirname "$0")/../lib/common.sh"
-
-# Immich サービス停止
-docker compose -f "$PROJECT_ROOT/docker/dev/docker-compose.yml" down
-
-# Jellyfin サービス停止
-docker compose -f "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml" down
-
-echo "サービスが停止しました。"
-EOF
-    
-    # reset-dev-data.sh の生成
-    cat > "$scripts_dir/reset-dev-data.sh" << 'EOF'
-#!/bin/bash
-# 開発データリセットスクリプト
-
-# 環境変数読み込み
-source "$(dirname "$0")/../lib/common.sh"
-
-# データのバックアップ
-rclone copy "$DATA_ROOT" "remote:backup/media-$(date +%Y%m%d%H%M%S)" --progress
-
-# データのリセット
-rm -rf "$DATA_ROOT/immich/library/*"
-rm -rf "$DATA_ROOT/jellyfin/movies/*"
-
-echo "開発データがリセットされました。"
-EOF
-    
-    # 実行権限を付与
-    chmod +x "$scripts_dir/"*.sh
-    
-    log_success "開発用スクリプトの生成が完了しました"
 }
 
 # メイン処理
@@ -468,7 +400,7 @@ main() {
         bash "$SCRIPT_DIR/setup-prod.sh" $script_args
     else
         log_info "=== 開発環境セットアップ ==="
-        create_dev_scripts
+        # 開発用スクリプトはリポジトリに含まれるため生成不要
         # 必要ならsystemd関連セットアップ処理もここで呼び出し
     fi
 
