@@ -163,9 +163,6 @@ deploy_config_files() {
     # Docker Composeファイル作成
     create_docker_compose_files
     
-    # Immich .envファイル生成
-    generate_immich_env
-    
     # Jellyfin .envファイル生成
     generate_jellyfin_env
     
@@ -297,12 +294,6 @@ create_jellyfin_docker_compose() {
     log_info "公式のdocker-compose.ymlファイルを配置してください"
     log_info "参考: https://jellyfin.org/docs/general/installation/container"
     return 1
-}
-
-# Immich用.envファイル生成
-generate_immich_env() {
-    # create_immich_docker_compose() で処理済み
-    log_info "Immich .env設定は公式ファイルベースで設定済みです"
 }
 
 # Jellyfin用.envファイル生成
