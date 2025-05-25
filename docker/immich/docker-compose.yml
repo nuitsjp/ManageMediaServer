@@ -1,8 +1,11 @@
 #
-# WARNING: Make sure to use the docker-compose.yml of the current release:
+# WARNING: To install Immich, follow our guide: https://immich.app/docs/install/docker-compose
+#
+# Make sure to use the docker-compose.yml of the current release:
+#
 # https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
 #
-# This file is based on the official Immich docker-compose.yml with modifications for external library support
+# The compose file on main may not be compatible with the latest release.
 
 name: immich
 
@@ -16,8 +19,6 @@ services:
     volumes:
       # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - ${UPLOAD_LOCATION}:/usr/src/app/upload
-      # External library support - uncomment and configure EXTERNAL_PATH in .env if needed
-      # - ${EXTERNAL_PATH}:/usr/src/app/external:ro
       - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env

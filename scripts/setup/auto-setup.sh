@@ -131,7 +131,9 @@ prepare_directories() {
     local dirs=(
         "$DATA_ROOT"
         "$BACKUP_ROOT"
-        "$DATA_ROOT/immich"
+        "$DATA_ROOT/immich/upload"
+        "$DATA_ROOT/immich/external"
+        "$DATA_ROOT/immich/postgres"
         "$DATA_ROOT/jellyfin/config"
         "$DATA_ROOT/jellyfin/movies"
         "$DATA_ROOT/config/rclone"
@@ -189,97 +191,90 @@ create_docker_compose_files() {
 # Immich用Docker Composeファイル作成
 create_immich_docker_compose() {
     local compose_file="$PROJECT_ROOT/docker/immich/docker-compose.yml"
+    local env_file="$PROJECT_ROOT/docker/immich/.env"
     local compose_dir="$(dirname "$compose_file")"
     
     # ディレクトリ作成
     ensure_dir_exists "$compose_dir"
     
-    if [ ! -f "$compose_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        log_info "Immich用Docker Composeファイルを作成中..."
+    # 既存ファイルがない場合、または強制更新の場合
+    if [ ! -f "$compose_file" ] || [ ! -f "$env_file" ] || [ "${FORCE:-false}" = "true" ]; then
+        log_info "Immich公式設定ファイルをダウンロード中..."
         
-        cat > "$compose_file" << EOF
-# Immich Docker Compose設定
-version: '3.8'
-
-services:
-  immich-server:
-    container_name: immich_server
-    image: ghcr.io/immich-app/immich-server:\${IMMICH_VERSION:-release}
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - database
-    restart: always
-    ports:
-      - "2283:3001"
-    volumes:
-      - \${UPLOAD_LOCATION}:/usr/src/app/upload
-      - \${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro
-      - /etc/localtime:/etc/localtime:ro
-    environment:
-      - DB_HOSTNAME=database
-      - DB_USERNAME=\${DB_USERNAME}
-      - DB_DATABASE_NAME=\${DB_DATABASE_NAME}
-      - REDIS_HOSTNAME=redis
-
-  immich-microservices:
-    container_name: immich_microservices
-    image: ghcr.io/immich-app/immich-server:\${IMMICH_VERSION:-release}
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - database
-    restart: always
-    volumes:
-      - \${UPLOAD_LOCATION}:/usr/src/app/upload
-      - \${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro
-      - /etc/localtime:/etc/localtime:ro
-    environment:
-      - DB_HOSTNAME=database
-      - DB_USERNAME=\${DB_USERNAME}
-      - DB_DATABASE_NAME=\${DB_DATABASE_NAME}
-      - REDIS_HOSTNAME=redis
-    command: ['start.sh', 'microservices']
-
-  immich-machine-learning:
-    container_name: immich_machine_learning
-    image: ghcr.io/immich-app/immich-machine-learning:\${IMMICH_VERSION:-release}
-    restart: always
-    volumes:
-      - model-cache:/cache
-
-  redis:
-    container_name: immich_redis
-    image: redis:6.2-alpine@sha256:70a7a5b641117670beae0d80658430853896b5ef269ccf00d1827427e3263fa3
-    restart: always
-
-  database:
-    container_name: immich_postgres
-    image: tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0
-    env_file:
-      - .env
-    environment:
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
-      POSTGRES_USER: \${DB_USERNAME}
-      POSTGRES_DB: \${DB_DATABASE_NAME}
-    volumes:
-      - \${DB_DATA_LOCATION}:/var/lib/postgresql/data
-    restart: always
-
-volumes:
-  model-cache:
-
-networks:
-  default:
-    name: immich
-EOF
+        # 作業ディレクトリに移動
+        cd "$compose_dir"
         
-        log_success "Immich用Docker Composeファイルを作成しました: $compose_file"
+        # 公式ファイルダウンロード
+        if wget -O docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml; then
+            log_success "docker-compose.yml をダウンロードしました"
+        else
+            log_error "docker-compose.yml のダウンロードに失敗しました"
+            return 1
+        fi
+        
+        if wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env; then
+            log_success ".env をダウンロードしました"
+        else
+            log_error ".env のダウンロードに失敗しました"
+            return 1
+        fi
+        
+        # 外部ライブラリパスを追加
+        add_external_library_path "$compose_file"
+        
+        # .envファイルを環境に応じて調整
+        configure_immich_env "$env_file"
+        
+        log_success "Immich設定ファイルの準備が完了しました"
     else
-        log_info "Immich用Docker Composeファイルは既に存在します"
+        log_info "Immich設定ファイルは既に存在します"
+        
+        # 外部ライブラリパスが追加されているか確認
+        if ! grep -q "EXTERNAL_PATH" "$compose_file"; then
+            log_info "外部ライブラリパスを追加中..."
+            add_external_library_path "$compose_file"
+        fi
     fi
+}
+
+# 外部ライブラリパスをdocker-compose.ymlに追加
+add_external_library_path() {
+    local compose_file="$1"
+    
+    log_info "外部ライブラリパスを追加中..."
+    
+    # /etc/localtime:/etc/localtime:ro の後に外部ライブラリパスを追加
+    sed -i '/- \/etc\/localtime:\/etc\/localtime:ro/a\      # External library support\n      - ${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro' "$compose_file"
+    
+    log_success "外部ライブラリパスを追加しました"
+}
+
+# Immich .envファイルの環境調整
+configure_immich_env() {
+    local env_file="$1"
+    local env_type=$(detect_environment)
+    
+    log_info "Immich .envファイルを環境に応じて設定中..."
+    
+    # 環境変数のパスを設定
+    if [ "$env_type" = "dev" ]; then
+        # 開発環境用パス設定
+        sed -i "s|UPLOAD_LOCATION=.*|UPLOAD_LOCATION=${DATA_ROOT}/immich/upload|" "$env_file"
+        sed -i "s|#EXTERNAL_PATH=.*|EXTERNAL_PATH=${DATA_ROOT}/immich/external|" "$env_file"
+        
+        # データベース設定
+        sed -i "s|DB_DATA_LOCATION=.*|DB_DATA_LOCATION=${DATA_ROOT}/immich/postgres|" "$env_file"
+    else
+        # 本番環境用パス設定
+        sed -i "s|UPLOAD_LOCATION=.*|UPLOAD_LOCATION=${DATA_ROOT}/immich/upload|" "$env_file"
+        sed -i "s|#EXTERNAL_PATH=.*|EXTERNAL_PATH=${DATA_ROOT}/immich/external|" "$env_file"
+        sed -i "s|DB_DATA_LOCATION=.*|DB_DATA_LOCATION=${DATA_ROOT}/immich/postgres|" "$env_file"
+    fi
+    
+    # EXTERNAL_PATHのコメントアウトを解除
+    sed -i 's/^#EXTERNAL_PATH=/EXTERNAL_PATH=/' "$env_file"
+    
+    log_success "Immich .envファイルの設定が完了しました"
 }
 
 # Jellyfin用Docker Composeファイル作成
@@ -306,37 +301,8 @@ create_jellyfin_docker_compose() {
 
 # Immich用.envファイル生成
 generate_immich_env() {
-    log_info "=== Immich環境設定 ==="
-    
-    local env_file="$PROJECT_ROOT/docker/immich/.env"
-    
-    # ディレクトリ作成
-    ensure_dir_exists "$(dirname "$env_file")"
-    
-    if [ ! -f "$env_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        log_info ".envファイルを生成中..."
-        
-        cat > "$env_file" << EOF
-# Immich 環境変数設定
-# 自動生成日時: $(date '+%Y-%m-%d %H:%M:%S')
-
-# データベース設定
-DB_HOSTNAME=database
-DB_USERNAME=immich
-DB_DATABASE_NAME=immich
-
-# Redis設定
-REDIS_HOSTNAME=redis
-
-# アップロード設定
-UPLOAD_LOCATION=/data/immich/upload
-EXTERNAL_PATH=/data/immich/external
-EOF
-        
-        log_success ".envファイルを作成しました: $env_file"
-    else
-        log_info ".envファイルは既に存在します"
-    fi
+    # create_immich_docker_compose() で処理済み
+    log_info "Immich .env設定は公式ファイルベースで設定済みです"
 }
 
 # Jellyfin用.envファイル生成
