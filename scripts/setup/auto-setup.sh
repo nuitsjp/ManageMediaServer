@@ -1,4 +1,11 @@
 #!/bin/bash
+# --- root権限チェック・昇格 ---
+if [ "$(id -u)" -ne 0 ]; then
+    echo "[INFO] Root権限が必要です。sudoで再実行します..."
+    exec sudo bash "$0" "$@"
+fi
+# --------------------------------
+
 # 統合セットアップスクリプト（環境自動判定）
 set -euo pipefail
 
@@ -142,6 +149,9 @@ prepare_directories() {
     chmod 750 "$DATA_ROOT/config" "$BACKUP_ROOT/config"
     
     log_success "ディレクトリ準備完了"
+
+    # データディレクトリをmediaserver所有に
+    chown -R mediaserver:mediaserver "$DATA_ROOT" "$BACKUP_ROOT"
 }
 
 # 設定ファイル展開
@@ -328,14 +338,14 @@ setup_systemd_services() {
 
 create_rclone_sync_service() {
     log_info "rclone同期サービスを作成中..."
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/rclone-sync.service"
+    cat << EOF | tee "$SYSTEMD_CONFIG_PATH/rclone-sync.service"
 [Unit]
 Description=rclone sync media files
 After=network.target
 
 [Service]
 Type=oneshot
-User=$(whoami)
+User=mediaserver
 Environment=RCLONE_CONFIG=$RCLONE_CONFIG_PATH
 ExecStart=/usr/bin/rclone sync ${RCLONE_REMOTE_NAME}:/ $DATA_ROOT/immich/external --log-file=$RCLONE_LOG_PATH/sync.log --log-level INFO
 StandardOutput=journal
@@ -350,7 +360,7 @@ EOF
 create_docker_compose_service() {
     log_info "Docker Compose systemdサービスを作成中..."
     # Immich
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/immich.service"
+    cat << EOF | tee "$SYSTEMD_CONFIG_PATH/immich.service"
 [Unit]
 Description=Immich Media Server
 Requires=docker.service
@@ -359,7 +369,7 @@ After=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-User=$(whoami)
+User=mediaserver
 WorkingDirectory=$PROJECT_ROOT
 ExecStart=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml up -d
 ExecStop=/usr/bin/docker compose -f docker/prod/immich/docker-compose.yml down
@@ -370,7 +380,7 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
     # Jellyfin
-    cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/jellyfin.service"
+    cat << EOF | tee "$SYSTEMD_CONFIG_PATH/jellyfin.service"
 [Unit]
 Description=Jellyfin Media Server
 Requires=docker.service
@@ -379,7 +389,7 @@ After=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-User=$(whoami)
+User=mediaserver
 WorkingDirectory=$PROJECT_ROOT
 ExecStart=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml up -d
 ExecStop=/usr/bin/docker compose -f docker/prod/jellyfin/docker-compose.yml down
@@ -389,6 +399,7 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
+
     log_success "Docker Compose systemdサービスを作成しました"
 }
 
@@ -429,25 +440,18 @@ check_environment() {
     log_success "環境チェック完了: $env_type"
 }
 
-# ユーザー・権限確認（mediaserverユーザー必須）
+# ユーザー・権限確認（mediaserverユーザー作成のみ）
 check_user_permissions() {
     log_info "=== ユーザー・権限確認 ==="
-    # 現在のユーザーがmediaserver出ない場合は強制終了
-    if [ "$(id -un)" != "mediaserver" ]; then
-        # rootならユーザー作成を提案
-        if [ "$(id -u)" = "0" ] && ! id mediaserver &>/dev/null; then
-            log_info "mediaserver ユーザーを作成しますか？"
-            if confirm_action "mediaserver ユーザーを作成しますか？"; then
-                useradd -m -s /bin/bash mediaserver
-                usermod -aG docker,sudo mediaserver
-                chown mediaserver:mediaserver /home/mediaserver
-                chmod 755 /home/mediaserver
-                log_success "mediaserver ユーザーを作成しました"
-            fi
-        fi
-        log_warning "mediaserver ユーザーで実行してください"
-        log_info "sudo -u mediaserver -i で切り替えて再実行してください"
-        exit 0
+    if ! id mediaserver &>/dev/null; then
+        log_info "mediaserver ユーザーを作成中..."
+        useradd -m -s /bin/bash mediaserver
+        usermod -aG docker,sudo mediaserver
+        chown mediaserver:mediaserver /home/mediaserver
+        chmod 755 /home/mediaserver
+        log_success "mediaserver ユーザーを作成しました"
+    else
+        log_success "mediaserver ユーザーは既に存在します"
     fi
 }
 
@@ -490,7 +494,7 @@ main() {
     # 環境変数読み込み（既にenv-loaderで実行済みだが明示的に）
     local env_type=$(detect_environment)
 
-    # ← 追加: mediaserverユーザー確認
+    # ← 変更: ユーザー作成のみ。切り替えは行わない
     check_user_permissions
 
     # 環境情報表示
