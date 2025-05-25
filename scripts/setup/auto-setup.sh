@@ -246,6 +246,145 @@ EOF
     source "$env_setup_file"
 }
 
+# システムパッケージ更新・インストール
+install_system_packages() {
+    log_info "=== システムパッケージの更新・インストール ==="
+    
+    # パッケージリスト更新
+    apt update -y
+    
+    # 基本パッケージインストール
+    local packages=(
+        "curl"
+        "git"
+        "lsb-release"
+        "sudo"
+        "ca-certificates"
+        "gnupg"
+    )
+    
+    # WSLの場合、追加のパッケージをインストール
+    if grep -q Microsoft /proc/version; then
+        packages+=(
+            "apt-transport-https"
+            "software-properties-common"
+        )
+    fi
+    
+    # パッケージインストール
+    for pkg in "${packages[@]}"; do
+        if ! dpkg -l | grep -qw "$pkg"; then
+            apt install -y "$pkg"
+        fi
+    done
+    
+    log_success "システムパッケージの更新・インストールが完了しました"
+}
+
+# Docker CEインストール
+install_docker() {
+    log_info "=== Docker CEのインストール ==="
+    
+    # 既存のDockerがインストールされている場合はアンインストール
+    if command_exists "docker"; then
+        apt remove -y docker docker-engine docker.io containerd runc || true
+    fi
+    
+    # Dockerの公式GPGキーを追加
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    
+    # Dockerリポジトリを追加
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    
+    # パッケージリスト更新
+    apt update -y
+    
+    # Docker CEインストール
+    apt install -y docker-ce docker-ce-cli containerd.io
+    
+    # Dockerグループにユーザーを追加
+    usermod -aG docker $USER
+    
+    log_success "Docker CEのインストールが完了しました"
+}
+
+# rcloneインストール
+install_rclone() {
+    log_info "=== rcloneのインストール ==="
+    
+    # rcloneの公式GPGキーを追加
+    curl https://rclone.org/install.sh | sudo bash
+    
+    log_success "rcloneのインストールが完了しました"
+}
+
+# 開発用スクリプト生成
+create_dev_scripts() {
+    log_info "=== 開発用スクリプトの生成 ==="
+    
+    local scripts_dir="$PROJECT_ROOT/scripts"
+    
+    # スクリプトディレクトリが存在しない場合は作成
+    ensure_dir_exists "$scripts_dir"
+    
+    # start-services.sh の生成
+    cat > "$scripts_dir/start-services.sh" << 'EOF'
+#!/bin/bash
+# サービス起動スクリプト
+
+# 環境変数読み込み
+source "$(dirname "$0")/../lib/common.sh"
+
+# Immich サービス起動
+docker compose -f "$PROJECT_ROOT/docker/dev/docker-compose.yml" up -d
+
+# Jellyfin サービス起動
+docker compose -f "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml" up -d
+
+echo "サービスが起動しました。"
+EOF
+    
+    # stop-services.sh の生成
+    cat > "$scripts_dir/stop-services.sh" << 'EOF'
+#!/bin/bash
+# サービス停止スクリプト
+
+# 環境変数読み込み
+source "$(dirname "$0")/../lib/common.sh"
+
+# Immich サービス停止
+docker compose -f "$PROJECT_ROOT/docker/dev/docker-compose.yml" down
+
+# Jellyfin サービス停止
+docker compose -f "$PROJECT_ROOT/docker/jellyfin/docker-compose.yml" down
+
+echo "サービスが停止しました。"
+EOF
+    
+    # reset-dev-data.sh の生成
+    cat > "$scripts_dir/reset-dev-data.sh" << 'EOF'
+#!/bin/bash
+# 開発データリセットスクリプト
+
+# 環境変数読み込み
+source "$(dirname "$0")/../lib/common.sh"
+
+# データのバックアップ
+rclone copy "$DATA_ROOT" "remote:backup/media-$(date +%Y%m%d%H%M%S)" --progress
+
+# データのリセット
+rm -rf "$DATA_ROOT/immich/library/*"
+rm -rf "$DATA_ROOT/jellyfin/movies/*"
+
+echo "開発データがリセットされました。"
+EOF
+    
+    # 実行権限を付与
+    chmod +x "$scripts_dir/"*.sh
+    
+    log_success "開発用スクリプトの生成が完了しました"
+}
+
 # メイン処理
 main() {
     local dry_run=false
@@ -311,29 +450,28 @@ main() {
     
     # 事前チェック
     pre_check "$env_type"
-    
+
     # ディレクトリ準備
     prepare_directories
-    
+
     # 設定ファイル展開
     deploy_config_files
-    
-    # 環境別セットアップ実行
-    local setup_script="$SCRIPT_DIR/setup-$env_type.sh"
-    if [ -f "$setup_script" ]; then
-        log_info "=== 環境別セットアップ実行 ==="
-        log_info "実行スクリプト: $setup_script"
-        
-        # セットアップスクリプトに引数を渡す
-        local script_args=""
-        [ "$force" = "true" ] && script_args="$script_args --force"
-        [ "${DEBUG:-0}" = "1" ] && script_args="$script_args --debug"
-        
-        bash "$setup_script" $script_args
+
+    # ← ここから共通インストール処理を実行
+    install_system_packages
+    install_docker
+    install_rclone
+
+    # 環境別セットアップ
+    if [ "$env_type" = "prod" ]; then
+        log_info "=== 本番環境セットアップ ==="
+        bash "$SCRIPT_DIR/setup-prod.sh" $script_args
     else
-        log_error "環境別セットアップスクリプトが見つかりません: $setup_script"
+        log_info "=== 開発環境セットアップ ==="
+        create_dev_scripts
+        # 必要ならsystemd関連セットアップ処理もここで呼び出し
     fi
-    
+
     log_success "=== 自動セットアップ完了 ==="
     
     # 次のステップ案内
