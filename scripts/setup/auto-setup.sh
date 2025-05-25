@@ -252,6 +252,18 @@ EOF
         log_info "環境変数設定を .bashrc に追加しました"
     fi
     
+    # 開発環境: WSLログイン時にコンテナを自動起動
+    if [ "$env_type" = "dev" ] && ! grep -q "docker compose -f docker/dev/docker-compose.yml up -d" "$HOME/.bashrc"; then
+        cat >> "$HOME/.bashrc" << 'EOF'
+
+# 開発環境起動時のサービス自動起動
+if [ -f "$PROJECT_ROOT/docker/dev/docker-compose.yml" ]; then
+    (cd "$PROJECT_ROOT" && docker compose -f docker/dev/docker-compose.yml up -d)
+fi
+EOF
+        log_info "開発環境サービス自動起動設定を .bashrc に追加しました"
+    fi
+    
     # 現在のセッションに環境変数を反映
     source "$env_setup_file"
 }
@@ -332,6 +344,9 @@ setup_systemd_services() {
     create_rclone_sync_service
     create_docker_compose_service
     setup_systemd_timers
+    # 本番環境: サービスをブート時に自動起動
+    systemctl daemon-reload
+    systemctl enable immich.service jellyfin.service rclone-sync.timer
     log_success "systemdサービス設定完了"
 }
 
@@ -548,6 +563,8 @@ main() {
         bash "$SCRIPT_DIR/setup-prod.sh" $script_args
     else
         log_info "=== 開発環境セットアップ ==="
+        log_info "開発サービスを起動中..."
+        (cd "$PROJECT_ROOT" && docker compose -f docker/dev/docker-compose.yml up -d)
         # 開発用スクリプトはリポジトリに含まれるため生成不要
         # 必要ならsystemd関連セットアップ処理もここで呼び出し
     fi
