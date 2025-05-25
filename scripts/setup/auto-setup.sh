@@ -402,10 +402,67 @@ install_docker() {
         fi
     done
 
+    # WSL環境での追加設定
+    if is_wsl; then
+        setup_docker_for_wsl
+    fi
+
     # docker グループにユーザーを追加
     usermod -aG docker "$USER"
     
+    # Dockerサービス起動
+    if ! systemctl start docker; then
+        log_warning "systemctl でのDocker起動に失敗しました。手動起動を試行します..."
+        if is_wsl; then
+            # WSL環境での手動起動
+            /usr/bin/dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 &
+            sleep 5
+            if docker info >/dev/null 2>&1; then
+                log_success "Docker手動起動に成功しました"
+            else
+                log_error "Docker起動に失敗しました。WSL設定を確認してください"
+            fi
+        fi
+    else
+        log_success "Docker サービス起動成功"
+    fi
+    
     log_success "Docker と docker-compose のインストール完了"
+}
+
+# WSL環境でのDocker設定
+setup_docker_for_wsl() {
+    log_info "WSL環境用Docker設定を適用中..."
+    
+    # Docker daemon設定ファイル作成
+    local docker_config_dir="/etc/docker"
+    local docker_config_file="$docker_config_dir/daemon.json"
+    
+    ensure_dir_exists "$docker_config_dir"
+    
+    # WSL用Docker daemon設定
+    cat > "$docker_config_file" << 'EOF'
+{
+    "hosts": ["fd://", "tcp://127.0.0.1:2375"],
+    "iptables": false,
+    "bridge": "none"
+}
+EOF
+    
+    # systemd設定をWSL用に調整
+    local systemd_override_dir="/etc/systemd/system/docker.service.d"
+    ensure_dir_exists "$systemd_override_dir"
+    
+    cat > "$systemd_override_dir/override.conf" << 'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+EOF
+    
+    # systemd設定リロード
+    systemctl daemon-reload
+    
+    log_success "WSL環境用Docker設定完了"
 }
 
 # rcloneインストール

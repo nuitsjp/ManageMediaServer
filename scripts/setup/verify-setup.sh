@@ -25,11 +25,135 @@ check_docker_status() {
     
     if ! docker info >/dev/null 2>&1; then
         log_error "Docker デーモンが起動していません"
-        log_info "起動コマンド: sudo systemctl start docker"
+        
+        # WSL環境での自動修復を試行
+        if is_wsl; then
+            log_info "WSL環境でのDocker起動問題を自動修復中..."
+            fix_docker_wsl_issues
+        else
+            log_info "起動コマンド: sudo systemctl start docker"
+        fi
         return 1
     fi
     
     log_success "Docker は正常に動作しています"
+}
+
+# WSL環境でのDocker問題修復
+fix_docker_wsl_issues() {
+    log_info "WSL環境でのDocker問題を診断・修復中..."
+    
+    # containerdサービス確認
+    if ! systemctl is-active --quiet containerd; then
+        log_info "containerdサービスを起動中..."
+        sudo systemctl start containerd
+    fi
+    
+    # Docker設定ファイル確認
+    local docker_config="/etc/docker/daemon.json"
+    if [ ! -f "$docker_config" ]; then
+        log_info "WSL用Docker設定ファイルを作成中..."
+        sudo mkdir -p /etc/docker
+        sudo tee "$docker_config" > /dev/null << 'EOF'
+{
+    "hosts": ["fd://"],
+    "iptables": false
+}
+EOF
+    fi
+    
+    # systemd override設定
+    local override_dir="/etc/systemd/system/docker.service.d"
+    local override_file="$override_dir/override.conf"
+    
+    if [ ! -f "$override_file" ]; then
+        log_info "systemd override設定を作成中..."
+        sudo mkdir -p "$override_dir"
+        sudo tee "$override_file" > /dev/null << 'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+EOF
+        sudo systemctl daemon-reload
+    fi
+    
+    # Docker再起動試行
+    log_info "Dockerサービスを再起動中..."
+    if sudo systemctl restart docker; then
+        sleep 3
+        if docker info >/dev/null 2>&1; then
+            log_success "Docker修復に成功しました"
+            return 0
+        fi
+    fi
+    
+    # 手動起動試行
+    log_warning "systemctlでの起動に失敗。手動起動を試行中..."
+    sudo pkill dockerd 2>/dev/null || true
+    sleep 2
+    
+    sudo /usr/bin/dockerd --host=fd:// --containerd=/run/containerd/containerd.sock &
+    sleep 5
+    
+    if docker info >/dev/null 2>&1; then
+        log_success "Docker手動起動に成功しました"
+        log_warning "次回ログイン時にも起動するよう .bashrc に設定を追加することを推奨します"
+    else
+        log_error "Docker起動修復に失敗しました"
+        show_docker_troubleshooting
+    fi
+}
+
+# Docker トラブルシューティング表示
+show_docker_troubleshooting() {
+    log_info "=== Docker トラブルシューティング ==="
+    
+    cat << EOF
+WSL環境でのDocker問題解決方法:
+
+1. Windows側でDocker Desktopを使用する場合:
+   - Docker Desktop for Windowsをインストール
+   - WSL 2 Integrationを有効化
+   - この場合、WSL内でのDockerインストールは不要
+
+2. WSL内でネイティブDockerを使用する場合:
+   以下を順番に実行:
+   
+   a) containerdサービス確認:
+   sudo systemctl status containerd
+   sudo systemctl start containerd
+   
+   b) Docker設定確認:
+   sudo cat /etc/docker/daemon.json
+   
+   c) Docker手動起動:
+   sudo dockerd --host=fd:// --containerd=/run/containerd/containerd.sock &
+   
+   d) 権限確認:
+   sudo usermod -aG docker $USER
+   newgrp docker
+
+3. 永続的な解決方法:
+   ~/.bashrc に以下を追加:
+   
+   # Docker自動起動 (WSL)
+   if ! docker info >/dev/null 2>&1; then
+       sudo service docker start >/dev/null 2>&1
+   fi
+
+4. Windows側の設定確認:
+   - WSL 2が有効になっているか確認
+   - Windows版Dockerとの競合確認
+
+現在の状態:
+- containerd: $(systemctl is-active containerd 2>/dev/null || echo "不明")
+- docker.service: $(systemctl is-active docker 2>/dev/null || echo "不明")
+- Dockerプロセス: $(pgrep dockerd >/dev/null && echo "実行中" || echo "停止中")
+
+ログ確認:
+   sudo journalctl -xeu docker.service
+   sudo journalctl -xeu containerd.service
+EOF
 }
 
 # Docker Compose確認
@@ -398,6 +522,7 @@ main() {
     local show_guide=false
     local show_troubleshooting=false
     local start_containers_flag=false
+    local fix_docker=false
     
     # 引数解析
     while [[ $# -gt 0 ]]; do
@@ -414,6 +539,9 @@ main() {
             --start-containers)
                 start_containers_flag=true
                 ;;
+            --fix-docker)
+                fix_docker=true
+                ;;
             --help|-h)
                 cat << EOF
 セットアップ検証スクリプト
@@ -426,6 +554,7 @@ main() {
     --guide              起動ガイドを表示
     --troubleshooting    トラブルシューティング情報を表示
     --start-containers   コンテナを自動起動
+    --fix-docker         Docker起動問題を自動修復（WSL環境）
     --help, -h           このヘルプを表示
 EOF
                 exit 0
@@ -443,6 +572,16 @@ EOF
     log_info "PROJECT_ROOT: $PROJECT_ROOT"
     log_info "DATA_ROOT: $DATA_ROOT"
     echo
+    
+    # Docker修復オプション
+    if [ "$fix_docker" = "true" ]; then
+        if is_wsl; then
+            fix_docker_wsl_issues
+        else
+            log_warning "--fix-docker オプションはWSL環境でのみ有効です"
+        fi
+        exit 0
+    fi
     
     # 基本的な確認
     check_docker_status
@@ -481,6 +620,12 @@ EOF
             log_info "  docker compose -f docker/jellyfin/docker-compose.yml up -d"
             log_info ""
             log_info "または自動起動: $0 --start-containers"
+            
+            # Docker問題がある場合の修復案内
+            if ! docker info >/dev/null 2>&1; then
+                log_info ""
+                log_warning "Docker起動問題の修復: $0 --fix-docker"
+            fi
         else
             log_info "  sudo systemctl start immich jellyfin"
         fi
