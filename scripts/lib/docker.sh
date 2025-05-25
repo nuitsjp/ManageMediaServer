@@ -52,22 +52,21 @@ install_docker() {
 setup_docker_for_wsl() {
     log_info "WSL環境用Docker設定を適用中..."
     
-    # Docker daemon設定ファイル作成
+    # Docker daemon設定ファイル作成（hostsオプションを削除）
     local docker_config_dir="/etc/docker"
     local docker_config_file="$docker_config_dir/daemon.json"
     
     ensure_dir_exists "$docker_config_dir"
     
-    # WSL用Docker daemon設定
+    # WSL用Docker daemon設定（systemdと競合しないよう修正）
     cat > "$docker_config_file" << 'EOF'
 {
-    "hosts": ["fd://", "tcp://127.0.0.1:2375"],
     "iptables": false,
     "bridge": "none"
 }
 EOF
     
-    # systemd設定をWSL用に調整
+    # systemd設定をWSL用に調整（デフォルトhostsを使用）
     local systemd_override_dir="/etc/systemd/system/docker.service.d"
     ensure_dir_exists "$systemd_override_dir"
     

@@ -121,22 +121,22 @@ main() {
     validate_docker_installation
 
     # 6. Dockerコンテナ構成作成
-    create_docker_compose_structure
+    # create_docker_compose_structure
 
     # 7. アプリケーションセットアップ
-    setup_immich
-    setup_jellyfin
+    # setup_immich
+    # setup_jellyfin
 
     # 8. 外部サービス設定
-    install_rclone
+    # install_rclone
 
     # 9. systemdサービス設定（本番環境のみ）
-    if [ "$env_type" = "prod" ]; then
-        setup_systemd_services
-        log_info "=== 本番環境設定完了 ==="
-    else
-        log_info "=== 開発環境設定完了 ==="
-    fi
+    # if [ "$env_type" = "prod" ]; then
+    #     setup_systemd_services
+    #     log_info "=== 本番環境設定完了 ==="
+    # else
+    #     log_info "=== 開発環境設定完了 ==="
+    # fi
 
     log_success "=== 自動セットアップ完了 ==="
     
