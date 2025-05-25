@@ -13,27 +13,6 @@ source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに
 # 環境変数読み込み
 load_environment
 
-# 本番環境チェック
-check_production_environment() {
-    # WSL環境でないことを確認
-    if is_wsl; then
-        log_error "このスクリプトは本番環境（Ubuntu Server）用です。WSL環境では setup-dev.sh を使用してください"
-    fi
-    
-    # Ubuntu環境確認
-    if [ ! -f /etc/os-release ] || ! grep -q "Ubuntu" /etc/os-release; then
-        log_error "Ubuntu OS が検出されませんでした"
-    fi
-    
-    # Ubuntu 24.04 確認
-    if ! grep -q "24.04" /etc/os-release; then
-        log_warning "Ubuntu 24.04 LTS以外のバージョンが検出されました"
-        log_info "動作確認済み: Ubuntu 24.04 LTS"
-    fi
-    
-    log_success "本番環境（Ubuntu Server）を確認しました"
-}
-
 # ユーザー・権限確認
 check_user_permissions() {
     log_info "=== ユーザー・権限確認 ==="
@@ -417,15 +396,11 @@ main() {
     
     log_info "=== 本番環境（Ubuntu Server）セットアップ開始 ==="
 
-    # 本番環境チェック
-    check_production_environment
-
     # ユーザー・権限確認
     check_user_permissions
 
     # --- インストール処理は auto-setup.sh 側で実施済み ---
     setup_disk_configuration
-
     setup_systemd_services
     setup_firewall
     setup_security

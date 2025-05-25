@@ -317,6 +317,24 @@ install_rclone() {
     log_success "rcloneのインストールが完了しました"
 }
 
+# 環境チェック（WSL または Ubuntu Server）
+check_environment() {
+    local env_type=$1
+    if [ "$env_type" = "prod" ]; then
+        if is_wsl; then
+            log_error "本番環境（Ubuntu Server）用です。WSLでは実行できません"
+        fi
+        if [ ! -f /etc/os-release ] || ! grep -q "Ubuntu" /etc/os-release; then
+            log_error "Ubuntu OS が検出されませんでした"
+        fi
+    else
+        if ! is_wsl; then
+            log_error "開発環境（WSL）用です。WSL上で実行してください"
+        fi
+    fi
+    log_success "環境チェック完了: $env_type"
+}
+
 # メイン処理
 main() {
     local dry_run=false
@@ -359,6 +377,9 @@ main() {
     # 環境情報表示
     show_environment_info "$env_type"
     
+    # ← ここで環境チェックを実行
+    check_environment "$env_type"
+
     if [ "$dry_run" = "true" ]; then
         log_info "=== ドライラン: 以下の処理が実行されます ==="
         echo "1. 事前チェック"
