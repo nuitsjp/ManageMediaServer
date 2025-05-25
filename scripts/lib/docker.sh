@@ -5,6 +5,20 @@
 install_docker() {
     log_info "=== Docker のインストール ==="
     
+    # 冪等性チェック: 既にDockerが正常に動作している場合はスキップ
+    if docker --version >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        log_success "Docker は既に正常にインストール・動作しています"
+        return 0
+    fi
+    
+    # 強制モードの場合は完全クリーンアップ
+    cleanup_docker_completely
+    
+    # Dockerサービス停止（既存のプロセスがある場合）
+    log_info "既存のDockerサービスを停止中..."
+    systemctl stop docker || true
+    pkill dockerd || true
+    
     # 既存の Docker および containerd パッケージを削除して競合を回避
     log_info "既存の Docker 関連パッケージを削除中..."
     apt remove -y docker docker-engine docker.io containerd containerd.io runc || true
@@ -102,17 +116,83 @@ create_docker_compose_structure() {
 validate_docker_installation() {
     log_info "Docker インストールを検証中..."
     
+    # Dockerコマンドの存在確認
     if ! command_exists docker; then
         log_error "Docker コマンドが見つかりません"
     fi
     
-    if ! docker info >/dev/null 2>&1; then
-        log_error "Docker デーモンが起動していません"
-    fi
+    # Dockerデーモンの動作確認（リトライ機能付き）
+    local max_retries=5
+    local retry_count=0
     
+    while [ $retry_count -lt $max_retries ]; do
+        if docker info >/dev/null 2>&1; then
+            log_success "Docker デーモンが正常に動作しています"
+            break
+        else
+            retry_count=$((retry_count + 1))
+            log_warning "Docker デーモンへの接続を試行中... ($retry_count/$max_retries)"
+            
+            if [ $retry_count -eq $max_retries ]; then
+                log_error "Docker デーモンが起動していません。再インストールが必要です"
+            fi
+            
+            sleep 2
+        fi
+    done
+    
+    # docker-composeコマンドの確認
     if ! command_exists docker-compose; then
         log_error "docker-compose コマンドが見つかりません"
     fi
     
+    # 簡単なコンテナテスト
+    log_info "Docker動作テストを実行中..."
+    if docker run --rm hello-world >/dev/null 2>&1; then
+        log_success "Dockerコンテナテストが正常に完了しました"
+    else
+        log_warning "Dockerコンテナテストに失敗しました（権限の問題の可能性があります）"
+    fi
+    
     log_success "Docker インストールが正常に検証されました"
+}
+
+# Docker完全クリーンアップ（強制オプション用）
+cleanup_docker_completely() {
+    if [ "${FORCE:-false}" != "true" ]; then
+        return 0
+    fi
+    
+    log_warning "=== Docker完全クリーンアップを実行中 ==="
+    
+    # 全てのコンテナを停止・削除
+    if docker ps -aq >/dev/null 2>&1; then
+        log_info "全Dockerコンテナを停止・削除中..."
+        docker stop $(docker ps -aq) || true
+        docker rm $(docker ps -aq) || true
+    fi
+    
+    # 全てのイメージを削除
+    if docker images -q >/dev/null 2>&1; then
+        log_info "全Dockerイメージを削除中..."
+        docker rmi $(docker images -q) || true
+    fi
+    
+    # 全てのボリュームを削除
+    if docker volume ls -q >/dev/null 2>&1; then
+        log_info "全Dockerボリュームを削除中..."
+        docker volume rm $(docker volume ls -q) || true
+    fi
+    
+    # 全てのネットワークを削除
+    if docker network ls -q >/dev/null 2>&1; then
+        log_info "カスタムDockerネットワークを削除中..."
+        docker network prune -f || true
+    fi
+    
+    # Docker設定ファイル削除
+    rm -rf /etc/docker/daemon.json || true
+    rm -rf /etc/systemd/system/docker.service.d/override.conf || true
+    
+    log_success "Docker完全クリーンアップ完了"
 }
