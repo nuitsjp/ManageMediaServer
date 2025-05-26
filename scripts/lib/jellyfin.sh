@@ -16,7 +16,9 @@ create_jellyfin_directories() {
     local jellyfin_dirs=(
         "$PROJECT_ROOT/docker/jellyfin"
         "$DATA_ROOT/jellyfin/config"
+        "$DATA_ROOT/jellyfin/cache"
         "$DATA_ROOT/jellyfin/movies"
+        "$DATA_ROOT/jellyfin/tv"
     )
     
     for dir in "${jellyfin_dirs[@]}"; do

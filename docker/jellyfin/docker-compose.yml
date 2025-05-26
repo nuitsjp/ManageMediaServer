@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Tokyo
+    volumes:
+      - ${DATA_ROOT:-/root/dev-data}/jellyfin/config:/config
+      - ${DATA_ROOT:-/root/dev-data}/jellyfin/cache:/cache
+      - ${DATA_ROOT:-/root/dev-data}/jellyfin/movies:/media/movies:ro
+      - ${DATA_ROOT:-/root/dev-data}/jellyfin/tv:/media/tv:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "8096:8096"
+      - "8920:8920"  # HTTPS
+      - "7359:7359/udp"  # Auto-discovery
+      - "1900:1900/udp"  # DLNA
+    networks:
+      - jellyfin-network
+
+networks:
+  jellyfin-network:
+    driver: bridge
