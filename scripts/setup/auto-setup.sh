@@ -120,11 +120,11 @@ main() {
     install_docker
 
     # 6. Dockerコンテナ構成作成
-    # create_docker_compose_structure
+    create_docker_compose_structure
 
     # 7. アプリケーションセットアップ
-    # setup_immich
-    # setup_jellyfin
+    setup_immich
+    setup_jellyfin
 
     # 8. 外部サービス設定
     # install_rclone

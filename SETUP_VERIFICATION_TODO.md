@@ -54,30 +54,40 @@ enabled
 
 ---
 
-## Phase 3: アプリケーション確認 🎯
+## Phase 3: アプリケーション確認 🎯 ✅ **完了**
+
+### 完了済み
+- [x] **Docker Compose構成作成（Step 6）** ✅
+  - `create_docker_compose_structure`関数が正常動作
+  - docker/immich/, docker/jellyfin/ディレクトリ構造作成確認済み
+  - docker/immich/docker-compose.yml と .env ファイル生成
+  - docker/jellyfin/docker-compose.yml ファイル生成
+
+**検証結果:**
+```bash
+/mnt/d/ManageMediaServer/docker/immich/:
+-rwxrwxrwx 1 ubuntu ubuntu 1024 May 26 05:39 .env
+-rwxrwxrwx 1 ubuntu ubuntu 2817 May 26 05:39 docker-compose.yml
+
+/mnt/d/ManageMediaServer/docker/jellyfin/:
+-rwxrwxrwx 1 ubuntu ubuntu  892 May 25 20:25 docker-compose.yml
+```
 
 ### 次のステップ
-- [ ] **Docker Compose構成作成（Step 6）**
-  - `create_docker_compose_structure`関数の動作確認
-  - docker/immich/, docker/jellyfin/ディレクトリ構造作成確認
+- [ ] **Immich + Jellyfin セットアップ（Step 7）**
+  - setup_immich と setup_jellyfin 関数の動作確認
+  - 各アプリケーションのセットアップ実行
 
 **実行前準備:**
 ```bash
-# auto-setup.shのStep 6のコメントアウトを解除
-# Line 121: create_docker_compose_structure のコメントを外す
+# auto-setup.shのStep 7のコメントアウトを解除
+# Line 125-126: setup_immich, setup_jellyfin のコメントを外す
 ```
 
 **検証コマンド:**
 ```bash
 cd /mnt/d/ManageMediaServer && sudo ./scripts/setup/auto-setup.sh --force
-# 実行後、以下で確認
-ls -la docker/immich/ docker/jellyfin/
 ```
-
-### 今後の予定
-- [ ] **Immich + Jellyfin セットアップ（Step 7）**
-  - 各アプリケーションのセットアップ実行
-  - サービス起動確認
 
 **検証:** WebUIアクセス確認（Immich: http://localhost:2283, Jellyfin: http://localhost:8096）
 
