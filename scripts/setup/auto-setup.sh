@@ -119,10 +119,7 @@ main() {
     # 5. Dockerインストール
     install_docker
 
-    # 6. Dockerコンテナ構成作成
-    create_docker_compose_structure
-
-    # 7. アプリケーションセットアップ
+    # 6. アプリケーションセットアップ
     setup_immich
     setup_jellyfin
 

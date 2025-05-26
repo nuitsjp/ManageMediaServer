@@ -105,22 +105,6 @@ EOF
     log_success "WSL環境用Docker設定完了"
 }
 
-# Docker Compose構造作成
-create_docker_compose_structure() {
-    log_info "Docker Compose構造を準備中..."
-    
-    # 必要なディレクトリを作成
-    local services=("immich" "jellyfin")
-    
-    for service in "${services[@]}"; do
-        local compose_dir="$PROJECT_ROOT/docker/$service"
-        ensure_dir_exists "$compose_dir"
-        log_debug "Docker Compose構造を準備しました: $compose_dir"
-    done
-    
-    log_success "Docker Compose構造の準備が完了しました"
-}
-
 # Docker完全クリーンアップ（強制オプション用）
 cleanup_docker_completely() {
     if [ "${FORCE:-false}" != "true" ]; then

@@ -57,39 +57,22 @@ enabled
 ## Phase 3: アプリケーション確認 🎯 ✅ **完了**
 
 ### 完了済み
-- [x] **Docker Compose構成作成（Step 6）** ✅
-  - `create_docker_compose_structure`関数が正常動作
-  - docker/immich/, docker/jellyfin/ディレクトリ構造作成確認済み
-  - docker/immich/docker-compose.yml と .env ファイル生成
-  - docker/jellyfin/docker-compose.yml ファイル生成
+- [x] **Docker Compose構成作成（Step 6）** ✅ **設計改善完了**
+  - `create_docker_compose_structure`関数を削除し、各アプリ関数内でディレクトリ作成
+  - 設計原則（単一責任原則）に基づく改善実施
+  - 保守性とコードの明確性を向上
+
+- [x] **Immich + Jellyfin セットアップ（Step 7）** ✅
+  - setup_immich と setup_jellyfin 関数が正常動作
+  - Immich v1.133.1の最新ファイルダウンロード成功
+  - 各アプリケーションのセットアップ実行完了
 
 **検証結果:**
 ```bash
-/mnt/d/ManageMediaServer/docker/immich/:
--rwxrwxrwx 1 ubuntu ubuntu 1024 May 26 05:39 .env
--rwxrwxrwx 1 ubuntu ubuntu 2817 May 26 05:39 docker-compose.yml
-
-/mnt/d/ManageMediaServer/docker/jellyfin/:
--rwxrwxrwx 1 ubuntu ubuntu  892 May 25 20:25 docker-compose.yml
+Immich: 最新版(v1.133.1)docker-compose.yml + .env ダウンロード成功
+Jellyfin: 設定検証成功
+設計改善: create_docker_compose_structure関数削除、各アプリ関数に分散
 ```
-
-### 次のステップ
-- [ ] **Immich + Jellyfin セットアップ（Step 7）**
-  - setup_immich と setup_jellyfin 関数の動作確認
-  - 各アプリケーションのセットアップ実行
-
-**実行前準備:**
-```bash
-# auto-setup.shのStep 7のコメントアウトを解除
-# Line 125-126: setup_immich, setup_jellyfin のコメントを外す
-```
-
-**検証コマンド:**
-```bash
-cd /mnt/d/ManageMediaServer && sudo ./scripts/setup/auto-setup.sh --force
-```
-
-**検証:** WebUIアクセス確認（Immich: http://localhost:2283, Jellyfin: http://localhost:8096）
 
 ---
 

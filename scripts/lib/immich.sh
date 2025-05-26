@@ -17,6 +17,7 @@ setup_immich() {
 # Immichディレクトリ作成
 create_immich_directories() {
     local immich_dirs=(
+        "$PROJECT_ROOT/docker/immich"
         "$DATA_ROOT/immich/upload"
         "$DATA_ROOT/immich/external"
         "$DATA_ROOT/immich/postgres"
@@ -26,8 +27,7 @@ create_immich_directories() {
         ensure_dir_exists "$dir"
     done
     
-    # Docker Compose構造作成
-    create_docker_compose_structure "immich"
+    log_debug "Immich用ディレクトリ構造を準備しました"
 }
 
 # Immich公式ファイルダウンロード
