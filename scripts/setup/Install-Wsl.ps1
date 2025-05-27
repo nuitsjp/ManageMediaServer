@@ -342,7 +342,8 @@ function Main {
         
     }
     catch {
-        Write-Log "セットアップ中にエラーが発生しました: $($_.Exception.Message)" -Level ERROR
+        $errorMessage = if ($_.Exception.Message) { $_.Exception.Message } else { "不明なエラーが発生しました" }
+        Write-Log "セットアップ中にエラーが発生しました: $errorMessage" -Level ERROR
         Write-Log "詳細なログを確認し、問題を解決してから再実行してください。" -Level ERROR
         exit 1
     }
