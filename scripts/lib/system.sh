@@ -119,6 +119,7 @@ install_system_packages() {
         "sudo"
         "ca-certificates"
         "gnupg"
+        "unzip"
     )
     
     # WSLの場合、追加のパッケージをインストール

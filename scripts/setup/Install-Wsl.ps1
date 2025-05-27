@@ -94,16 +94,39 @@ function Test-UbuntuInstallation {
     Write-Log "Ubuntu $DistroName のインストール状況を確認中..." -Level DEBUG
     
     try {
-        $wslList = wsl -l -v | Where-Object { $_ -match $DistroName }
-        if ($wslList) {
+        # 複数の形式でWSL一覧を取得してチェック
+        $wslListQuiet = wsl -l -q 2>$null
+        $wslListVerbose = wsl -l -v 2>$null
+        $wslListJapanese = wsl --list 2>$null
+        
+        # 各出力からディストリビューション名を検索
+        $found = $false
+        
+        # -l -q (quiet) 出力をチェック
+        if ($wslListQuiet) {
+            $found = $wslListQuiet | Where-Object { $_.Trim() -eq $DistroName }
+        }
+        
+        # -l -v (verbose) 出力をチェック
+        if (-not $found -and $wslListVerbose) {
+            $found = $wslListVerbose | Where-Object { $_ -match $DistroName }
+        }
+        
+        # --list (日本語) 出力をチェック
+        if (-not $found -and $wslListJapanese) {
+            $found = $wslListJapanese | Where-Object { $_ -match $DistroName }
+        }
+        
+        if ($found) {
             Write-Log "$DistroName は既にインストールされています" -Level SUCCESS
             return $true
         }
     }
     catch {
-        Write-Log "WSLディストリビューション一覧の取得に失敗しました" -Level DEBUG
+        Write-Log "WSLディストリビューション一覧の取得に失敗しました: $($_.Exception.Message)" -Level DEBUG
     }
     
+    Write-Log "$DistroName は見つかりませんでした" -Level DEBUG
     return $false
 }
 
@@ -167,9 +190,6 @@ function Enable-Systemd {
     $wslConfContent = @"
 [boot]
 systemd=true
-
-[user]
-default=root
 "@
     
     try {
@@ -178,7 +198,8 @@ default=root
         $wslConfContent | Out-File -FilePath $tempFile -Encoding UTF8
         
         # WSL内にコピー
-        wsl -d $DistroName bash -c "mkdir -p /etc && cp /mnt/c/$(($tempFile -replace '\\', '/') -replace 'C:', '') /etc/wsl.conf"
+        $tempPath = ($tempFile -replace '\\', '/') -replace 'C:', ''
+        wsl -d $DistroName bash -c "sudo mkdir -p /etc && sudo cp /mnt/c$tempPath /etc/wsl.conf"
         
         # 一時ファイル削除
         Remove-Item $tempFile -Force
@@ -199,9 +220,18 @@ function Restart-WSLDistro {
     Write-Log "$DistroName を再起動中..." -Level INFO
     
     try {
-        wsl --terminate $DistroName
-        Start-Sleep -Seconds 3
+        # WSL全体をシャットダウン
+        Write-Log "WSL全体をシャットダウンしています..." -Level INFO
+        wsl --shutdown
+        Start-Sleep -Seconds 5
+        
+        # ディストリビューションを起動してsystemdの状態を確認
+        Write-Log "$DistroName を起動しています..." -Level INFO
         wsl -d $DistroName echo "WSL再起動完了"
+        
+        # systemdの起動を少し待つ
+        Start-Sleep -Seconds 3
+        
         Write-Log "$DistroName の再起動が完了しました" -Level SUCCESS
     }
     catch {
@@ -217,12 +247,29 @@ function Test-SystemdRunning {
     Write-Log "systemdの動作状況を確認中..." -Level INFO
     
     try {
+        # systemdプロセスの存在確認
+        $systemdProcess = wsl -d $DistroName pgrep systemd 2>$null
+        if (-not $systemdProcess) {
+            Write-Log "systemdプロセスが見つかりません" -Level WARNING
+            return $false
+        }
+        
+        # systemdの状態確認
         $systemdStatus = wsl -d $DistroName systemctl is-system-running 2>$null
         if ($systemdStatus -match "running|degraded") {
             Write-Log "systemdは正常に動作しています (状態: $systemdStatus)" -Level SUCCESS
             return $true
         } else {
-            Write-Log "systemdの状態が異常です (状態: $systemdStatus)" -Level WARNING
+            Write-Log "systemdの状態: $systemdStatus" -Level WARNING
+            
+            # より詳細な診断情報を提供
+            Write-Log "systemd診断情報を取得中..." -Level INFO
+            $bootOutput = wsl -d $DistroName journalctl -b --no-pager -n 10 2>$null
+            if ($bootOutput) {
+                Write-Log "最近のブートログ (最後の10行):" -Level INFO
+                $bootOutput | ForEach-Object { Write-Log "  $_" -Level DEBUG }
+            }
+            
             return $false
         }
     }
@@ -239,7 +286,7 @@ function Update-SystemPackages {
     Write-Log "システムパッケージを更新中..." -Level INFO
     
     try {
-        wsl -d $DistroName bash -c "apt update && apt upgrade -y"
+        wsl -d $DistroName bash -c "sudo apt update && sudo apt upgrade -y"
         Write-Log "システムパッケージの更新が完了しました" -Level SUCCESS
     }
     catch {
@@ -288,7 +335,6 @@ function Main {
         Write-Log "=== WSL Ubuntu 24.04 + systemd セットアップ完了 ===" -Level SUCCESS
         
         # 次のステップ案内
-        Write-Log "" -Level INFO
         Write-Log "次のステップ:" -Level INFO
         Write-Log "1. WSLに接続: wsl -d $DistroName" -Level INFO
         Write-Log "2. systemd確認: systemctl status" -Level INFO
