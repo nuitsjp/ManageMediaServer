@@ -1,31 +1,7 @@
 #!/bin/bash
 # サービス管理ライブラリ（rclone、systemd、外部統合管理）
 
-# rcloneインストール
-install_rclone() {
-    log_info "=== rcloneのインストール ==="
-    
-    # rcloneが既にインストール済みかチェック
-    if command -v rclone >/dev/null 2>&1; then
-        local current_version=$(rclone version | head -n1 | awk '{print $2}')
-        log_info "rclone は既にインストール済みです (バージョン: $current_version)"
-        log_success "rcloneのインストールが完了しました"
-        return 0
-    fi
-    
-    # rcloneの公式インストールスクリプトを実行
-    log_info "rcloneをインストール中..."
-    curl -fsSL https://rclone.org/install.sh | bash
-    
-    # インストール確認
-    if command -v rclone >/dev/null 2>&1; then
-        local installed_version=$(rclone version | head -n1 | awk '{print $2}')
-        log_success "rcloneのインストールが完了しました (バージョン: $installed_version)"
-    else
-        log_error "rcloneのインストールに失敗しました"
-        return 1
-    fi
-}
+# rclone関連機能は rclone.sh に移動
 
 # systemdサービス設定（本番環境用）
 setup_systemd_services() {
@@ -33,9 +9,11 @@ setup_systemd_services() {
     
     local env_type=$(detect_environment)
     
+    # rclone.shから関数を呼び出し
     create_rclone_sync_service
+    setup_rclone_timer
+    
     create_docker_compose_service
-    setup_systemd_timers
     
     # サービス定義をリロード
     systemctl daemon-reload
@@ -176,33 +154,6 @@ start_services_with_verification() {
     fi
 }
 
-# rclone同期サービス作成
-create_rclone_sync_service() {
-    log_info "rclone同期サービスを作成中..."
-    
-    # rclone設定ファイルのディレクトリパスを取得
-    local rclone_config_dir=$(dirname "$RCLONE_CONFIG_PATH")
-    
-    cat << EOF | tee "$SYSTEMD_CONFIG_PATH/rclone-sync.service"
-[Unit]
-Description=rclone sync media files
-After=network.target
-
-[Service]
-Type=oneshot
-User=mediaserver
-Environment=RCLONE_CONFIG=$RCLONE_CONFIG_PATH
-ExecStart=/usr/bin/rclone sync ${RCLONE_REMOTE_NAME}:/ $DATA_ROOT/immich/external --log-file=$RCLONE_LOG_PATH/sync.log --log-level INFO
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=default.target
-EOF
-
-    log_success "rclone同期サービスを作成しました"
-}
-
 # Docker Compose systemdサービス作成
 create_docker_compose_service() {
     log_info "Docker Compose systemdサービスを作成中..."
@@ -259,26 +210,6 @@ WantedBy=multi-user.target
 EOF
 
     log_success "Docker Compose systemdサービスを作成しました"
-}
-
-# systemdタイマー設定
-setup_systemd_timers() {
-    log_info "systemdタイマーを設定中..."
-    
-    cat << EOF | tee "$SYSTEMD_CONFIG_PATH/rclone-sync.timer"
-[Unit]
-Description=Run rclone sync hourly
-Requires=rclone-sync.service
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-    
-    log_success "systemdタイマー設定完了"
 }
 
 # サービス状態チェック
@@ -375,23 +306,7 @@ setup_external_integrations() {
     log_success "外部統合設定完了"
 }
 
-# rclone設定検証
-validate_rclone_setup() {
-    if ! command_exists rclone; then
-        log_error "rcloneがインストールされていません"
-        return 1
-    fi
-    
-    if [ ! -f "$RCLONE_CONFIG_PATH/rclone.conf" ]; then
-        log_warning "rclone設定ファイルが見つかりません: $RCLONE_CONFIG_PATH/rclone.conf"
-        return 1
-    fi
-    
-    log_success "rclone設定が正常に検証されました"
-    return 0
-}
-
-# systemdサービス設定検証
+# systemdサービス設定検証 (rclone関連は rclone.sh に移動)
 validate_systemd_services() {
     local services=("immich.service" "jellyfin.service" "rclone-sync.service" "rclone-sync.timer")
     local missing_services=()
@@ -411,15 +326,16 @@ validate_systemd_services() {
     return 0
 }
 
-# 全サービス検証
+# 全サービス検証 (rclone検証は rclone.sh に移動)
 validate_all_services() {
     log_info "=== サービス設定検証 ==="
     
     local validation_failed=false
     
-    if ! validate_rclone_setup; then
-        validation_failed=true
-    fi
+    # rclone検証は rclone.sh の validate_rclone_setup を使用
+    # if ! validate_rclone_setup; then
+    #     validation_failed=true
+    # fi
     
     if ! validate_systemd_services; then
         validation_failed=true
@@ -430,6 +346,6 @@ validate_all_services() {
         return 1
     fi
     
-    log_success "全サービス設定の検証が完了しました"
+    log_success "サービス設定の検証が完了しました"
     return 0
 }

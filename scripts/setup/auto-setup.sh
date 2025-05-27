@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/../lib/system.sh" || log_error "system.sh の読み込みに
 source "$SCRIPT_DIR/../lib/docker.sh" || log_error "docker.sh の読み込みに失敗"
 source "$SCRIPT_DIR/../lib/immich.sh" || log_error "immich.sh の読み込みに失敗"
 source "$SCRIPT_DIR/../lib/jellyfin.sh" || log_error "jellyfin.sh の読み込みに失敗"
+source "$SCRIPT_DIR/../lib/rclone.sh" || log_error "rclone.sh の読み込みに失敗"
 source "$SCRIPT_DIR/../lib/services.sh" || log_error "services.sh の読み込みに失敗"
 source "$SCRIPT_DIR/../lib/ui.sh" || log_error "ui.sh の読み込みに失敗"
 
@@ -127,8 +128,8 @@ main() {
     setup_immich
     setup_jellyfin
 
-    # 8. rclone インストール
-    install_rclone
+    # 8. rclone セットアップ
+    setup_rclone
 
     # 9. systemdサービス設定
     setup_systemd_services
