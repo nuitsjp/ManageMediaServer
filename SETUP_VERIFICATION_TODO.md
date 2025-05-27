@@ -39,44 +39,38 @@
 
 ---
 
-## Phase 4B: systemd サービス設定 ⚙️
+## Phase 4B: systemd サービス設定 ⚙️ ✅ **完了**
 
 ### 必須
-- [ ] **systemd サービス設定（Step 9）**
-  - setup_systemd_services 関数の動作確認
-  - サービスファイル作成確認
-  - タイマー設定確認
+- [x] **systemd サービス設定（Step 9）** ✅
+  - setup_systemd_services 関数の動作確認 ✅
+  - サービスファイル作成確認 ✅ (4ファイル作成)
+  - タイマー設定確認 ✅
 
 ---
 
-## Phase 5: 完全実行確認 ✅
+## Phase 5: 完全実行確認 ✅ **進行中**
 
 ### 必須
-- [ ] **エンドツーエンド検証**
-  - 全ステップを有効にして完全実行
-  - 全サービスの同時起動・動作確認
+- [x] **エンドツーエンド検証**
+  - 全ステップを有効にして完全実行 ✅ 
+  - 全サービスの同時起動・動作確認 🔄 **次回**
 
 ---
 
-## 📌 **現在の状況（2025/05/26時点）**
+## 📌 **現在の状況（2025/05/28時点）**
 
-### 完了済みの作業
-1. **Phase 1-2完了**: 基本機能・システム基盤の検証が完了
+### 完了済みの作業 ✅
+1. **Phase 1-4B完了**: 全段階的検証が完了
 2. **Docker環境構築済み**: Docker CE 26.1.3が正常動作中
-3. **設計方針修正**: validate_docker_installation関数削除により統一感を向上
+3. **systemdサービス設定完了**: 4つのサービスファイル作成完了
+   - `/etc/systemd/system/immich.service`
+   - `/etc/systemd/system/jellyfin.service` 
+   - `/etc/systemd/system/rclone-sync.service`
+   - `/etc/systemd/system/rclone-sync.timer`
+4. **アプリケーション設定完了**: Immich/Jellyfin docker-compose設定作成済み
 
 ### 次のスレッドでの作業手順
-1. **Step 6有効化**: `auto-setup.sh`の121行目付近の`create_docker_compose_structure`のコメントを解除
-2. **実行・検証**: `sudo ./scripts/setup/auto-setup.sh --force`でテスト実行
-3. **結果確認**: docker/immich/, docker/jellyfin/ディレクトリが作成されるか確認
-
-### 重要なファイル状況
-- `auto-setup.sh`: Step 1-5は動作確認済み、Step 6以降はコメントアウト状態
-- `docker.sh`: install_docker関数は冪等性付きで完成、validate関数は削除済み
-- Docker環境: WSL用設定適用済み、systemd自動起動設定済み
-
-### 検証環境情報
-- **環境**: WSL開発環境（dev）
-- **Docker**: 26.1.3 (systemd管理、自動起動enabled)
-- **データルート**: /root/dev-data/
-- **プロジェクトルート**: /mnt/d/ManageMediaServer/
+1. **サービス起動テスト**: docker-compose でImmich/Jellyfinを起動
+2. **ブラウザアクセス確認**: localhost:2283(Immich), localhost:8096(Jellyfin)
+3. **完了レポート作成**: 全検証結果をまとめ

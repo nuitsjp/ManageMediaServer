@@ -46,8 +46,12 @@ initialize_app_config() {
     # rclone詳細設定
     export RCLONE_LOG_PATH="${DATA_ROOT}/config/rclone/logs"
 
-    # systemd設定（本番環境のみ）
-    if [ "$(detect_environment 2>/dev/null)" = "prod" ]; then
+    # systemd設定
+    local env_type=$(detect_environment 2>/dev/null)
+    if [ "$env_type" = "prod" ]; then
+        export SYSTEMD_CONFIG_PATH="/etc/systemd/system"
+    else
+        # 開発環境でもsystemdサービスファイルを作成できるように
         export SYSTEMD_CONFIG_PATH="/etc/systemd/system"
     fi
 }

@@ -5,10 +5,26 @@
 install_rclone() {
     log_info "=== rcloneのインストール ==="
     
-    # rcloneの公式GPGキーを追加
-    curl https://rclone.org/install.sh | sudo bash
+    # rcloneが既にインストール済みかチェック
+    if command -v rclone >/dev/null 2>&1; then
+        local current_version=$(rclone version | head -n1 | awk '{print $2}')
+        log_info "rclone は既にインストール済みです (バージョン: $current_version)"
+        log_success "rcloneのインストールが完了しました"
+        return 0
+    fi
     
-    log_success "rcloneのインストールが完了しました"
+    # rcloneの公式インストールスクリプトを実行
+    log_info "rcloneをインストール中..."
+    curl -fsSL https://rclone.org/install.sh | bash
+    
+    # インストール確認
+    if command -v rclone >/dev/null 2>&1; then
+        local installed_version=$(rclone version | head -n1 | awk '{print $2}')
+        log_success "rcloneのインストールが完了しました (バージョン: $installed_version)"
+    else
+        log_error "rcloneのインストールに失敗しました"
+        return 1
+    fi
 }
 
 # systemdサービス設定（本番環境用）
@@ -38,6 +54,9 @@ setup_systemd_services() {
 # rclone同期サービス作成
 create_rclone_sync_service() {
     log_info "rclone同期サービスを作成中..."
+    
+    # rclone設定ファイルのディレクトリパスを取得
+    local rclone_config_dir=$(dirname "$RCLONE_CONFIG_PATH")
     
     cat << EOF | tee "$SYSTEMD_CONFIG_PATH/rclone-sync.service"
 [Unit]
