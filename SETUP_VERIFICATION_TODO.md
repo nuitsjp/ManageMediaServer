@@ -32,12 +32,21 @@
 
 ---
 
-## Phase 4: 外部サービス確認 🌐
+## Phase 4A: rclone インストール 🌐 ✅ **完了**
 
 ### 必須
-- [ ] **rclone・systemdサービス（Step 8-9）**
-  - rcloneインストール確認
-  - 本番環境でのsystemdサービス設定確認（devでは対象外）
+- [x] **rclone インストール確認（Step 8）** ✅
+
+---
+
+## Phase 4B: systemd サービス設定 ⚙️
+
+### 必須（本番環境のみ）
+- [ ] **systemd サービス設定（Step 9）**
+  - setup_systemd_services 関数の動作確認
+  - サービスファイル作成確認
+  - タイマー設定確認
+  - 開発環境では対象外（スキップ）
 
 ---
 

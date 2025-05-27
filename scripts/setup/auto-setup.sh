@@ -123,16 +123,11 @@ main() {
     setup_immich
     setup_jellyfin
 
-    # 8. 外部サービス設定
-    # install_rclone
+    # 8. rclone インストール
+    install_rclone
 
-    # 9. systemdサービス設定（本番環境のみ）
-    # if [ "$env_type" = "prod" ]; then
-    #     setup_systemd_services
-    #     log_info "=== 本番環境設定完了 ==="
-    # else
-    #     log_info "=== 開発環境設定完了 ==="
-    # fi
+    # 9. systemdサービス設定
+    setup_systemd_services
 
     log_success "=== 自動セットアップ完了 ==="
     
