@@ -29,7 +29,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install/setup-cloudflare.ps1
 ## 5. Dockerコンテナの起動
 ImmichとJellyfinのDockerコンテナを起動するために、以下のコマンドを実行します。
 ```
-docker-compose -f config/docker/docker-compose.yml up -d
+docker compose -f config/docker/docker-compose.yml up -d
 ```
 
 ## 6. rcloneの設定

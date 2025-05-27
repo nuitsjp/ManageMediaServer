@@ -251,7 +251,7 @@ services:
 #### パターン1: コマンド存在確認
 ```bash
 is_already_installed() {
-    command_exists docker && command_exists docker-compose
+    command_exists docker && docker compose version >/dev/null 2>&1
 }
 ```
 

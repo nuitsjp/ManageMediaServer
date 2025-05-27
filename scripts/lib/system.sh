@@ -56,30 +56,46 @@ check_environment() {
     log_success "環境チェック完了: $env_type"
 }
 
-# ユーザー・権限確認（mediaserverユーザー作成のみ）
-check_user_permissions() {
-    log_info "=== ユーザー・権限確認 ==="
+# mediaserverユーザー作成・権限設定（Dockerインストール後に実行）
+setup_mediaserver_user() {
+    log_info "=== mediaserverユーザー作成・権限設定 ==="
     
+    # ユーザー作成
     if ! id mediaserver &>/dev/null; then
         log_info "mediaserver ユーザーを作成中..."
         useradd -m -s /bin/bash mediaserver
-        usermod -aG docker,sudo mediaserver
         chown mediaserver:mediaserver /home/mediaserver
         chmod 755 /home/mediaserver
         log_success "mediaserver ユーザーを作成しました"
-        log_info "Dockerグループメンバーシップが設定されました (次回ログイン時に有効化)"
     else
         log_info "mediaserver ユーザーが既に存在します"
-        # Dockerグループメンバーシップ確認
-        if groups mediaserver | grep -q docker; then
-            log_success "mediaserver ユーザーはdockerグループのメンバーです"
-        else
-            log_info "mediaserver ユーザーをdockerグループに追加中..."
-            usermod -aG docker mediaserver
-            log_success "dockerグループメンバーシップが追加されました"
-        fi
-        log_success "ユーザー確認完了"
     fi
+    
+    # sudoグループへの追加
+    if groups mediaserver | grep -q sudo; then
+        log_info "mediaserver ユーザーは既にsudoグループのメンバーです"
+    else
+        log_info "mediaserver ユーザーをsudoグループに追加中..."
+        usermod -aG sudo mediaserver
+        log_success "sudoグループメンバーシップが追加されました"
+    fi
+    
+    # dockerグループが存在するかチェック
+    if ! getent group docker &>/dev/null; then
+        log_error "dockerグループが存在しません。Dockerがインストールされていない可能性があります"
+        return 1
+    fi
+    
+    # Dockerグループへの追加
+    if groups mediaserver | grep -q docker; then
+        log_info "mediaserver ユーザーは既にdockerグループのメンバーです"
+    else
+        log_info "mediaserver ユーザーをdockerグループに追加中..."
+        usermod -aG docker mediaserver
+        log_success "dockerグループメンバーシップが追加されました (次回ログイン時に有効化)"
+    fi
+    
+    log_success "mediaserverユーザーの設定が完了しました"
 }
 
 # ディレクトリ準備

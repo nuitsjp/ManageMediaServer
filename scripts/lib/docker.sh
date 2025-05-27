@@ -62,13 +62,10 @@ install_docker() {
     # 最終動作確認（エラー時は自動停止）
     if ! docker info >/dev/null 2>&1; then
         log_error "Dockerが正常に動作していません"
+        return 1
     fi
     
-    if ! command_exists docker-compose; then
-        log_error "docker-composeコマンドが見つかりません"
-    fi
-    
-    log_success "Docker と docker-compose のインストール完了"
+    log_success "Docker のインストール完了"
 }
 
 # WSL環境でのDocker設定
@@ -151,30 +148,64 @@ install_docker_compose_plugin() {
     
     # Docker Compose プラグインが既に利用可能かチェック
     if docker compose version >/dev/null 2>&1; then
-        log_success "Docker Compose プラグインは既にインストールされています"
+        local installed_version=$(docker compose version --short 2>/dev/null || echo "unknown")
+        log_success "Docker Compose プラグインは既にインストールされています (バージョン: $installed_version)"
         return 0
     fi
     
-    # Docker Compose プラグインをインストール
     log_info "Docker Compose プラグインをインストール中..."
     
-    # 最新バージョンのDocker Compose プラグインをダウンロード
-    local compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-    local compose_url="https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
-    
-    # Docker CLI プラグインディレクトリ作成
-    mkdir -p /usr/local/lib/docker/cli-plugins
-    
-    # Docker Compose プラグインをダウンロード
-    curl -SL "$compose_url" -o /usr/local/lib/docker/cli-plugins/docker-compose
-    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+    # Ubuntu/Debian の場合はパッケージマネージャーからインストール
+    if command_exists apt; then
+        # docker-compose-plugin パッケージをインストール
+        if apt install -y docker-compose-plugin 2>/dev/null; then
+            log_info "docker-compose-plugin パッケージをインストールしました"
+        else
+            log_warning "docker-compose-plugin パッケージのインストールに失敗しました。手動インストールを試行します..."
+            install_docker_compose_manual
+            return $?
+        fi
+    else
+        # 手動インストール
+        install_docker_compose_manual
+        return $?
+    fi
     
     # インストール確認
     if docker compose version >/dev/null 2>&1; then
-        local installed_version=$(docker compose version --short)
+        local installed_version=$(docker compose version --short 2>/dev/null || echo "unknown")
         log_success "Docker Compose プラグインのインストール完了 (バージョン: $installed_version)"
     else
         log_error "Docker Compose プラグインのインストールに失敗しました"
         return 1
     fi
+}
+
+# Docker Compose プラグイン手動インストール
+install_docker_compose_manual() {
+    log_info "Docker Compose プラグインを手動でインストールします..."
+    
+    # 最新バージョンのDocker Compose プラグインをダウンロード
+    local compose_version
+    if ! compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' 2>/dev/null); then
+        log_warning "最新バージョンの取得に失敗しました。固定バージョンを使用します"
+        compose_version="v2.24.0"
+    fi
+    
+    local compose_url="https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
+    
+    # Docker CLI プラグインディレクトリ作成
+    local plugin_dir="/usr/local/lib/docker/cli-plugins"
+    mkdir -p "$plugin_dir"
+    
+    # Docker Compose プラグインをダウンロード
+    if curl -SL "$compose_url" -o "$plugin_dir/docker-compose"; then
+        chmod +x "$plugin_dir/docker-compose"
+        log_info "Docker Compose プラグインをダウンロードしました"
+    else
+        log_error "Docker Compose プラグインのダウンロードに失敗しました"
+        return 1
+    fi
+    
+    return 0
 }

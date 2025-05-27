@@ -65,9 +65,6 @@ main() {
     # 環境判定
     local env_type=$(detect_environment)
 
-    # ユーザー権限チェック・作成
-    check_user_permissions
-
     # 環境情報表示
     show_environment_info "$env_type"
     
@@ -82,6 +79,7 @@ main() {
         echo "4. システムパッケージインストール"
         echo "5. Dockerインストール"
         echo "5a. Docker Compose プラグインインストール"
+        echo "5b. mediaserverユーザー作成・権限設定"
         echo "6. アプリケーションセットアップ"
         echo "7. サービス設定"
         echo "   - 環境: $env_type"
@@ -123,6 +121,9 @@ main() {
     
     # 5a. Docker Compose プラグインインストール
     install_docker_compose_plugin
+    
+    # 5b. mediaserverユーザー作成・権限設定（Dockerインストール後）
+    setup_mediaserver_user
 
     # 6. アプリケーションセットアップ
     setup_immich
