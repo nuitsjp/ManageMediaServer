@@ -11,49 +11,27 @@ install_rclone() {
     log_success "rcloneのインストールが完了しました"
 }
 
-# systemdサービス設定（統一テスト対応）
+# systemdサービス設定（本番環境用）
 setup_systemd_services() {
     log_info "=== systemdサービス設定 ==="
     
     local env_type=$(detect_environment)
     
-    # systemd利用可能性チェック
-    local systemd_available=false
-    if systemctl is-system-running >/dev/null 2>&1 || [ -d "/run/systemd/system" ]; then
-        systemd_available=true
-    fi
-    
-    # 開発環境用のsystemd設定パス設定
-    if [ "$env_type" = "dev" ] && [ -z "$SYSTEMD_CONFIG_PATH" ]; then
-        export SYSTEMD_CONFIG_PATH="${DATA_ROOT}/systemd"
-        mkdir -p "$SYSTEMD_CONFIG_PATH"
-        log_info "開発環境用systemd設定ディレクトリ: $SYSTEMD_CONFIG_PATH"
-    fi
-    
     create_rclone_sync_service
     create_docker_compose_service
     setup_systemd_timers
     
-    # systemd操作（環境に関係なく実行、ただし利用可能性をチェック）
-    if [ "$systemd_available" = "true" ]; then
-        log_info "systemdが利用可能 - サービス登録を実行"
-        
-        # サービス定義をリロード
-        systemctl daemon-reload
-        
-        if [ "$env_type" = "prod" ]; then
-            # 本番環境: 自動起動を有効化
-            systemctl enable immich.service jellyfin.service rclone-sync.timer
-            log_success "systemdサービス設定完了（自動起動有効）"
-        else
-            # 開発環境: 自動起動は無効だが、サービス登録はテスト
-            log_info "開発環境: サービス登録済み（自動起動は無効）"
-            log_success "systemdサービス設定完了（登録のみ）"
-        fi
+    # サービス定義をリロード
+    systemctl daemon-reload
+    
+    if [ "$env_type" = "prod" ]; then
+        # 本番環境: サービスをブート時に自動起動
+        systemctl enable immich.service jellyfin.service rclone-sync.timer
+        log_success "systemdサービス設定完了（自動起動有効）"
     else
-        log_warning "systemdが利用不可 - ファイル作成のみ実行"
-        log_info "WSL環境またはsystemd未対応環境で実行中"
-        log_success "systemdサービスファイル作成完了"
+        # 開発環境: サービス作成のみ、自動起動は無効
+        log_info "開発環境のため、サービス自動起動は無効にしています"
+        log_success "systemdサービス設定完了（作成のみ）"
     fi
 }
 
@@ -137,11 +115,7 @@ EOF
 setup_systemd_timers() {
     log_info "systemdタイマーを設定中..."
     
-    local env_type=$(detect_environment)
-    
-    if [ "$env_type" = "dev" ]; then
-        # 開発環境: ファイル作成のみ
-        cat << EOF | tee "$SYSTEMD_CONFIG_PATH/rclone-sync.timer"
+    cat << EOF | tee "$SYSTEMD_CONFIG_PATH/rclone-sync.timer"
 [Unit]
 Description=Run rclone sync hourly
 Requires=rclone-sync.service
@@ -153,25 +127,6 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
-        log_info "開発環境: タイマーファイルを作成しました（systemctl操作はスキップ）"
-    else
-        # 本番環境: 通常のsystemd操作
-        cat << EOF | sudo tee "$SYSTEMD_CONFIG_PATH/rclone-sync.timer"
-[Unit]
-Description=Run rclone sync hourly
-Requires=rclone-sync.service
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-        sudo systemctl daemon-reload
-        sudo systemctl enable rclone-sync.timer
-    fi
     
     log_success "systemdタイマー設定完了"
 }
