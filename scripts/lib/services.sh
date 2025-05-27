@@ -51,25 +51,64 @@ setup_systemd_services() {
 start_services_with_verification() {
     log_info "サービスを起動中..."
     
-    # サービス起動を試行
-    log_info "systemd サービスを開始しています..."
+    # 1. 事前にdocker composeで起動 - Dockerイメージpullの可視化
+    log_info "=== 初回起動: Dockerイメージのダウンロード・起動 ==="
+    log_info "Dockerイメージのダウンロードには数分かかる場合があります..."
+    
+    log_info "Immichを起動中（Dockerイメージをダウンロード）..."
+    cd "$PROJECT_ROOT"
+    if ! docker compose -f docker/immich/docker-compose.yml up -d; then
+        log_error "Immichの初回起動に失敗しました"
+        return 1
+    fi
+    
+    log_info "Jellyfinを起動中（Dockerイメージをダウンロード）..."
+    if ! docker compose -f docker/jellyfin/docker-compose.yml up -d; then
+        log_error "Jellyfinの初回起動に失敗しました"
+        return 1
+    fi
+    
+    log_info "コンテナの起動を確認中（30秒待機）..."
+    sleep 30
+    
+    # コンテナ状態確認
+    log_info "現在のコンテナ状態:"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    
+    # 2. 一旦停止してクリーンな状態にする
+    log_info "=== コンテナを停止してsystemdサービス管理に移行 ==="
+    log_info "Dockerコンテナを停止中..."
+    docker compose -f docker/immich/docker-compose.yml down
+    docker compose -f docker/jellyfin/docker-compose.yml down
+    
+    sleep 5
+    
+    # 3. systemdサービスとして起動
+    log_info "=== systemdサービスとして起動 ==="
+    log_info "systemdサービスを開始しています（Dockerイメージは既にダウンロード済み）..."
     
     # サービスを個別に起動し、エラーハンドリング
     local failed_starts=()
     
-    if ! systemctl start immich.service 2>/dev/null; then
+    if ! systemctl start immich.service; then
         failed_starts+=("immich")
-        log_warning "immich サービスの起動に失敗しました"
+        log_warning "immich systemdサービスの起動に失敗しました"
+    else
+        log_success "immich systemdサービスが起動しました"
     fi
     
-    if ! systemctl start jellyfin.service 2>/dev/null; then
+    if ! systemctl start jellyfin.service; then
         failed_starts+=("jellyfin")
-        log_warning "jellyfin サービスの起動に失敗しました"
+        log_warning "jellyfin systemdサービスの起動に失敗しました"
+    else
+        log_success "jellyfin systemdサービスが起動しました"
     fi
     
-    if ! systemctl start rclone-sync.timer 2>/dev/null; then
+    if ! systemctl start rclone-sync.timer; then
         failed_starts+=("rclone-sync.timer")
         log_warning "rclone-sync.timer の起動に失敗しました"
+    else
+        log_success "rclone-sync.timer が起動しました"
     fi
     
     # 起動結果確認
@@ -82,33 +121,58 @@ start_services_with_verification() {
         log_success "全サービスの起動に成功しました"
     fi
     
-    # 起動確認（少し待ってから）
-    log_info "サービス起動確認中（10秒待機）..."
+    # 4. 最終的なサービス状態確認
+    log_info "=== 最終確認: systemdサービス状態チェック（10秒待機）==="
     sleep 10
     
     local failed_services=()
     
     if ! systemctl is-active --quiet immich.service; then
         failed_services+=("immich")
-        log_error "immich.service の起動に失敗しました: $(systemctl status immich.service --no-pager -l | tail -n 3)"
+        log_error "immich.service の起動に失敗しました"
+        log_info "詳細ログ: journalctl -u immich.service -n 10 --no-pager"
+    else
+        log_success "immich.service が正常に動作中です"
     fi
     
     if ! systemctl is-active --quiet jellyfin.service; then
         failed_services+=("jellyfin")
-        log_error "jellyfin.service の起動に失敗しました: $(systemctl status jellyfin.service --no-pager -l | tail -n 3)"
+        log_error "jellyfin.service の起動に失敗しました"
+        log_info "詳細ログ: journalctl -u jellyfin.service -n 10 --no-pager"
+    else
+        log_success "jellyfin.service が正常に動作中です"
     fi
     
     if ! systemctl is-active --quiet rclone-sync.timer; then
         failed_services+=("rclone-sync.timer")
-        log_error "rclone-sync.timer の起動に失敗しました: $(systemctl status rclone-sync.timer --no-pager -l | tail -n 3)"
+        log_error "rclone-sync.timer の起動に失敗しました"
+        log_info "詳細ログ: journalctl -u rclone-sync.timer -n 10 --no-pager"
+    else
+        log_success "rclone-sync.timer が正常に動作中です"
     fi
     
+    # 最終結果
     if [ ${#failed_services[@]} -eq 0 ]; then
         log_success "systemdサービス設定完了（自動起動有効・起動済み）"
+        
+        # ボーナス: アクセス可能性確認
+        log_info "=== サービスアクセス確認 ==="
+        if curl -s --max-time 5 http://localhost:2283 >/dev/null; then
+            log_success "Immich Web UI: http://localhost:2283 ✅"
+        else
+            log_warning "Immich Web UI: まだ起動中... (http://localhost:2283)"
+        fi
+        
+        if curl -s --max-time 5 http://localhost:8096 >/dev/null; then
+            log_success "Jellyfin Web UI: http://localhost:8096 ✅"
+        else
+            log_warning "Jellyfin Web UI: まだ起動中... (http://localhost:8096)"
+        fi
+        
     else
         log_warning "systemdサービス設定完了（自動起動有効・起動に問題あり: ${failed_services[*]}）"
         log_info "手動確認: systemctl status ${failed_services[*]}"
-        log_info "手動再起動: sudo systemctl start ${failed_services[*]}"
+        log_info "手動再起動: sudo systemctl restart ${failed_services[*]}"
     fi
 }
 
