@@ -26,8 +26,8 @@ install_docker() {
     # パッケージリスト更新
     apt update -y
 
-    # docker.io と docker-compose をインストール
-    local docker_pkgs=("docker.io" "docker-compose")
+    # docker.io をインストール
+    local docker_pkgs=("docker.io")
     for pkg in "${docker_pkgs[@]}"; do
         if ! dpkg -l | grep -qw "$pkg"; then
             apt install -y "$pkg"
@@ -143,4 +143,38 @@ cleanup_docker_completely() {
     rm -rf /etc/systemd/system/docker.service.d/override.conf || true
     
     log_success "Docker完全クリーンアップ完了"
+}
+
+# Docker Compose プラグインインストール
+install_docker_compose_plugin() {
+    log_info "=== Docker Compose プラグインのインストール ==="
+    
+    # Docker Compose プラグインが既に利用可能かチェック
+    if docker compose version >/dev/null 2>&1; then
+        log_success "Docker Compose プラグインは既にインストールされています"
+        return 0
+    fi
+    
+    # Docker Compose プラグインをインストール
+    log_info "Docker Compose プラグインをインストール中..."
+    
+    # 最新バージョンのDocker Compose プラグインをダウンロード
+    local compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    local compose_url="https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
+    
+    # Docker CLI プラグインディレクトリ作成
+    mkdir -p /usr/local/lib/docker/cli-plugins
+    
+    # Docker Compose プラグインをダウンロード
+    curl -SL "$compose_url" -o /usr/local/lib/docker/cli-plugins/docker-compose
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+    
+    # インストール確認
+    if docker compose version >/dev/null 2>&1; then
+        local installed_version=$(docker compose version --short)
+        log_success "Docker Compose プラグインのインストール完了 (バージョン: $installed_version)"
+    else
+        log_error "Docker Compose プラグインのインストールに失敗しました"
+        return 1
+    fi
 }

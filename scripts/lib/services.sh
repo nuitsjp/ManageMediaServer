@@ -40,14 +40,75 @@ setup_systemd_services() {
     # サービス定義をリロード
     systemctl daemon-reload
     
-    if [ "$env_type" = "prod" ]; then
-        # 本番環境: サービスをブート時に自動起動
-        systemctl enable immich.service jellyfin.service rclone-sync.timer
-        log_success "systemdサービス設定完了（自動起動有効）"
+    # 開発環境・本番環境共通: サービスをブート時に自動起動
+    systemctl enable immich.service jellyfin.service rclone-sync.timer
+    
+    # セットアップ完了時にサービスを起動（権限確認付き）
+    start_services_with_verification
+}
+
+# サービス起動と検証
+start_services_with_verification() {
+    log_info "サービスを起動中..."
+    
+    # サービス起動を試行
+    log_info "systemd サービスを開始しています..."
+    
+    # サービスを個別に起動し、エラーハンドリング
+    local failed_starts=()
+    
+    if ! systemctl start immich.service 2>/dev/null; then
+        failed_starts+=("immich")
+        log_warning "immich サービスの起動に失敗しました"
+    fi
+    
+    if ! systemctl start jellyfin.service 2>/dev/null; then
+        failed_starts+=("jellyfin")
+        log_warning "jellyfin サービスの起動に失敗しました"
+    fi
+    
+    if ! systemctl start rclone-sync.timer 2>/dev/null; then
+        failed_starts+=("rclone-sync.timer")
+        log_warning "rclone-sync.timer の起動に失敗しました"
+    fi
+    
+    # 起動結果確認
+    if [ ${#failed_starts[@]} -gt 0 ]; then
+        log_warning "一部のサービス起動に失敗しました: ${failed_starts[*]}"
+        log_info "サービスのログ確認: journalctl -u <サービス名> -f"
+        log_info "手動でサービスを起動: sudo systemctl start <サービス名>"
+        log_info "自動起動は有効化済みです"
     else
-        # 開発環境: サービス作成のみ、自動起動は無効
-        log_info "開発環境のため、サービス自動起動は無効にしています"
-        log_success "systemdサービス設定完了（作成のみ）"
+        log_success "全サービスの起動に成功しました"
+    fi
+    
+    # 起動確認（少し待ってから）
+    log_info "サービス起動確認中（10秒待機）..."
+    sleep 10
+    
+    local failed_services=()
+    
+    if ! systemctl is-active --quiet immich.service; then
+        failed_services+=("immich")
+        log_error "immich.service の起動に失敗しました: $(systemctl status immich.service --no-pager -l | tail -n 3)"
+    fi
+    
+    if ! systemctl is-active --quiet jellyfin.service; then
+        failed_services+=("jellyfin")
+        log_error "jellyfin.service の起動に失敗しました: $(systemctl status jellyfin.service --no-pager -l | tail -n 3)"
+    fi
+    
+    if ! systemctl is-active --quiet rclone-sync.timer; then
+        failed_services+=("rclone-sync.timer")
+        log_error "rclone-sync.timer の起動に失敗しました: $(systemctl status rclone-sync.timer --no-pager -l | tail -n 3)"
+    fi
+    
+    if [ ${#failed_services[@]} -eq 0 ]; then
+        log_success "systemdサービス設定完了（自動起動有効・起動済み）"
+    else
+        log_warning "systemdサービス設定完了（自動起動有効・起動に問題あり: ${failed_services[*]}）"
+        log_info "手動確認: systemctl status ${failed_services[*]}"
+        log_info "手動再起動: sudo systemctl start ${failed_services[*]}"
     fi
 }
 
@@ -96,11 +157,14 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 User=mediaserver
+Group=mediaserver
+SupplementaryGroups=docker
 WorkingDirectory=$PROJECT_ROOT
 ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/docker/immich/docker-compose.yml up -d
 ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/docker/immich/docker-compose.yml down
 StandardOutput=journal
 StandardError=journal
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target
@@ -117,11 +181,14 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 User=mediaserver
+Group=mediaserver
+SupplementaryGroups=docker
 WorkingDirectory=$PROJECT_ROOT
 ExecStart=/usr/bin/docker compose -f $PROJECT_ROOT/docker/jellyfin/docker-compose.yml up -d
 ExecStop=/usr/bin/docker compose -f $PROJECT_ROOT/docker/jellyfin/docker-compose.yml down
 StandardOutput=journal
 StandardError=journal
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target

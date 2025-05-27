@@ -59,6 +59,7 @@ check_environment() {
 # ユーザー・権限確認（mediaserverユーザー作成のみ）
 check_user_permissions() {
     log_info "=== ユーザー・権限確認 ==="
+    
     if ! id mediaserver &>/dev/null; then
         log_info "mediaserver ユーザーを作成中..."
         useradd -m -s /bin/bash mediaserver
@@ -66,8 +67,18 @@ check_user_permissions() {
         chown mediaserver:mediaserver /home/mediaserver
         chmod 755 /home/mediaserver
         log_success "mediaserver ユーザーを作成しました"
+        log_info "Dockerグループメンバーシップが設定されました (次回ログイン時に有効化)"
     else
-        log_success "mediaserver ユーザーは既に存在します"
+        log_info "mediaserver ユーザーが既に存在します"
+        # Dockerグループメンバーシップ確認
+        if groups mediaserver | grep -q docker; then
+            log_success "mediaserver ユーザーはdockerグループのメンバーです"
+        else
+            log_info "mediaserver ユーザーをdockerグループに追加中..."
+            usermod -aG docker mediaserver
+            log_success "dockerグループメンバーシップが追加されました"
+        fi
+        log_success "ユーザー確認完了"
     fi
 }
 

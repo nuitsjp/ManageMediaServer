@@ -80,6 +80,7 @@ main() {
         echo "3. 設定ファイル展開"
         echo "4. システムパッケージインストール"
         echo "5. Dockerインストール"
+        echo "5a. Docker Compose プラグインインストール"
         echo "6. アプリケーションセットアップ"
         echo "7. サービス設定"
         echo "   - 環境: $env_type"
@@ -118,6 +119,9 @@ main() {
 
     # 5. Dockerインストール
     install_docker
+    
+    # 5a. Docker Compose プラグインインストール
+    install_docker_compose_plugin
 
     # 6. アプリケーションセットアップ
     setup_immich
