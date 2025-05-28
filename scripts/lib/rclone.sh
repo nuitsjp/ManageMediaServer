@@ -7,7 +7,13 @@ setup_rclone() {
     
     install_rclone
     create_rclone_directories
-    validate_rclone_setup
+    
+    # rclone設定検証（設定ファイルが存在しない場合は警告のみ）
+    if ! validate_rclone_setup; then
+        log_warning "rclone設定ファイルが見つかりません。手動で設定してください。"
+        log_info "設定コマンド: rclone config"
+        log_info "rcloneセットアップは継続します..."
+    fi
     
     log_success "=== rclone セットアップ完了 ==="
 }

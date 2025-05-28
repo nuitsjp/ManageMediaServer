@@ -46,9 +46,6 @@ start_services_with_verification() {
         return 1
     fi
     
-    log_info "コンテナの起動を確認中（30秒待機）..."
-    sleep 30
-    
     # コンテナ状態確認
     log_info "現在のコンテナ状態:"
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
@@ -98,10 +95,6 @@ start_services_with_verification() {
     else
         log_success "全サービスの起動に成功しました"
     fi
-    
-    # 4. 最終的なサービス状態確認
-    log_info "=== 最終確認: systemdサービス状態チェック（10秒待機）==="
-    sleep 10
     
     local failed_services=()
     
