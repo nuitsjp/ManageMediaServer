@@ -95,6 +95,11 @@ setup_mediaserver_user() {
         log_success "dockerグループメンバーシップが追加されました (次回ログイン時に有効化)"
     fi
     
+    # ディレクトリ所有権設定
+    log_info "ディレクトリ所有権をmediaserverユーザーに設定中..."
+    chown -R mediaserver:mediaserver "$DATA_ROOT" "$BACKUP_ROOT"
+    log_success "ディレクトリ所有権設定完了"
+    
     log_success "mediaserverユーザーの設定が完了しました"
 }
 
@@ -126,9 +131,6 @@ prepare_directories() {
     chmod 750 "$DATA_ROOT/config" "$BACKUP_ROOT/config"
     
     log_success "ディレクトリ準備完了"
-
-    # データディレクトリをmediaserver所有に
-    chown -R mediaserver:mediaserver "$DATA_ROOT" "$BACKUP_ROOT"
 }
 
 # システムパッケージ更新・インストール

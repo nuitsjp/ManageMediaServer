@@ -161,14 +161,13 @@ EOF
 check_docker_compose() {
     log_info "=== Docker Compose確認 ==="
     
-    if ! docker compose version >/dev/null 2>&1; then
-        log_error "docker compose プラグインがインストールされていません"
-        log_info "インストール方法: apt install docker-compose-plugin"
+    if ! command_exists docker-compose; then
+        log_error "docker-compose がインストールされていません"
         return 1
     fi
     
-    log_info "Docker Compose プラグイン バージョン: $(docker compose version --short 2>/dev/null || echo "unknown")"
-    log_success "Docker Compose プラグインは利用可能です"
+    log_info "docker-compose バージョン: $(docker-compose --version)"
+    log_success "docker-compose は利用可能です"
 }
 
 # 設定ファイル確認
@@ -471,12 +470,12 @@ validate_docker_compose_files() {
         if [ -f "$compose_file" ]; then
             log_info "検証中: $(basename "$(dirname "$compose_file")")"
             
-            # docker compose config でバリデーション
-            if (cd "$(dirname "$compose_file")" && docker compose config >/dev/null 2>&1); then
+            # docker-compose config でバリデーション
+            if (cd "$(dirname "$compose_file")" && docker-compose config >/dev/null 2>&1); then
                 log_success "設定ファイル有効: $compose_file"
             else
                 log_warning "設定ファイルに問題があります: $compose_file"
-                log_info "詳細確認: cd $(dirname "$compose_file") && docker compose config"
+                log_info "詳細確認: cd $(dirname "$compose_file") && docker-compose config"
             fi
         else
             log_warning "ファイルが見つかりません: $compose_file"
@@ -498,11 +497,11 @@ start_containers() {
             local service_name=$(basename "$(dirname "$compose_file")")
             log_info "${service_name} コンテナを起動中..."
             
-            if (cd "$(dirname "$compose_file")" && docker compose up -d); then
+            if (cd "$(dirname "$compose_file")" && docker-compose up -d); then
                 log_success "${service_name} コンテナ起動完了"
             else
                 log_error "${service_name} コンテナ起動に失敗しました"
-                log_info "ログ確認: cd $(dirname "$compose_file") && docker compose logs"
+                log_info "ログ確認: cd $(dirname "$compose_file") && docker-compose logs"
             fi
         else
             log_error "Docker Composeファイルが見つかりません: $compose_file"

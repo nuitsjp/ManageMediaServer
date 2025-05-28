@@ -344,7 +344,7 @@ cp -r "$backup_dir/config/config" ./
 
 # Docker Compose設定検証
 if [ -f "docker/immich/docker-compose.yml" ]; then
-    docker compose -f docker/immich/docker-compose.yml config --quiet
+    docker-compose -f docker/immich/docker-compose.yml config --quiet
     if [ $? -eq 0 ]; then
         echo "OK: Immich Docker Compose設定"
     else
@@ -353,7 +353,7 @@ if [ -f "docker/immich/docker-compose.yml" ]; then
 fi
 
 if [ -f "docker/jellyfin/docker-compose.yml" ]; then
-    docker compose -f docker/jellyfin/docker-compose.yml config --quiet
+    docker-compose -f docker/jellyfin/docker-compose.yml config --quiet
     if [ $? -eq 0 ]; then
         echo "OK: Jellyfin Docker Compose設定"
     else

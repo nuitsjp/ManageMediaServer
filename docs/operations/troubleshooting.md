@@ -82,7 +82,7 @@ sudo journalctl -u immich --since "10 minutes ago"
 
 # 3. Docker Compose設定確認
 cd /home/mediaserver/ManageMediaServer
-docker compose -f docker/immich/docker-compose.yml config
+docker-compose -f docker/immich/docker-compose.yml config
 
 # 4. コンテナ状態確認
 docker ps -a | grep immich
@@ -93,7 +93,7 @@ docker ps -a | grep immich
 **設定エラーの場合:**
 ```bash
 # 設定ファイル検証
-docker compose -f docker/immich/docker-compose.yml config
+docker-compose -f docker/immich/docker-compose.yml config
 
 # 環境変数確認
 cat docker/immich/.env
@@ -111,7 +111,7 @@ sudo systemctl status docker
 docker ps | grep postgres
 
 # 手動でコンテナ起動
-docker compose -f docker/immich/docker-compose.yml up -d
+docker-compose -f docker/immich/docker-compose.yml up -d
 ```
 
 **権限問題:**
@@ -133,7 +133,7 @@ sudo systemctl status jellyfin -l
 sudo journalctl -u jellyfin --since "10 minutes ago"
 
 # Docker設定確認
-docker compose -f docker/jellyfin/docker-compose.yml config
+docker-compose -f docker/jellyfin/docker-compose.yml config
 
 # ポート使用状況確認
 sudo ss -tuln | grep 8096
@@ -460,8 +460,8 @@ sudo nano /etc/docker/daemon.json
 sudo systemctl restart docker
 
 # 必要に応じてDocker再インストール
-sudo apt remove docker.io docker-compose-plugin
-sudo apt install docker.io docker-compose-plugin
+sudo apt remove docker.io docker-compose
+sudo apt install docker.io docker-compose
 ```
 
 ### コンテナが頻繁に再起動する
