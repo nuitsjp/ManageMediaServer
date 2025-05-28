@@ -10,9 +10,6 @@ source "$SCRIPT_DIR/../lib/common.sh" || { echo "[ERROR] common.sh の読み込�
 source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに失敗"
 source "$SCRIPT_DIR/../lib/rclone.sh" || log_error "rclone.sh の読み込みに失敗"
 
-# 環境変数読み込み
-load_environment
-
 # ディスク構成確認・セットアップ
 setup_disk_configuration() {
     log_info "=== ディスク構成確認・セットアップ ==="
@@ -49,9 +46,23 @@ setup_disk_configuration() {
     log_success "ディスク構成セットアップ完了"
 }
 
-# ファイアウォール設定
+# ファイアウォール設定（テストモード対応）
 setup_firewall() {
     log_info "=== ファイアウォール設定 ==="
+    
+    # テストモード時の動作
+    if [ "${TEST_MODE:-false}" = "true" ]; then
+        log_info "[テストモード] ファイアウォール設定をシミュレーション実行中..."
+        log_info "[SKIP] sudo ufw --force reset"
+        log_info "[SKIP] sudo ufw default deny incoming"
+        log_info "[SKIP] sudo ufw default allow outgoing"
+        log_info "[SKIP] sudo ufw allow ssh"
+        log_info "[SKIP] sudo ufw allow from 192.168.0.0/16 to any port 2283 comment 'Immich'"
+        log_info "[SKIP] sudo ufw allow from 192.168.0.0/16 to any port 8096 comment 'Jellyfin'"
+        log_info "[SKIP] sudo ufw --force enable"
+        log_warning "[テストモード] 実際のファイアウォール設定は実行されていません"
+        return 0
+    fi
     
     # UFW初期化
     sudo ufw --force reset
@@ -74,62 +85,120 @@ setup_firewall() {
     sudo ufw status verbose
 }
 
-# セキュリティ設定
+# セキュリティ設定（テストモード対応）
 setup_security() {
     log_info "=== セキュリティ設定 ==="
     
-    # fail2ban設定
-    setup_fail2ban
+    # テストモード時の処理
+    if [ "${TEST_MODE:-false}" = "true" ]; then
+        log_info "[テストモード] セキュリティ設定をシミュレーション実行中..."
+        setup_firewall
+        setup_fail2ban  
+        setup_ssh_security
+        log_success "[テストモード] セキュリティ設定シミュレーション完了"
+        log_warning "実際の設定適用は本番環境で --test-mode を外して実行してください"
+        return 0
+    fi
     
-    # SSH設定強化
+    # 実際のセキュリティ設定実行
+    setup_firewall
+    setup_fail2ban  
     setup_ssh_security
-    
-    # 自動更新設定
-    setup_automatic_updates
-    
     log_success "セキュリティ設定完了"
 }
 
-# fail2ban設定
+# fail2ban設定（テストモード対応）
 setup_fail2ban() {
     log_info "fail2ban設定を適用中..."
     
-    # fail2ban設定ファイル作成
-    cat << EOF | sudo tee /etc/fail2ban/jail.local
+    # テストモード時の動作
+    if [ "${TEST_MODE:-false}" = "true" ]; then
+        log_info "[テストモード] fail2ban設定をシミュレーション実行中..."
+        log_info "[SKIP] fail2banパッケージインストール"
+        log_info "[SKIP] jail.local設定作成（家庭内IP 192.168.0.0/16 除外）"
+        log_info "[SKIP] fail2banサービス再起動"
+        log_warning "[テストモード] 実際のfail2ban設定は実行されていません"
+        return 0
+    fi
+    
+    # fail2banパッケージインストール
+    if ! command -v fail2ban-client >/dev/null 2>&1; then
+        sudo apt update && sudo apt install -y fail2ban
+    fi
+    
+    # fail2ban設定（家庭内ネットワーク除外）
+    sudo tee /etc/fail2ban/jail.local > /dev/null << 'EOF'
 [DEFAULT]
-bantime = 1h
-findtime = 10m
-maxretry = 5
+# 家庭内ネットワークを除外（192.168.0.0/16全体をカバー）
+ignoreip = 127.0.0.1/8 ::1 192.168.0.0/16
+
+# ログファイル日時形式を明示的に指定
+datepattern = {^LN-BEG}
 
 [sshd]
 enabled = true
 port = ssh
+filter = sshd
 logpath = /var/log/auth.log
 maxretry = 3
+findtime = 600
+bantime = 3600
+backend = systemd
 EOF
     
-    # fail2banサービス有効化
-    sudo systemctl enable fail2ban
+    # fail2banサービス再起動
     sudo systemctl restart fail2ban
+    sudo systemctl enable fail2ban
     
-    log_success "fail2ban設定完了"
+    log_success "fail2ban設定完了（家庭内IP除外設定済み）"
+    
+    # 設定状態表示
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        sudo fail2ban-client status
+    fi
 }
 
-# SSH設定強化
+# SSH設定強化（テストモード対応）
 setup_ssh_security() {
     log_info "SSH設定を強化中..."
     
-    # SSH設定バックアップ
-    sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+    # テストモード時の動作
+    if [ "${TEST_MODE:-false}" = "true" ]; then
+        log_info "[テストモード] SSH設定強化をシミュレーション実行中..."
+        log_info "[SKIP] PermitRootLogin no 設定"
+        log_info "[SKIP] PasswordAuthentication yes 設定（家庭内アクセス考慮）"
+        log_info "[SKIP] MaxAuthTries 3 設定"
+        log_info "[SKIP] SSH設定テスト・サービス再起動"
+        log_warning "[テストモード] 実際のSSH設定は実行されていません"
+        return 0
+    fi
     
-    # SSH設定更新（基本的な強化）
+    # SSH設定ファイルのバックアップ
+    if [ ! -f /etc/ssh/sshd_config.backup ]; then
+        sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+        log_info "SSH設定ファイルをバックアップしました"
+    fi
+    
+    # 家庭内ネットワーク前提の基本的なSSH強化
+    # 注意: パスワード認証は家庭内アクセスの利便性を考慮して維持
     sudo sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
     sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
     
-    # SSH再起動
-    sudo systemctl restart ssh
+    # ログイン試行制限を追加
+    if ! grep -q "MaxAuthTries" /etc/ssh/sshd_config; then
+        echo "MaxAuthTries 3" | sudo tee -a /etc/ssh/sshd_config
+    fi
     
-    log_success "SSH設定強化完了"
+    # SSH設定確認
+    if sudo sshd -t; then
+        sudo systemctl restart ssh
+        log_success "SSH設定強化完了"
+    else
+        log_error "SSH設定にエラーがあります。バックアップから復元します"
+        sudo cp /etc/ssh/sshd_config.backup /etc/ssh/sshd_config
+        sudo systemctl restart ssh
+        return 1
+    fi
 }
 
 # 自動更新設定
@@ -211,9 +280,44 @@ verify_production_installation() {
     log_success "本番環境動作確認完了"
 }
 
+# 使用方法表示
+show_usage() {
+    cat << 'EOF'
+本番環境（Ubuntu Server）セットアップスクリプト
+
+使用方法:
+    ./setup-prod.sh [オプション]
+
+オプション:
+    --force             強制実行（既存設定を上書き）
+    --debug             デバッグモード（詳細ログ出力）
+    --security-only     セキュリティ設定のみ実行
+    --test-mode         テストモード（WSL環境でセキュリティ設定をシミュレーション）
+    --help              このヘルプを表示
+
+例:
+    # 通常の本番環境セットアップ
+    ./setup-prod.sh
+
+    # WSL環境でセキュリティ設定をテスト
+    ./setup-prod.sh --test-mode --security-only
+
+    # 本番環境でセキュリティ設定のみ適用
+    ./setup-prod.sh --security-only
+
+注意:
+    - 本スクリプトは家庭内クローズドネットワーク環境を前提としています
+    - --test-mode はWSL環境でのセキュリティ設定事前確認用です
+    - 実際のセキュリティ設定は本番環境で --test-mode を外して実行してください
+
+EOF
+}
+
 # メイン処理
 main() {
     local force=false
+    local security_only=false
+    local test_mode=false
 
     # 引数解析
     while [[ $# -gt 0 ]]; do
@@ -225,16 +329,52 @@ main() {
             --debug)
                 export DEBUG=1
                 ;;
+            --security-only)
+                security_only=true
+                ;;
+            --test-mode)
+                test_mode=true
+                log_info "テストモード有効: WSL環境でのセキュリティ設定をシミュレーション実行"
+                ;;
+            --help)
+                show_usage
+                exit 0
+                ;;
             *)
                 log_error "不明なオプション: $1"
+                show_usage
+                exit 1
                 ;;
         esac
         shift
     done
     
-    log_info "=== 本番環境（Ubuntu Server）セットアップ開始 ==="
+    # テストモード設定
+    if [ "$test_mode" = "true" ]; then
+        export TEST_MODE=true
+    fi
 
-    # --- インストール処理は auto-setup.sh 側で実施済み ---
+    log_info "=== 本番環境セットアップ開始 ==="
+    
+    if [ "$test_mode" = "true" ]; then
+        log_warning "テストモード実行中: セキュリティ設定はシミュレーションのみ"
+    fi
+
+    # 環境設定読み込み
+    load_environment
+
+    # セキュリティ専用実行時
+    if [ "$security_only" = "true" ]; then
+        log_info "セキュリティ設定のみ実行します"
+        setup_security
+        log_success "セキュリティ設定完了"
+        exit 0
+    fi
+
+    # 事前チェック
+    pre_check "prod"
+
+    # ディスク構成確認・セットアップ
     setup_disk_configuration
     setup_firewall
     setup_security

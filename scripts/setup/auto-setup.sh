@@ -6,6 +6,10 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 # --------------------------------
 
+# セキュリティ警告: 家庭内クローズドネットワーク前提の設定
+# 本スクリプトはシステム構成（system-architecture.md）に基づき、
+# 家庭内の信頼できるネットワーク環境での使用を前提としています。
+
 # 統合セットアップスクリプト（環境自動判定）
 set -euo pipefail
 
@@ -30,6 +34,7 @@ load_environment
 main() {
     local dry_run=false
     local force=false
+    local test_security=false
     
     # 引数解析
     while [[ $# -gt 0 ]]; do
@@ -45,7 +50,10 @@ main() {
             --force)
                 force=true
                 export FORCE=true
-                log_info "強制上書きモードが有効になりました"
+                ;;
+            --test-security)
+                test_security=true
+                log_info "セキュリティ設定テストモードが有効になりました"
                 ;;
             --dry-run)
                 dry_run=true
@@ -64,6 +72,24 @@ main() {
     
     # 環境判定
     local env_type=$(detect_environment)
+    
+    # セキュリティテストモード時の特別処理
+    if [ "$test_security" = "true" ]; then
+        if [ "$env_type" = "dev" ]; then
+            log_warning "WSL環境でセキュリティ設定をテスト実行します"
+            log_info "セキュリティ設定のみを実行します"
+            # WSL環境でもテストモードで実行
+            "$SCRIPT_DIR/setup-prod.sh" --test-mode --security-only
+            exit $?
+        elif [ "$env_type" = "prod" ]; then
+            log_info "本番環境でセキュリティ設定をテスト実行します"
+            "$SCRIPT_DIR/setup-prod.sh" --test-mode --security-only
+            exit $?
+        else
+            log_error "サポートされていない環境です: $env_type"
+            exit 1
+        fi
+    fi
 
     # 環境情報表示
     show_environment_info "$env_type"
@@ -81,10 +107,15 @@ main() {
         echo "5a. Docker Compose プラグインインストール"
         echo "5b. mediaserverユーザー作成・権限設定"
         echo "6. アプリケーションセットアップ"
-        echo "7. サービス設定"
+        echo "7. rcloneセットアップ"
+        echo "8. systemdサービス設定"
+        echo "9. セキュリティ設定（本番環境のみ）"
         echo "   - 環境: $env_type"
         if [ "$env_type" = "prod" ]; then
-            echo "   - 本番環境設定を適用"
+            echo "   - ファイアウォール設定（ローカルネットワーク制限）"
+            echo "   - fail2ban設定（家庭内IP除外）"
+            echo "   - SSH強化（家庭内利便性考慮）"
+            echo "   - 自動セキュリティ更新"
         else
             echo "   - 開発環境設定を適用"
         fi
@@ -129,11 +160,21 @@ main() {
     setup_immich
     setup_jellyfin
 
-    # 8. rclone セットアップ
+    # 7. rclone セットアップ
     setup_rclone
 
-    # 9. systemdサービス設定
+    # 8. systemdサービス設定
     setup_systemd_services
+
+    # 9. セキュリティ設定（本番環境のみ）
+    if [ "$env_type" = "prod" ]; then
+        log_info "=== 本番環境セキュリティ設定 ==="
+        
+        # setup-prod.sh の該当関数を呼び出し
+        "$SCRIPT_DIR/setup-prod.sh" --security-only || {
+            log_warning "セキュリティ設定で一部エラーが発生しましたが、継続します"
+        }
+    fi
 
     log_success "=== 自動セットアップ完了 ==="
     

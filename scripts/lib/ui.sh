@@ -10,10 +10,11 @@ show_help() {
     $0 [オプション]
 
 オプション:
-    --help, -h      このヘルプを表示
-    --debug         デバッグモード（詳細ログ表示）
-    --force         既存設定を強制上書き
-    --dry-run       実際の実行は行わず、実行予定の処理のみ表示
+    --help, -h          このヘルプを表示
+    --debug             デバッグモード（詳細ログ表示）
+    --force             既存設定を強制上書き
+    --dry-run           実際の実行は行わず、実行予定の処理のみ表示
+    --test-security     セキュリティ設定テストモード（WSL環境での事前確認）
 
 説明:
     このスクリプトは実行環境を自動判定し、適切なセットアップを実行します：
@@ -21,9 +22,10 @@ show_help() {
     - Ubuntu Server: 本番環境として構築
 
 例:
-    ./auto-setup.sh                # 標準セットアップ
-    ./auto-setup.sh --debug        # デバッグモードでセットアップ
-    ./auto-setup.sh --dry-run      # 実行予定の処理を確認
+    ./auto-setup.sh                    # 標準セットアップ
+    ./auto-setup.sh --debug            # デバッグモードでセットアップ
+    ./auto-setup.sh --dry-run          # 実行予定の処理を確認
+    ./auto-setup.sh --test-security    # WSL環境でセキュリティ設定をテスト
 EOF
 }
 

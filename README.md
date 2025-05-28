@@ -66,6 +66,22 @@ cd ManageMediaServer
 ./scripts/setup/setup-prod.sh
 ```
 
+### セキュリティ設定テスト（推奨）
+
+本番環境でのセキュリティ設定適用前に、WSL環境で事前テストを実行：
+
+```bash
+# WSL環境でセキュリティ設定をテスト
+wsl -d Ubuntu-24.04
+cd /mnt/d/ManageMediaServer
+./scripts/setup/setup-prod.sh --test-mode --security-only
+
+# 本番環境でセキュリティ設定を適用
+./scripts/setup/setup-prod.sh --security-only
+```
+
+詳細手順: [WSL環境でのセキュリティテスト](docs/operations/security-testing-wsl.md)
+
 ## ライセンス
 
 MIT License
