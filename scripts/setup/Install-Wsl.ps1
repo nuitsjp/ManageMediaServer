@@ -279,22 +279,6 @@ function Test-SystemdRunning {
     }
 }
 
-# 基本パッケージ更新
-function Update-SystemPackages {
-    param([string]$DistroName)
-    
-    Write-Log "システムパッケージを更新中..." -Level INFO
-    
-    try {
-        wsl -d $DistroName bash -c "sudo apt update && sudo apt upgrade -y"
-        Write-Log "システムパッケージの更新が完了しました" -Level SUCCESS
-    }
-    catch {
-        Write-Log "システムパッケージの更新に失敗しました: $($_.Exception.Message)" -Level ERROR
-        throw
-    }
-}
-
 # メイン処理
 function Main {
     Write-Log "=== WSL Ubuntu 24.04 + systemd セットアップ開始 ===" -Level INFO
@@ -328,9 +312,6 @@ function Main {
         if (-not (Test-SystemdRunning -DistroName $DistroName)) {
             Write-Log "systemdの動作確認に失敗しました。手動での確認をお勧めします。" -Level WARNING
         }
-        
-        # 7. システムパッケージ更新
-        Update-SystemPackages -DistroName $DistroName
         
         Write-Log "=== WSL Ubuntu 24.04 + systemd セットアップ完了 ===" -Level SUCCESS
         
