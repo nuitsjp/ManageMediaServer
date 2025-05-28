@@ -149,6 +149,8 @@ install_system_packages() {
         "ca-certificates"
         "gnupg"
         "unzip"
+        "ufw"
+        "fail2ban"
     )
     
     # WSLの場合、追加のパッケージをインストール
@@ -162,7 +164,10 @@ install_system_packages() {
     # パッケージインストール
     for pkg in "${packages[@]}"; do
         if ! dpkg -l | grep -qw "$pkg"; then
+            log_info "パッケージ '$pkg' をインストール中..."
             apt install -y "$pkg"
+        else
+            log_debug "パッケージ '$pkg' は既にインストール済みです"
         fi
     done
     

@@ -35,6 +35,8 @@ main() {
     local dry_run=false
     local force=false
     local test_security=false
+    local test_mode=false
+    local security_only=false
     
     # 引数解析
     while [[ $# -gt 0 ]]; do
@@ -50,6 +52,14 @@ main() {
             --force)
                 force=true
                 export FORCE=true
+                ;;
+            --test-mode)
+                test_mode=true
+                log_info "テストモードが有効になりました"
+                ;;
+            --security-only)
+                security_only=true
+                log_info "セキュリティ設定のみ実行します"
                 ;;
             --test-security)
                 test_security=true
@@ -72,6 +82,20 @@ main() {
     
     # 環境判定
     local env_type=$(detect_environment)
+    
+    # テストモード + セキュリティのみの処理
+    if [ "$test_mode" = "true" ] && [ "$security_only" = "true" ]; then
+        log_info "テストモードでセキュリティ設定のみを実行します"
+        "$SCRIPT_DIR/setup-prod.sh" --test-mode --security-only
+        exit $?
+    fi
+    
+    # セキュリティのみの処理
+    if [ "$security_only" = "true" ]; then
+        log_info "セキュリティ設定のみを実行します"
+        "$SCRIPT_DIR/setup-prod.sh" --security-only
+        exit $?
+    fi
     
     # セキュリティテストモード時の特別処理
     if [ "$test_security" = "true" ]; then
