@@ -137,7 +137,7 @@ function Install-Ubuntu {
     if (Test-UbuntuInstallation -DistroName $DistroName) {
         if (-not $Force) {
             Write-Log "$DistroName は既にインストールされています。再インストールする場合は -Force オプションを使用してください。" -Level INFO
-            return
+            return $false  # 初期設定不要
         } else {
             Write-Log "強制再インストールを実行します..." -Level WARNING
             wsl --unregister $DistroName
@@ -146,8 +146,10 @@ function Install-Ubuntu {
     
     Write-Log "Ubuntu $DistroName をインストール中..." -Level INFO
     try {
-        wsl --install -d $DistroName
+        # --no-launch オプションでインストール後の自動起動を抑制
+        wsl --install -d $DistroName --no-launch
         Write-Log "Ubuntu $DistroName のインストールが完了しました" -Level SUCCESS
+        return $true  # 初期設定が必要
     }
     catch {
         Write-Log "Ubuntu $DistroName のインストールに失敗しました: $($_.Exception.Message)" -Level ERROR
@@ -279,6 +281,40 @@ function Test-SystemdRunning {
     }
 }
 
+# Ubuntu初期ユーザーセットアップ
+function Initialize-UbuntuUser {
+    param([string]$DistroName)
+    
+    Write-Host ""
+    Write-Host "===============================================" -ForegroundColor Cyan
+    Write-Host "    Ubuntu初期ユーザーセットアップ開始" -ForegroundColor Cyan
+    Write-Host "===============================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "これからUbuntuの初期セットアップを開始します。" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "📝 以下の情報の入力が求められます：" -ForegroundColor Green
+    Write-Host "   1️⃣  ユーザー名（英数字のみ）：推奨 現在のWindowsユーザー名と同じ" -ForegroundColor White
+    Write-Host "   2️⃣  パスワード（sudo権限で使用されます）" -ForegroundColor White
+    Write-Host "   3️⃣  パスワード確認入力" -ForegroundColor White
+    Write-Host ""
+    Write-Host "入力の完了後 exit で終了してください" -ForegroundColor Green
+    Write-Host ""
+    
+    try {
+        # Ubuntuを起動してユーザーセットアップを実行
+        wsl -d $DistroName
+        
+        Write-Host ""
+        Write-Host "✅ Ubuntu初期セットアップが完了しました" -ForegroundColor Green
+        Write-Host ""
+    }
+    catch {
+        Write-Log "Ubuntu初期セットアップに失敗しました: $($_.Exception.Message)" -Level ERROR
+        throw
+    }
+}
+
+
 # メイン処理
 function Main {
     Write-Log "=== WSL Ubuntu 24.04 + systemd セットアップ開始 ===" -Level INFO
@@ -298,19 +334,39 @@ function Main {
         Set-WSL2Default
         
         # 3. Ubuntu 24.04インストール
-        Install-Ubuntu -DistroName $DistroName
+        $needsUserSetup = Install-Ubuntu -DistroName $DistroName
         
-        # 4. systemd有効化
-        $needsRestart = Enable-Systemd -DistroName $DistroName
-        
-        # 5. 必要に応じてWSL再起動
-        if ($needsRestart) {
-            Restart-WSLDistro -DistroName $DistroName
+        # 4. systemd有効化（既存ディストリビューションのみ）
+        if (-not $needsUserSetup) {
+            $needsRestart = Enable-Systemd -DistroName $DistroName
+            
+            # 5. 必要に応じてWSL再起動
+            if ($needsRestart) {
+                Restart-WSLDistro -DistroName $DistroName
+            }
+            
+            # 6. systemd動作確認
+            if (-not (Test-SystemdRunning -DistroName $DistroName)) {
+                Write-Log "systemdの動作確認に失敗しました。手動での確認をお勧めします。" -Level WARNING
+            }
         }
         
-        # 6. systemd動作確認
-        if (-not (Test-SystemdRunning -DistroName $DistroName)) {
-            Write-Log "systemdの動作確認に失敗しました。手動での確認をお勧めします。" -Level WARNING
+        # 7. Ubuntu初期ユーザーセットアップ（新規インストール時のみ）
+        if ($needsUserSetup) {
+            Initialize-UbuntuUser -DistroName $DistroName
+            
+            # 8. systemd有効化（ユーザーセットアップ後）
+            $needsRestart = Enable-Systemd -DistroName $DistroName
+            
+            # 9. WSL再起動
+            if ($needsRestart) {
+                Restart-WSLDistro -DistroName $DistroName
+            }
+            
+            # 10. systemd動作確認
+            if (-not (Test-SystemdRunning -DistroName $DistroName)) {
+                Write-Log "systemdの動作確認に失敗しました。手動での確認をお勧めします。" -Level WARNING
+            }
         }
         
         Write-Log "=== WSL Ubuntu 24.04 + systemd セットアップ完了 ===" -Level SUCCESS
@@ -318,8 +374,7 @@ function Main {
         # 次のステップ案内
         Write-Log "次のステップ:" -Level INFO
         Write-Log "1. WSLに接続: wsl -d $DistroName" -Level INFO
-        Write-Log "2. systemd確認: systemctl status" -Level INFO
-        Write-Log "3. メディアサーバーセットアップ: cd /mnt/d/ManageMediaServer && ./scripts/setup/auto-setup.sh" -Level INFO
+        Write-Log "2. メディアサーバーセットアップ: cd /mnt/d/ManageMediaServer && ./scripts/setup/auto-setup.sh" -Level INFO
         
     }
     catch {
