@@ -291,12 +291,10 @@ function Initialize-UbuntuUser {
     Write-Host "===============================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "これからUbuntuの初期セットアップを開始します。" -ForegroundColor Yellow
-    Write-Host ""
     Write-Host "📝 以下の情報の入力が求められます：" -ForegroundColor Green
     Write-Host "   1️⃣  ユーザー名（英数字のみ）：推奨 現在のWindowsユーザー名と同じ" -ForegroundColor White
     Write-Host "   2️⃣  パスワード（sudo権限で使用されます）" -ForegroundColor White
     Write-Host "   3️⃣  パスワード確認入力" -ForegroundColor White
-    Write-Host ""
     Write-Host "入力の完了後 exit で終了してください" -ForegroundColor Green
     Write-Host ""
     
