@@ -31,13 +31,18 @@ create_jellyfin_directories() {
 # Jellyfin設定検証
 validate_jellyfin_setup() {
     local compose_file="$PROJECT_ROOT/docker/jellyfin/docker-compose.yml"
+    local source_compose="/home/ubuntu/repos/ManageMediaServer/docker/jellyfin/docker-compose.yml"
     
-    # Docker Composeファイル確認
+    # Docker Composeファイル確認・コピー
     if [ ! -f "$compose_file" ]; then
-        log_error "Jellyfin用Docker Composeファイルが見つかりません: $compose_file"
-        log_info "公式のdocker-compose.ymlファイルを配置してください"
-        log_info "参考: https://jellyfin.org/docs/general/installation/container"
-        return 1
+        log_info "Jellyfin用Docker Composeファイルをコピー中..."
+        if [ -f "$source_compose" ]; then
+            cp "$source_compose" "$compose_file"
+            log_success "Docker Composeファイルをコピーしました"
+        else
+            log_error "コピー元のDocker Composeファイルが見つかりません: $source_compose"
+            return 1
+        fi
     fi
     
     log_success "Jellyfin設定が正常に検証されました"
