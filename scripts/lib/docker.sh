@@ -8,6 +8,14 @@ install_docker() {
     # 冪等性チェック: 既にDockerが正常に動作している場合はスキップ
     if docker --version >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
         log_success "Docker は既に正常にインストール・動作しています"
+        # --- ここから修正 ---
+        # dockerグループがなければ作成し、ユーザーを追加
+        if ! getent group docker >/dev/null; then
+            log_warning "dockerグループが存在しません。作成します。"
+            groupadd docker
+        fi
+        usermod -aG docker "$USER"
+        # --- ここまで修正 ---
         return 0
     fi
     
