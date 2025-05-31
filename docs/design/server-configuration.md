@@ -42,9 +42,10 @@ Windows 11
 - `/mnt/data`: メディアストレージ（Immich/Jellyfin用、ルート内）
 
 **バックアップディスク（SATA SSD 894GB - SanDisk Ultra II）:**
-- `/mnt/backup`: バックアップ専用ストレージ
+- `/mnt/backup`: バックアップ専用ストレージ（ext4フォーマット済み）
 - 用途: メディアファイルのバックアップ、システムバックアップ
-- 現在の状態: 未マウント（NTFS, ラベル: "Data"）→ 次の実装タスク
+- 現在の状態: マウント済み（ext4, ラベル: "MediaBackup", UUID: b5afccae-200c-4013-9b41-b832f5c1ef49）
+- 容量: 880GB使用可能、602GB空き容量
 
 #### 物理的分離による運用方針
 
@@ -71,7 +72,10 @@ Windows 11
       └─ /mnt/data (メディアストレージ作成済み)
 
 /dev/sda (894GB) - バックアップディスク（物理分離）
-└─ sda1 (894GB)       : 未マウント → /mnt/backup (バックアップ専用、次タスク)
+└─ sda1 (894GB)       : /mnt/backup（ext4, バックアップ専用、マウント済み）
+   ├─ immich-backup/    : 写真・ホームビデオ統合バックアップ
+   ├─ jellyfin-backup/  : ミュージックビデオバックアップ
+   └─ system-backup/    : システム設定バックアップ
 ```
 
 #### LVM拡張実施状況
@@ -99,21 +103,17 @@ sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
 # /mnt/data/{immich,jellyfin,cache} ディレクトリ構造作成完了
 # 権限設定 (ubuntu:ubuntu, 755) 完了
 
-# 3. バックアップディスクの準備（次のタスク）
+# 3. バックアップディスクの準備（✅ 完了）
 sudo mkdir -p /mnt/backup
-# NTFS維持の場合（互換性重視）
-sudo mount -t ntfs /dev/sda1 /mnt/backup
-# または ext4への変換（Linux最適化）
-# sudo mkfs.ext4 /dev/sda1  # データ削除注意
+# NTFSからext4への変換済み（Linux最適化）
+# sudo mkfs.ext4 -L "MediaBackup" /dev/sda1  # 実施済み
+sudo mount /dev/sda1 /mnt/backup
 
 # 4. /etc/fstab 設定（現在の設定）
-UUID=2f91ec40-b7f8-44c2-9270-2b8b9790d6a2  /           ext4  defaults           0  1
-UUID=23d79952-dddd-41be-a97d-edfdb5dd26db  /boot       ext4  defaults           0  2
-UUID=AB36-B95D                             /boot/efi   vfat  defaults           0  1
-UUID=4294A79B94A79049                      /mnt/backup ntfs  defaults,noatime,uid=1000,gid=1000  0  2
-
-# ext4変換後の設定例
-# /dev/sda1  /mnt/backup ext4  defaults,noatime   0  2
+/dev/disk/by-id/dm-uuid-LVM-SRXPjKOEioDrbT9A8PSaTQSnE2yYVy1XSGxuRefphgQmGwaUjP4w0wia0SxCq1jX / ext4 defaults 0 1
+UUID=23d79952-dddd-41be-a97d-edfdb5dd26db /boot ext4 defaults 0 1
+UUID=AB36-B95D /boot/efi vfat defaults 0 1
+UUID=b5afccae-200c-4013-9b41-b832f5c1ef49 /mnt/backup ext4 defaults 0 2
 ```
 
 ### 権限設定
@@ -123,13 +123,13 @@ UUID=4294A79B94A79049                      /mnt/backup ntfs  defaults,noatime,ui
 # /mnt/data/{immich,jellyfin,cache} ディレクトリ構造作成完了
 # 所有者設定 (ubuntu:ubuntu) と権限設定 (755) 完了
 
-# 2. バックアップストレージ設定（SATA SSD）（次のタスク）
+# 2. バックアップストレージ設定（SATA SSD）（✅ 完了）
 sudo mkdir -p /mnt/backup
-sudo mount -t ntfs /dev/sda1 /mnt/backup
+sudo mount /dev/sda1 /mnt/backup
 sudo chown -R ubuntu:ubuntu /mnt/backup
 sudo chmod -R 755 /mnt/backup
 
-# 3. バックアップ用ディレクトリ構造
+# 3. バックアップ用ディレクトリ構造（✅ 完了）
 sudo mkdir -p /mnt/backup/{immich-backup,jellyfin-backup,system-backup}
 ```
 
@@ -154,30 +154,80 @@ sudo mkdir -p /mnt/backup/{immich-backup,jellyfin-backup,system-backup}
 ### ディスク利用最適化案
 
 1. **NVMeディスク（477GB）- 全領域活用**
-   - OS + システム: 50GB (最適化後)
-   - メディアストレージ: 370GB (Immich/Jellyfin)
-   - 高速キャッシュ: 30GB (一時ファイル・変換作業)
-   - ログ・一時ファイル: 23.9GB
+   - OS + システム: ~50GB 
+   - メディアストレージ: ~350GB (Immich/Jellyfin)
+   - 高速キャッシュ: ~30GB (一時ファイル・変換作業)
+   - ログ・一時ファイル: ~40GB
    - 全容量活用: 473.9GB (未使用領域なし)
 
 2. **SATA SSD（894GB）- バックアップ専用**
-   - Immichバックアップ: 400GB
-   - Jellyfinバックアップ: 300GB
-   - システムバックアップ: 100GB
-   - 設定・ログバックアップ: 44GB
-   - 予備領域: 150GB
+   - Immichバックアップ: 写真・ホームビデオ統合
+   - Jellyfinバックアップ: ミュージックビデオ
+   - システムバックアップ: 設定・ログ・データベース
+   - 利用可能容量: ~600GB（十分な予備領域）
 
-#### 容量算出例
+#### 容量設計例
 
-**メディア想定容量（NVMe 370GB）:**
+**メディア想定容量（NVMe ~350GB）:**
 - 写真: 100,000枚 × 2.5MB = 250GB
 - 短尺動画: 6,000本 × 20MB = 120GB
-- 合計: 370GB（ほぼ全容量活用）
+- 合計: ~370GB（ほぼ全容量活用）
+
+**バックアップ想定容量（SATA SSD ~600GB）:**
+- メディアバックアップ: ~370GB（実データ分）
+- システムバックアップ: ~100GB
+- アーカイブ・予備領域: ~130GB
 
 **運用方針:**
 - **積極活用**: NVMeの全領域を最大限活用
 - **効率重視**: 高速アクセスでメディア体験向上
 - **安全確保**: 物理分離されたバックアップによる保護
+
+### 実装完了後の最終構成
+
+#### メディアサービス構成（実運用）
+
+**Immichライブラリ構成**:
+```
+/mnt/data/immich/
+├── external/          # 外部ライブラリ（写真・ホームビデオ統合）
+├── upload/           # Immichアップロード領域
+├── postgres/         # PostgreSQLデータベース
+└── cache/            # キャッシュ・一時ファイル
+```
+
+**Jellyfinライブラリ構成**:
+```
+/mnt/data/jellyfin/
+├── [メディアファイル]   # ミュージックビデオ直下配置
+├── cache/            # Jellyfinキャッシュ
+└── metadata/         # メタデータ・設定
+```
+
+#### バックアップ構成（保護・復旧用）
+
+**バックアップストレージ構成**:
+```
+/mnt/backup/
+├── immich-backup/    # 写真・ホームビデオバックアップ
+├── jellyfin-backup/  # ミュージックビデオバックアップ
+├── system-backup/    # システム設定・データベース
+└── archives/         # 長期保存アーカイブ
+```
+
+#### 移行作業完了状況
+
+**✅ 完了項目**:
+- NTFSからext4への変換（Linux最適化）
+- 物理的分離によるリスク分散実現
+- サービス別データ整理・配置完了
+- 永続マウント設定・権限設定完了
+- メディアファイルの高速NVMeディスクへの配置
+
+**📋 次段階作業**:
+- Immich外部ライブラリ設定・スキャン
+- Jellyfinライブラリ再構築・メタデータ取得
+- 定期バックアップの自動化設定
 
 ## ネットワーク構成
 
