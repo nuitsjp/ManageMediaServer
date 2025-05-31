@@ -1,53 +1,5 @@
 # メディアサーバー移行作業詳細
 
-## 概要
-家庭用メディアサーバーのバックアップディスクをNTFSからext4に変換し、既存データを適切なサービス別ディレクトリに整理して復元する作業。
-
-## ✅ 完了した作業
-
-### 1. ✅ データ退避完了（2025-05-31）
-- 全メディアデータ（235GB）を/tmp/backup-migration/に一時退避
-- Pictures(21GB), Home Videos(13GB), Music Videos(201GB)の退避完了
-- 権限問題解決（ubuntu:ubuntu所有者変更）
-
-### 2. ✅ バックアップディスクのext4変換完了（2025-05-31）
-- /dev/sda1をNTFSからext4にフォーマット（ラベル: "MediaBackup"）
-- UUID: b5afccae-200c-4013-9b41-b832f5c1ef49
-- /etc/fstabに永続マウント設定追加
-- /mnt/backupにマウント（880GB利用可能、602GB空き）
-
-### 3. ✅ サービス別データ整理完了（2025-05-31）
-- /mnt/backup/immich-backup/（33GB）: Pictures + Home Videos統合
-- /mnt/backup/jellyfin-backup/（201GB）: Music Videos
-- サブディレクトリからファイルを親ディレクトリに移動完了
-
-### 4. ✅ メディアデータのサービスディレクトリへの移動完了（2025-05-31）
-**実行内容**:
-- Pictures + Home Videos → `/mnt/data/immich/external/` (直下に配置)
-- Music Videos → `/mnt/data/jellyfin/` (直下に配置)
-- 権限設定: ubuntu:ubuntu
-- サブディレクトリ構造は作成せず、全ファイルを直下に移動
-
-**実行結果**:
-```bash
-# Immich外部ライブラリ
-/mnt/data/immich/external/: 21GB, 4,705ファイル
-
-# Jellyfinライブラリ  
-/mnt/data/jellyfin/: 185GB, 37ファイル
-
-# 全体のディスク使用量
-NVMeディスク: 220GB使用, 226GB空き (50%使用率)
-```
-
-### 5. ✅ 一時退避データのクリーンアップ完了（2025-05-31）
-- /tmp/backup-migration/ ディレクトリ削除完了
-- /tmp/backup-temp/ ディレクトリ削除完了
-
-### 6. ✅ ドキュメント更新完了（2025-05-31）
-- server-configuration.md: バックアップディスク情報更新
-- TODO_DETAIL.md: 作業完了状況の記録
-
 ## 🎯 作業完了サマリー
 
 **移行データ総量**: 235GB → 206GB (圧縮効果あり)

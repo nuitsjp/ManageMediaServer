@@ -21,11 +21,11 @@ fi
 
 # Immichサービス起動
 log_info "Immichを起動中..."
-$USE_SUDO docker compose -f docker/immich/docker-compose.yml up -d
+$USE_SUDO docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml up -d
 
 # Jellyfinサービス起動
 log_info "Jellyfinを起動中..."
-$USE_SUDO docker compose -f docker/jellyfin/docker-compose.yml up -d
+$USE_SUDO docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml up -d
 
 log_success "サービス起動完了"
 log_info "Immich: http://localhost:2283"

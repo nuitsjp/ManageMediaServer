@@ -20,10 +20,10 @@ fi
 
 # Jellyfinサービス停止
 log_info "Jellyfinを停止中..."
-$USE_SUDO docker compose -f docker/jellyfin/docker-compose.yml down
+$USE_SUDO docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml down
 
 # Immichサービス停止
 log_info "Immichを停止中..."
-$USE_SUDO docker compose -f docker/immich/docker-compose.yml down
+$USE_SUDO docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml down
 
 log_success "サービス停止完了"
