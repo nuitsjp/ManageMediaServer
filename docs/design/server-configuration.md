@@ -35,40 +35,11 @@ Windows 11
 
 #### ディスク構成
 
-```mermaid
-flowchart TD
-    subgraph LinuxServer[Ubuntu Server]
-        subgraph PrimaryDisk[プライマリディスク - NVMe SSD 477GB]
-            Root@{ shape: lin-cyl, label: "/" }
-            Home@{ shape: lin-cyl, label: "/home" }
-            Var@{ shape: lin-cyl, label: "/var" }
-            MediaMount@{ shape: lin-cyl, label: "/mnt/data" }
-        end
-        
-        subgraph BackupDisk[バックアップディスク - SATA SSD 894GB]
-            BackupMount@{ shape: lin-cyl, label: "/mnt/backup" }
-        end
-
-        Root-note@{ shape: braces, label: "OS・システムファイル (473.9GB LVM)" }
-        Home-note@{ shape: braces, label: "PROJECT_ROOT" }
-        Var-note@{ shape: braces, label: "Docker・ログ" }
-        Data-note@{ shape: braces, label: "メディアストレージ (Immich/Jellyfin)" }
-        Backup-note@{ shape: braces, label: "バックアップ専用ストレージ" }
-
-        Root-note -.-> Root
-        Home-note -.-> Home
-        Var-note -.-> Var
-        Data-note -.-> MediaMount
-        Backup-note -.-> BackupMount
-    end
-```
-
 **プライマリディスク（NVMe PCIe SSD 477GB）:**
 - `/` (ルート): 473.9GB (全領域活用、LVM拡張実施済み)
 - `/home`: PROJECT_ROOT領域 (ルート内)
 - `/var`: Docker・ログ領域 (ルート内)
 - `/mnt/data`: メディアストレージ（Immich/Jellyfin用、ルート内）
-- 未使用領域: 0GB (全領域活用完了)
 
 **バックアップディスク（SATA SSD 894GB - SanDisk Ultra II）:**
 - `/mnt/backup`: バックアップ専用ストレージ
