@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 共通ライブラリ読み込み
 source "$SCRIPT_DIR/../lib/common.sh" || { echo "[ERROR] common.sh の読み込みに失敗" >&2; exit 1; }
 source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに失敗"
+source "$SCRIPT_DIR/../lib/notification.sh" || log_error "notification.sh の読み込みに失敗"
 
 # 環境変数読み込み
 load_environment
@@ -97,6 +98,9 @@ create_backup() {
     
     log_success "バックアップ作成完了: $backup_dir"
     echo "$backup_dir" > "$BACKUP_ROOT/.last_backup_path"
+    
+    # バックアップ完了通知
+    send_notification "💾 バックアップ作成完了" "デプロイバックアップが正常に作成されました\n\nバックアップ場所: \`$backup_dir\`\n作成日時: $backup_date" "success"
 }
 
 # ロールバック実行
@@ -140,6 +144,13 @@ perform_rollback() {
     systemctl start immich jellyfin
     
     log_success "ロールバック完了"
+    
+    # ロールバック完了通知
+    local backup_info=""
+    if [ -f "$backup_dir/backup_info.txt" ]; then
+        backup_info="$(grep backup_date "$backup_dir/backup_info.txt" 2>/dev/null || echo "不明")"
+    fi
+    send_notification "🔄 ロールバック完了" "システムが正常にロールバックされました\n\n• 復元元: $(basename "$backup_dir")\n• $backup_info\n• 時刻: $(date '+%Y-%m-%d %H:%M:%S')" "warning"
 }
 
 # アプリケーションデプロイ
@@ -311,11 +322,15 @@ main() {
     
     if verify_deployment; then
         log_success "=== デプロイ完了 ==="
+        # デプロイ成功通知
+        send_notification "🚀 デプロイ完了" "本番環境へのデプロイが正常に完了しました\n\n• サービス状態: 正常\n• バックアップ: $([ "$create_backup" = "true" ] && echo "作成済み" || echo "未作成")\n• 時刻: $(date '+%Y-%m-%d %H:%M:%S')" "success"
     else
         log_error "=== デプロイで問題が発生しました ==="
         if [ "$create_backup" = "true" ]; then
             log_info "ロールバックする場合: $0 --rollback"
         fi
+        # デプロイエラー通知
+        send_notification "❌ デプロイエラー" "本番環境へのデプロイでエラーが発生しました\n\n• 状態: デプロイ失敗\n• バックアップ: $([ "$create_backup" = "true" ] && echo "作成済み（ロールバック可能）" || echo "未作成")\n• 時刻: $(date '+%Y-%m-%d %H:%M:%S')" "error"
         exit 1
     fi
 }

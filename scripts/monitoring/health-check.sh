@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 共通ライブラリ読み込み
 source "$SCRIPT_DIR/../lib/common.sh" || { echo "[ERROR] common.sh の読み込みに失敗" >&2; exit 1; }
 source "$SCRIPT_DIR/../lib/config.sh" || log_error "config.sh の読み込みに失敗"
+source "$SCRIPT_DIR/../lib/notification.sh" || log_warning "notification.sh の読み込みに失敗（通知機能無効）"
 
 # 環境変数読み込み
 load_environment
@@ -31,6 +32,9 @@ show_usage() {
     --nagios         Nagios互換の出力形式
     --fix-issues     自動修復可能な問題を修復
     --detailed       詳細情報を表示
+    --notify         結果を通知サービスに送信
+    --threshold LEV  通知閾値（error/warning/info）
+    --report         レポート形式での詳細出力
     --help           このヘルプを表示
 
 チェック項目:
@@ -42,9 +46,10 @@ show_usage() {
     - バックアップ状態
 
 例:
-    ./health-check.sh                # 標準ヘルスチェック
-    ./health-check.sh --json         # JSON出力
-    ./health-check.sh --fix-issues   # 問題自動修復付き
+    ./health-check.sh                          # 標準ヘルスチェック
+    ./health-check.sh --json                   # JSON出力
+    ./health-check.sh --notify --threshold warning  # 警告以上で通知
+    ./health-check.sh --detailed --report      # 詳細レポート
 
 EOF
 }
@@ -343,11 +348,15 @@ output_nagios() {
 
 # メイン処理
 main() {
+    # 初期化
     local json_output=false
     local silent=false
     local nagios_output=false
     local fix_issues=false
     local detailed=false
+    local notify=false
+    local notify_threshold="warning"
+    local report_mode=false
     
     # 引数解析
     while [[ $# -gt 0 ]]; do
@@ -365,6 +374,17 @@ main() {
                 fix_issues=true
                 ;;
             --detailed)
+                detailed=true
+                ;;
+            --notify)
+                notify=true
+                ;;
+            --threshold)
+                notify_threshold="$2"
+                shift
+                ;;
+            --report)
+                report_mode=true
                 detailed=true
                 ;;
             --help)
@@ -429,6 +449,33 @@ main() {
             for issue in "${WARNING_ISSUES[@]}"; do
                 echo "- $issue"
             done
+        fi
+    fi
+    
+    # 通知送信
+    if [ "$notify" = "true" ] && command_exists send_health_notification; then
+        local should_notify=false
+        
+        # 通知閾値判定
+        case "$notify_threshold" in
+            "error")
+                [ $HEALTH_STATUS -ge 2 ] && should_notify=true
+                ;;
+            "warning")
+                [ $HEALTH_STATUS -ge 1 ] && should_notify=true
+                ;;
+            "info")
+                should_notify=true
+                ;;
+            *)
+                log_warning "不明な通知閾値: $notify_threshold（warning を使用）"
+                [ $HEALTH_STATUS -ge 1 ] && should_notify=true
+                ;;
+        esac
+        
+        if [ "$should_notify" = "true" ] || [ "$report_mode" = "true" ]; then
+            local short_report=$(echo -e "$HEALTH_REPORT" | head -20)
+            send_health_notification "$HEALTH_STATUS" "$short_report" "${#CRITICAL_ISSUES[@]}" "${#WARNING_ISSUES[@]}" "$report_mode"
         fi
     fi
     

@@ -52,6 +52,25 @@ cd ManageMediaServer
 - **WSL環境**: 開発環境として構築
 - **Ubuntu Server**: 本番環境として構築
 
+### 通知システム設定（推奨）
+
+システムの状態やバックアップ結果をスマートフォンに通知：
+
+```bash
+# Discord Webhook通知設定
+./scripts/setup/setup-notification.sh --setup
+
+# 自動監視設定（管理者権限必要）
+sudo ./scripts/setup/setup-monitoring.sh --setup
+sudo ./scripts/setup/setup-monitoring.sh --enable
+
+# 設定確認・テスト
+./scripts/setup/setup-notification.sh --status
+./scripts/setup/setup-monitoring.sh --test
+```
+
+詳細手順: [通知システム設定ガイド](docs/setup/notification-setup.md)
+
 ### 手動セットアップ（詳細制御が必要な場合）
 
 #### 開発環境（WSL）
