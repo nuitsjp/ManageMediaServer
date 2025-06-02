@@ -39,14 +39,14 @@ USAGE
 # サービス起動
 start_services() {
     echo "[INFO] === サービス起動 ==="
-    "$SCRIPT_DIR/../dev/start-services.sh"
+    "$SCRIPT_DIR/ops/start-services.sh"
     echo "[SUCCESS] サービス起動完了"
 }
 
 # サービス停止
 stop_services() {
     echo "[INFO] === サービス停止 ==="
-    "$SCRIPT_DIR/../dev/stop-services.sh"
+    "$SCRIPT_DIR/ops/stop-services.sh"
     echo "[SUCCESS] サービス停止完了"
 }
 
