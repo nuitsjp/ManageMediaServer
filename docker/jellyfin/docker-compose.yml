@@ -6,8 +6,8 @@ services:
     container_name: jellyfin
     restart: unless-stopped
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=1001
+      - PGID=1001
       - TZ=Asia/Tokyo
     volumes:
       - ${DATA_ROOT:-/mnt/data}/jellyfin/config:/config
@@ -20,6 +20,8 @@ services:
       - "1900:1900/udp"  # DLNA
     networks:
       - jellyfin-network
+    # 権限問題のデバッグ用
+    user: "1001:1001"
 
 networks:
   jellyfin-network:
