@@ -165,6 +165,21 @@ main() {
     # 2. ディレクトリ準備
     prepare_directories
 
+    # --- 運用スクリプトのmediaserverホームへのコピーと権限付与 ---
+    log_info "スクリプト群を /home/mediaserver/scripts/ へコピー・権限設定します"
+    install -d -m 755 /home/mediaserver/scripts
+    for script in "$PROJECT_ROOT/scripts"/*.sh; do
+        if [ -f "$script" ]; then
+            install -m 755 -o mediaserver -g mediaserver "$script" /home/mediaserver/scripts/
+        fi
+    done
+    chown mediaserver:mediaserver /home/mediaserver/scripts/*.sh
+    chmod 755 /home/mediaserver/scripts/*.sh
+    # ubuntuユーザーにも実行権限付与
+    setfacl -m u:ubuntu:rx /home/mediaserver/scripts/*.sh || true
+    log_success "スクリプトのコピーと権限付与が完了しました"
+    # --------------------------------
+
     # 3. 設定ファイル展開
     deploy_config_files
 
