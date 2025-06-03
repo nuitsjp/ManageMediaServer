@@ -165,19 +165,26 @@ main() {
     # 2. ディレクトリ準備
     prepare_directories
 
-    # --- 運用スクリプトのmediaserverホームへのコピーと権限付与 ---
-    log_info "スクリプト群を /home/mediaserver/scripts/ へコピー・権限設定します"
+    # --- 運用スクリプトのmediaserverホームへのコピーと権限付与（再帰対応・パス自動判定） ---
+    SCRIPTS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    log_info "スクリプト群を /home/mediaserver/scripts/ へ再帰的にコピー・権限設定します"
     install -d -m 755 /home/mediaserver/scripts
-    for script in "$PROJECT_ROOT/scripts"/*.sh; do
-        if [ -f "$script" ]; then
-            install -m 755 -o mediaserver -g mediaserver "$script" /home/mediaserver/scripts/
-        fi
-    done
-    chown mediaserver:mediaserver /home/mediaserver/scripts/*.sh
-    chmod 755 /home/mediaserver/scripts/*.sh
-    # ubuntuユーザーにも実行権限付与
-    setfacl -m u:ubuntu:rx /home/mediaserver/scripts/*.sh || true
-    log_success "スクリプトのコピーと権限付与が完了しました"
+    sh_count=0
+    while IFS= read -r -d '' script; do
+        rel_path="${script#$SCRIPTS_ROOT/}"
+        dest_dir="/home/mediaserver/scripts/$(dirname "$rel_path")"
+        install -d -m 755 "$dest_dir"
+        install -m 755 -o mediaserver -g mediaserver "$script" "$dest_dir/"
+        chown mediaserver:mediaserver "$dest_dir/$(basename "$script")"
+        chmod 755 "$dest_dir/$(basename "$script")"
+        setfacl -m u:ubuntu:rx "$dest_dir/$(basename "$script")" || true
+        sh_count=$((sh_count+1))
+    done < <(find "$SCRIPTS_ROOT" -type f -name '*.sh' -print0)
+    if [ "$sh_count" -eq 0 ]; then
+        log_warning "/home/mediaserver/scripts/ にコピーする*.shファイルがありません"
+    else
+        log_success "スクリプトのコピーと権限付与が完了しました ($sh_count件)"
+    fi
     # --------------------------------
 
     # 3. 設定ファイル展開
