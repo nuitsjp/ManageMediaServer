@@ -13,6 +13,10 @@ BACKUP_DIR="/mnt/backup/immich-backup"
 CONFIG_FILE="/mnt/data/config/rclone/rclone.conf"
 LOG_DIR="/mnt/data/config/rclone/logs"
 LOG_FILE="${LOG_DIR}/media-sync.log"
+COMMON_EXCLUDES=(
+    --exclude="/個人用 Vault/**"
+    --exclude="/Personal Vault/**"
+)
 
 # ログ関数
 log() {
@@ -34,6 +38,7 @@ log "=== rclone メディア同期開始 ==="
 log "画像ファイル同期開始..."
 rclone sync "$REMOTE_NAME:/" "$LOCAL_DIR" \
     --config="$CONFIG_FILE" \
+    "${COMMON_EXCLUDES[@]}" \
     --include="*.jpg" \
     --include="*.jpeg" \
     --include="*.JPG" \
@@ -54,6 +59,7 @@ log "動画ファイル移動開始..."
 # 2-1. 動画をローカルにダウンロード
 rclone copy "$REMOTE_NAME:/" "$LOCAL_DIR" \
     --config="$CONFIG_FILE" \
+    "${COMMON_EXCLUDES[@]}" \
     --include="*.mov" \
     --include="*.MOV" \
     --include="*.mp4" \
@@ -76,6 +82,7 @@ rsync -av --include="*.mov" --include="*.MOV" --include="*.mp4" --include="*.MP4
 log "クラウドから動画ファイル削除開始..."
 rclone delete "$REMOTE_NAME:/" \
     --config="$CONFIG_FILE" \
+    "${COMMON_EXCLUDES[@]}" \
     --include="*.mov" \
     --include="*.MOV" \
     --include="*.mp4" \

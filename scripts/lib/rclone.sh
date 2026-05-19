@@ -75,7 +75,7 @@ After=network.target
 Type=oneshot
 User=mediaserver
 Environment=RCLONE_CONFIG=$RCLONE_CONFIG_PATH
-ExecStart=/usr/bin/rclone sync ${RCLONE_REMOTE_NAME}:/ $DATA_ROOT/immich/external --log-file=$RCLONE_LOG_PATH/sync.log --log-level INFO
+ExecStart=/usr/bin/rclone sync ${RCLONE_REMOTE_NAME}:/ $DATA_ROOT/immich/external --exclude "/個人用 Vault/**" --exclude "/Personal Vault/**" --log-file=$RCLONE_LOG_PATH/sync.log --log-level INFO
 StandardOutput=journal
 StandardError=journal
 
