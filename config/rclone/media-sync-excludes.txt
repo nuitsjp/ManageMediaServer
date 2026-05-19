@@ -1,0 +1,2 @@
+/個人用 Vault/**
+/Personal Vault/**

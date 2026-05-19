@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | Immich | `http://localhost:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
 | Jellyfin | `http://localhost:8096` | 長尺動画・ミュージックビデオの視聴 |
-| rclone | `rclone-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ同期 |
+| rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
 | Tailscale | `100.x.x.x` または MagicDNS 名 | ポート開放なしの外部アクセス |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
@@ -130,10 +130,10 @@ Serve 設定を変更する場合は、既存設定を確認してから上書�
 rclone はクラウドストレージの内容を Immich 外部ライブラリへ取り込みます。同期方針と削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) を参照します。
 
 ```bash
-systemctl status rclone-sync.timer --no-pager
-systemctl status rclone-sync.service --no-pager
-systemctl list-timers rclone-sync.timer --no-pager
-sudo tail -100 /mnt/data/config/rclone/logs/sync.log
+systemctl status rclone-media-sync.timer --no-pager
+systemctl status rclone-media-sync.service --no-pager
+systemctl list-timers rclone-media-sync.timer --no-pager
+sudo tail -100 /mnt/data/config/rclone/logs/media-sync.log
 ```
 
 手動のメディア同期が必要な場合:
@@ -142,15 +142,21 @@ sudo tail -100 /mnt/data/config/rclone/logs/sync.log
 ./scripts/ops/rclone-media-sync.sh
 ```
 
+削除なしで取り込みとバックアップだけを実行する場合:
+
+```bash
+./scripts/ops/rclone-media-sync.sh --no-delete
+```
+
 ## 運用コマンド
 
 ### サービス操作
 
 ```bash
-sudo systemctl status immich jellyfin rclone-sync.timer --no-pager
+sudo systemctl status immich jellyfin rclone-media-sync.timer --no-pager
 sudo systemctl restart immich
 sudo systemctl restart jellyfin
-sudo systemctl restart rclone-sync.service
+sudo systemctl restart rclone-media-sync.service
 sudo systemctl stop immich jellyfin
 sudo systemctl start immich jellyfin
 ```
@@ -184,7 +190,6 @@ docker compose -f docker/jellyfin/docker-compose.yml pull
 
 ```bash
 df -h / /mnt/data /mnt/backup
-mountpoint /mnt/data
 mountpoint /mnt/backup
 du -sh /mnt/data/* /mnt/backup/* 2>/dev/null
 ```
@@ -235,7 +240,8 @@ sudo ufw allow in on tailscale0 to any port 8096 proto tcp
 | バックアップ領域 | `/mnt/backup` |
 | Tailscale IP | `100.69.11.74` |
 | Tailscale node | `home-ubuntu` |
-| タイムゾーン | `Asia/Tokyo` |
+| システムタイムゾーン | `Etc/UTC` |
+| rclone timer timezone | `Asia/Tokyo` |
 
 主要ポート:
 
@@ -254,6 +260,9 @@ README.md
 LICENSE
 docs/
   同期設計.md
+systemd/
+  rclone-media-sync.service
+  rclone-media-sync.timer
 docker/
   immich/
     docker-compose.yml
@@ -266,8 +275,11 @@ scripts/
     start-services.sh
     stop-services.sh
 config/
+  env/
+    notification.env.example
   rclone/
     rclone.conf.example
+    media-sync-excludes.txt
 ```
 
 実行時に使うが Git 管理しないもの:
@@ -327,6 +339,76 @@ ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/j
 ### rclone の同期設計は docs に分ける
 
 rclone の同期方針、画像と動画の扱い、削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) にまとめます。
+
+`rclone-media-sync.timer` は daily AM 8:00 JST に実行します。サーバー全体の timezone は変更せず、timer 側で `Asia/Tokyo` を指定します。
+
+```ini
+OnCalendar=*-*-* 08:00:00 Asia/Tokyo
+```
+
+旧 `rclone-sync.timer` は `rclone sync` による削除反映リスクがあるため、通常運用では使いません。
+
+### rclone-media-sync の配置
+
+本番で `rclone-media-sync.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh` です。配置前に、本番配置へ `scripts/`, `config/`, `systemd/`, `docs/` が反映されていることを確認します。
+
+```bash
+test -x /home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh
+test -f /home/mediaserver/ManageMediaServer/config/rclone/media-sync-excludes.txt
+```
+
+systemd unit/timer を配置します。
+
+```bash
+sudo cp systemd/rclone-media-sync.service /etc/systemd/system/
+sudo cp systemd/rclone-media-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rclone-media-sync.timer
+systemctl list-timers 'rclone*' --no-pager
+```
+
+旧 timer を停止します。
+
+```bash
+sudo systemctl stop rclone-sync.timer
+sudo systemctl disable rclone-sync.timer
+systemctl is-enabled rclone-sync.timer
+systemctl is-active rclone-sync.timer
+systemctl list-timers 'rclone*' --no-pager
+```
+
+期待状態:
+
+- `rclone-sync.timer` は disabled / inactive
+- `rclone-sync.timer` は次回実行対象に出ない
+- `rclone-media-sync.timer` だけが JST AM 8:00 の次回実行として出る
+
+問題が出た場合は、まず削除なしの手動実行へ退避します。
+
+```bash
+sudo systemctl stop rclone-media-sync.timer
+sudo systemctl disable rclone-media-sync.timer
+./scripts/ops/rclone-media-sync.sh --no-delete
+```
+
+旧 `rclone-sync.timer` の再有効化は `rclone sync` の削除反映リスクがあるため、最終手段として扱います。
+
+### Discord 通知
+
+通知設定はテンプレートから作成します。
+
+```bash
+cp config/env/notification.env.example config/env/notification.env
+```
+
+`config/env/notification.env` に本番の Webhook URL を設定し、通知を有効化します。
+
+```env
+NOTIFICATION_ENABLED=true
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+実値入り `notification.env` は Git 管理しません。過去コミットに Webhook URL が含まれていたため、本番 Webhook URL はローテーション済みのものを使います。
 
 ### データとバックアップを分ける
 
@@ -432,8 +514,8 @@ docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-com
 ### rclone が失敗する
 
 ```bash
-systemctl status rclone-sync.service --no-pager
-sudo tail -100 /mnt/data/config/rclone/logs/sync.log
+systemctl status rclone-media-sync.service --no-pager
+sudo tail -100 /mnt/data/config/rclone/logs/media-sync.log
 ```
 
 Personal Vault 関連のエラーが出る場合は、[docs/同期設計.md](docs/同期設計.md) の除外方針を確認します。
@@ -442,8 +524,8 @@ Personal Vault 関連のエラーが出る場合は、[docs/同期設計.md](doc
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart rclone-sync.service
-sudo systemctl status rclone-sync.service --no-pager
+sudo systemctl restart rclone-media-sync.service
+sudo systemctl status rclone-media-sync.service --no-pager
 ```
 
 ### Docker 権限エラー

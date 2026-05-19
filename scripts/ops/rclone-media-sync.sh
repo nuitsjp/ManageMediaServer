@@ -1,110 +1,337 @@
 #!/bin/bash
 
-# rclone メディア同期スクリプト
-# 画像: 同期のみ（クラウド側保持）
-# 動画: 移動（クラウド側削除）
-
 set -euo pipefail
 
-# 設定
-REMOTE_NAME="cloudstorageremote"
-LOCAL_DIR="/mnt/data/immich/external"
-BACKUP_DIR="/mnt/backup/immich-backup"
-CONFIG_FILE="/mnt/data/config/rclone/rclone.conf"
-LOG_DIR="/mnt/data/config/rclone/logs"
-LOG_FILE="${LOG_DIR}/media-sync.log"
-COMMON_EXCLUDES=(
-    --exclude="/個人用 Vault/**"
-    --exclude="/Personal Vault/**"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+
+REMOTE_NAME="${REMOTE_NAME:-cloudstorageremote}"
+REMOTE_SOURCE="${REMOTE_SOURCE:-${REMOTE_NAME}:/}"
+LOCAL_DIR="${LOCAL_DIR:-/mnt/data/immich/external}"
+BACKUP_DIR="${BACKUP_DIR:-/mnt/backup/immich-backup}"
+BACKUP_ROOT="${BACKUP_ROOT:-/mnt/backup}"
+CONFIG_FILE="${CONFIG_FILE:-/mnt/data/config/rclone/rclone.conf}"
+LOG_DIR="${LOG_DIR:-/mnt/data/config/rclone/logs}"
+LOG_FILE="${LOG_FILE:-${LOG_DIR}/media-sync.log}"
+EXCLUDE_FILE="${EXCLUDE_FILE:-${REPO_ROOT}/config/rclone/media-sync-excludes.txt}"
+NOTIFICATION_ENV="${NOTIFICATION_ENV:-${REPO_ROOT}/config/env/notification.env}"
+NO_DELETE=false
+
+IMAGE_FILTERS=(
+    "*.jpg"
+    "*.jpeg"
+    "*.png"
+    "*.JPG"
+    "*.JPEG"
+    "*.PNG"
 )
+VIDEO_FILTERS=(
+    "*.mov"
+    "*.MOV"
+    "*.mp4"
+    "*.MP4"
+)
+MEDIA_FILTERS=("${IMAGE_FILTERS[@]}" "${VIDEO_FILTERS[@]}")
 
-# ログ関数
+IMAGE_COPY_STATUS="not_run"
+VIDEO_COPY_STATUS="not_run"
+BACKUP_STATUS="not_run"
+VERIFIED_COUNT=0
+DELETED_COUNT=0
+CURRENT_STEP="initializing"
+VERIFIED_FILE=""
+DRY_RUN_LOG=""
+
+usage() {
+    cat <<'USAGE'
+Usage: rclone-media-sync.sh [--no-delete]
+
+Options:
+  --no-delete  Copy images/videos and backup local files, but skip dry-run and remote deletion.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-delete)
+            NO_DELETE=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+mkdir -p "$LOG_DIR"
+
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$1" | tee -a "$LOG_FILE"
 }
 
-# ディレクトリ作成
-mkdir -p "$LOCAL_DIR" "$BACKUP_DIR" "$LOG_DIR"
+notify_discord() {
+    local status="$1"
+    local message="$2"
 
-# 設定確認
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    log "ERROR: rclone設定ファイルが見つかりません: $CONFIG_FILE"
-    exit 1
-fi
+    if [[ -f "$NOTIFICATION_ENV" ]]; then
+        # shellcheck disable=SC1090
+        set -a
+        source "$NOTIFICATION_ENV"
+        set +a
+    fi
 
-log "=== rclone メディア同期開始 ==="
+    if [[ "${NOTIFICATION_ENABLED:-false}" != "true" ]]; then
+        log "Discord通知は無効です"
+        return 0
+    fi
 
-# 1. 画像ファイルの同期（JPG, PNG）
-log "画像ファイル同期開始..."
-rclone sync "$REMOTE_NAME:/" "$LOCAL_DIR" \
-    --config="$CONFIG_FILE" \
-    "${COMMON_EXCLUDES[@]}" \
-    --include="*.jpg" \
-    --include="*.jpeg" \
-    --include="*.JPG" \
-    --include="*.JPEG" \
-    --include="*.png" \
-    --include="*.PNG" \
-    --log-file="$LOG_FILE" \
-    --log-level INFO \
-    --progress || {
-    log "ERROR: 画像同期に失敗しました"
-    exit 1
-}
-log "画像ファイル同期完了"
+    if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
+        log "WARNING: DISCORD_WEBHOOK_URL が未設定のため通知をスキップします"
+        return 0
+    fi
 
-# 2. 動画ファイルの移動（MOV, MP4）
-log "動画ファイル移動開始..."
+    local host now payload
+    host=$(hostname)
+    now=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    payload=$(jq -n \
+        --arg status "$status" \
+        --arg host "$host" \
+        --arg now "$now" \
+        --arg message "$message" \
+        --arg image "$IMAGE_COPY_STATUS" \
+        --arg video "$VIDEO_COPY_STATUS" \
+        --arg backup "$BACKUP_STATUS" \
+        --arg verified "$VERIFIED_COUNT" \
+        --arg deleted "$DELETED_COUNT" \
+        --arg no_delete "$NO_DELETE" \
+        --arg log_file "$LOG_FILE" \
+        '{content: ("**rclone media sync " + $status + "**\n"
+            + "host: `" + $host + "`\n"
+            + "time: `" + $now + "`\n"
+            + "message: " + $message + "\n"
+            + "image copy: `" + $image + "`\n"
+            + "video copy: `" + $video + "`\n"
+            + "backup: `" + $backup + "`\n"
+            + "verified videos: `" + $verified + "`\n"
+            + "deleted videos: `" + $deleted + "`\n"
+            + "no-delete: `" + $no_delete + "`\n"
+            + "log: `" + $log_file + "`")}')
 
-# 2-1. 動画をローカルにダウンロード
-rclone copy "$REMOTE_NAME:/" "$LOCAL_DIR" \
-    --config="$CONFIG_FILE" \
-    "${COMMON_EXCLUDES[@]}" \
-    --include="*.mov" \
-    --include="*.MOV" \
-    --include="*.mp4" \
-    --include="*.MP4" \
-    --log-file="$LOG_FILE" \
-    --log-level INFO \
-    --progress || {
-    log "ERROR: 動画ダウンロードに失敗しました"
-    exit 1
-}
-
-# 2-2. 動画ファイルをバックアップにコピー
-log "動画ファイルバックアップ開始..."
-rsync -av --include="*.mov" --include="*.MOV" --include="*.mp4" --include="*.MP4" --exclude="*" \
-    "$LOCAL_DIR/" "$BACKUP_DIR/" || {
-    log "WARNING: 動画バックアップに失敗しました"
+    if ! curl -fsS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL" >/dev/null; then
+        log "WARNING: Discord通知に失敗しました"
+    fi
 }
 
-# 2-3. クラウドから動画ファイルを削除
-log "クラウドから動画ファイル削除開始..."
-rclone delete "$REMOTE_NAME:/" \
-    --config="$CONFIG_FILE" \
-    "${COMMON_EXCLUDES[@]}" \
-    --include="*.mov" \
-    --include="*.MOV" \
-    --include="*.mp4" \
-    --include="*.MP4" \
-    --log-file="$LOG_FILE" \
-    --log-level INFO || {
-    log "ERROR: クラウドからの動画削除に失敗しました"
-    exit 1
+on_exit() {
+    local exit_code=$?
+    trap - EXIT
+    if [[ $exit_code -eq 0 ]]; then
+        notify_discord "succeeded" "media sync completed"
+    else
+        notify_discord "failed" "failed at step: ${CURRENT_STEP}"
+    fi
+    exit "$exit_code"
 }
 
-log "動画ファイル移動完了"
+trap on_exit EXIT
 
-# 3. 統計情報を取得
-log "=== 同期結果統計 ==="
-if [[ -d "$LOCAL_DIR" ]]; then
-    IMG_COUNT=$(find "$LOCAL_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.JPG" -o -name "*.JPEG" -o -name "*.png" -o -name "*.PNG" \) | wc -l)
-    VIDEO_COUNT=$(find "$LOCAL_DIR" -type f \( -name "*.mov" -o -name "*.MOV" -o -name "*.mp4" -o -name "*.MP4" \) | wc -l)
-    TOTAL_COUNT=$(find "$LOCAL_DIR" -type f | wc -l)
-    
-    log "画像ファイル: ${IMG_COUNT}個"
-    log "動画ファイル: ${VIDEO_COUNT}個"
-    log "総ファイル数: ${TOTAL_COUNT}個"
-fi
+rclone_common_args() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        printf '%s\0%s\0' "--config" "$CONFIG_FILE"
+    fi
+    printf '%s\0%s\0%s\0%s\0' "--log-file" "$LOG_FILE" "--log-level" "INFO"
+}
 
-log "=== rclone メディア同期完了 ==="
+build_filter_file() {
+    local filter_file="$1"
+    shift
+    local patterns=("$@")
+    local pattern
+
+    : > "$filter_file"
+    while IFS= read -r pattern; do
+        [[ -n "$pattern" ]] || continue
+        printf -- '- %s\n' "$pattern" >> "$filter_file"
+    done < "$EXCLUDE_FILE"
+
+    for pattern in "${patterns[@]}"; do
+        printf -- '+ %s\n' "$pattern" >> "$filter_file"
+    done
+    printf -- '- **\n' >> "$filter_file"
+}
+
+run_rclone_copy() {
+    local label="$1"
+    local src="$2"
+    local dst="$3"
+    shift 3
+    local filters=("$@")
+    local common=()
+    local filter_file
+    filter_file=$(mktemp)
+    build_filter_file "$filter_file" "${filters[@]}"
+    mapfile -d '' -t common < <(rclone_common_args)
+
+    log "${label} copy 開始: ${src} -> ${dst}"
+    rclone copy "$src" "$dst" \
+        "${common[@]}" \
+        --filter-from "$filter_file"
+    rm -f "$filter_file"
+    log "${label} copy 完了"
+}
+
+assert_prerequisites() {
+    CURRENT_STEP="preflight"
+    command -v rclone >/dev/null || { log "ERROR: rclone が見つかりません"; exit 1; }
+    command -v jq >/dev/null || { log "ERROR: jq が見つかりません"; exit 1; }
+    command -v curl >/dev/null || { log "ERROR: curl が見つかりません"; exit 1; }
+
+    if [[ ! -f "$EXCLUDE_FILE" ]]; then
+        log "ERROR: 除外ファイルが見つかりません: $EXCLUDE_FILE"
+        exit 1
+    fi
+
+    if [[ "$REMOTE_SOURCE" == *:* && ! -f "$CONFIG_FILE" ]]; then
+        log "ERROR: rclone設定ファイルが見つかりません: $CONFIG_FILE"
+        exit 1
+    fi
+
+    mkdir -p "$LOCAL_DIR" "$BACKUP_DIR"
+
+    if [[ ! -d "$LOCAL_DIR" ]]; then
+        log "ERROR: ローカル同期先がディレクトリではありません: $LOCAL_DIR"
+        exit 1
+    fi
+    if [[ ! -w "$LOCAL_DIR" ]]; then
+        log "ERROR: ローカル同期先に書き込めません: $LOCAL_DIR"
+        exit 1
+    fi
+    if ! mountpoint -q "$BACKUP_ROOT"; then
+        log "ERROR: バックアップルートがマウントされていません: $BACKUP_ROOT"
+        exit 1
+    fi
+    if [[ ! -w "$BACKUP_DIR" ]]; then
+        log "ERROR: バックアップ先に書き込めません: $BACKUP_DIR"
+        exit 1
+    fi
+
+    log "容量確認:"
+    df -h "$LOCAL_DIR" "$BACKUP_ROOT" | tee -a "$LOG_FILE"
+}
+
+build_verified_file_list() {
+    CURRENT_STEP="build verified file list"
+    local timestamp remote_json filter_file path size local_path backup_path local_size backup_size
+    timestamp=$(date '+%Y%m%d-%H%M%S')
+    VERIFIED_FILE="${LOG_DIR}/verified-files-${timestamp}.txt"
+    DRY_RUN_LOG="${LOG_DIR}/delete-dry-run-${timestamp}.log"
+    remote_json=$(mktemp)
+    filter_file=$(mktemp)
+    : > "$VERIFIED_FILE"
+    build_filter_file "$filter_file" "${VIDEO_FILTERS[@]}"
+
+    local common=()
+    mapfile -d '' -t common < <(rclone_common_args)
+
+    log "remote 動画候補の列挙開始"
+    rclone lsjson "$REMOTE_SOURCE" \
+        --recursive \
+        --files-only \
+        "${common[@]}" \
+        --filter-from "$filter_file" > "$remote_json"
+
+    while IFS=$'\t' read -r path size; do
+        [[ -n "$path" ]] || continue
+        local_path="${LOCAL_DIR%/}/$path"
+        backup_path="${BACKUP_DIR%/}/$path"
+
+        if [[ ! -f "$local_path" ]]; then
+            log "SKIP: localなし: $path"
+            continue
+        fi
+        if [[ ! -f "$backup_path" ]]; then
+            log "SKIP: backupなし: $path"
+            continue
+        fi
+
+        local_size=$(stat -c '%s' "$local_path")
+        backup_size=$(stat -c '%s' "$backup_path")
+        if [[ "$size" != "$local_size" || "$size" != "$backup_size" ]]; then
+            log "SKIP: サイズ不一致: $path remote=$size local=$local_size backup=$backup_size"
+            continue
+        fi
+
+        printf '%s\n' "$path" >> "$VERIFIED_FILE"
+    done < <(jq -r '.[] | select(.IsDir != true) | [.Path, (.Size|tostring)] | @tsv' "$remote_json")
+
+    rm -f "$remote_json" "$filter_file"
+    VERIFIED_COUNT=$(wc -l < "$VERIFIED_FILE" | tr -d ' ')
+    log "確認済み動画数: ${VERIFIED_COUNT}"
+}
+
+delete_verified_videos() {
+    if [[ "$NO_DELETE" == "true" ]]; then
+        log "--no-delete 指定のため削除フェーズをスキップします"
+        return 0
+    fi
+
+    build_verified_file_list
+    if [[ "$VERIFIED_COUNT" -eq 0 ]]; then
+        log "確認済み動画がないため削除コマンドを実行しません"
+        return 0
+    fi
+
+    local common=()
+    mapfile -d '' -t common < <(rclone_common_args)
+
+    CURRENT_STEP="delete dry-run"
+    log "クラウド動画削除 dry-run 開始: $VERIFIED_FILE"
+    rclone delete "$REMOTE_SOURCE" \
+        --dry-run \
+        --files-from "$VERIFIED_FILE" \
+        "${common[@]}" | tee "$DRY_RUN_LOG"
+    log "クラウド動画削除 dry-run 完了: $DRY_RUN_LOG"
+
+    CURRENT_STEP="delete remote videos"
+    log "クラウド動画削除開始: $VERIFIED_FILE"
+    rclone delete "$REMOTE_SOURCE" \
+        --files-from "$VERIFIED_FILE" \
+        "${common[@]}"
+    DELETED_COUNT="$VERIFIED_COUNT"
+    log "クラウド動画削除完了: ${DELETED_COUNT} 件"
+}
+
+main() {
+    log "=== rclone メディア同期開始 ==="
+    log "REMOTE_SOURCE=${REMOTE_SOURCE}"
+    log "LOCAL_DIR=${LOCAL_DIR}"
+    log "BACKUP_DIR=${BACKUP_DIR}"
+    log "BACKUP_ROOT=${BACKUP_ROOT}"
+    log "NO_DELETE=${NO_DELETE}"
+
+    assert_prerequisites
+
+    CURRENT_STEP="image copy"
+    run_rclone_copy "画像" "$REMOTE_SOURCE" "$LOCAL_DIR" "${IMAGE_FILTERS[@]}"
+    IMAGE_COPY_STATUS="succeeded"
+
+    CURRENT_STEP="video copy"
+    run_rclone_copy "動画" "$REMOTE_SOURCE" "$LOCAL_DIR" "${VIDEO_FILTERS[@]}"
+    VIDEO_COPY_STATUS="succeeded"
+
+    CURRENT_STEP="backup copy"
+    run_rclone_copy "バックアップ" "$LOCAL_DIR" "$BACKUP_DIR" "${MEDIA_FILTERS[@]}"
+    BACKUP_STATUS="succeeded"
+
+    delete_verified_videos
+
+    log "=== rclone メディア同期完了 ==="
+}
+
+main
