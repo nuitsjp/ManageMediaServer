@@ -429,8 +429,7 @@ FodyWeavers.xsd
 ### VisualStudio Patch ###
 # Additional files built by Visual Studio
 
-# Immich公式設定ファイル（公式からダウンロードして使用）
+# Immich runtime environment file. Compose and examples are tracked.
 docker/immich/.env
-docker/immich/docker-compose.yml
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode

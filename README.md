@@ -28,7 +28,7 @@ Ubuntu Serverをベースとし、Docker上でImmichとJellyfinを実行して�
 - [統一サーバー構成](docs/design/server-configuration.md) - 開発・本番統一構成
 
 ### 🛠️ セットアップ・運用
-- [環境構築ガイド](docs/setup/environment-setup.md) - 開発・本番環境セットアップ
+- [開発環境構築ガイド](docs/setup/development-environment.md) - WSL開発環境セットアップ
 - [運用ガイド](docs/operations/README.md) - 日常運用・メンテナンス
 
 ### ⚙️ 設定・スクリプト
@@ -76,13 +76,15 @@ sudo ./scripts/setup/setup-monitoring.sh --enable
 #### 開発環境（WSL）
 ```bash
 # Windows側でクローン後、WSLで実行
-./scripts/setup/setup-dev.sh
+./scripts/setup/auto-setup.sh
 ```
+
+詳細手順: [開発環境構築ガイド](docs/setup/development-environment.md)
 
 #### 本番環境（Ubuntu Server）
 ```bash
 # Ubuntu Serverで実行
-./scripts/setup/setup-prod.sh
+bash ./scripts/setup/setup-prod.sh
 ```
 
 ### セキュリティ設定テスト（推奨）
@@ -93,10 +95,10 @@ sudo ./scripts/setup/setup-monitoring.sh --enable
 # WSL環境でセキュリティ設定をテスト
 wsl -d Ubuntu-24.04
 cd /mnt/d/ManageMediaServer
-./scripts/setup/setup-prod.sh --test-mode --security-only
+bash ./scripts/setup/setup-prod.sh --test-mode --security-only
 
 # 本番環境でセキュリティ設定を適用
-./scripts/setup/setup-prod.sh --security-only
+bash ./scripts/setup/setup-prod.sh --security-only
 ```
 
 詳細手順: [WSL環境でのセキュリティテスト](docs/operations/security-testing-wsl.md)

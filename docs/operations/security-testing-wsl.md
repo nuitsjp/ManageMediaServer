@@ -29,7 +29,7 @@ cd /mnt/d/ManageMediaServer
 
 ```bash
 # セキュリティ設定のテストモード実行
-./scripts/setup/setup-prod.sh --test-mode --security-only --debug
+bash ./scripts/setup/setup-prod.sh --test-mode --security-only --debug
 ```
 
 ### 4. 期待される出力例
@@ -97,7 +97,7 @@ cd /mnt/d/ManageMediaServer
 
 ```bash
 # Ubuntu Server環境で実行
-./scripts/setup/setup-prod.sh --security-only
+bash ./scripts/setup/setup-prod.sh --security-only
 
 # 設定状態確認
 sudo ufw status verbose
@@ -113,7 +113,7 @@ sudo fail2ban-client status sshd
 
 **解決**: コマンドに `--test-mode` を追加
 ```bash
-./scripts/setup/setup-prod.sh --test-mode --security-only
+bash ./scripts/setup/setup-prod.sh --test-mode --security-only
 ```
 
 ### テストモードで実際の設定が実行される
@@ -126,7 +126,7 @@ sudo fail2ban-client status sshd
 grep -E "(Microsoft|WSL)" /proc/version
 
 # デバッグモード実行
-./scripts/setup/setup-prod.sh --test-mode --security-only --debug
+bash ./scripts/setup/setup-prod.sh --test-mode --security-only --debug
 ```
 
 ## 関連ドキュメント

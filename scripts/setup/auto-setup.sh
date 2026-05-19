@@ -166,6 +166,10 @@ main() {
     prepare_directories
 
     # --- 運用スクリプトのmediaserverホームへのコピーと権限付与（再帰対応・パス自動判定） ---
+    # コピー先の /home/mediaserver/scripts/ 配下を事前に全削除
+    if [ -d /home/mediaserver/scripts ]; then
+        find /home/mediaserver/scripts -mindepth 1 -exec rm -rf {} +
+    fi
     SCRIPTS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
     log_info "スクリプト群を /home/mediaserver/scripts/ へ再帰的にコピー・権限設定します"
     install -d -m 755 /home/mediaserver/scripts

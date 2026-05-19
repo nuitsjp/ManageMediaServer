@@ -29,38 +29,53 @@ create_immich_directories() {
     log_debug "Immich用ディレクトリ構造を準備しました"
 }
 
-# Immich公式ファイルダウンロード
+# Immich設定ファイル準備
 download_immich_files() {
     local compose_file="$PROJECT_ROOT/docker/immich/docker-compose.yml"
     local env_file="$PROJECT_ROOT/docker/immich/.env"
+    local env_example_file="$PROJECT_ROOT/docker/immich/.env.example"
     local compose_dir="$(dirname "$compose_file")"
-    
-    # 既存ファイルがない場合、または強制更新の場合
-    if [ ! -f "$compose_file" ] || [ ! -f "$env_file" ] || [ "${FORCE:-false}" = "true" ]; then
-        log_info "Immich公式設定ファイルをダウンロード中..."
-        
-        # 作業ディレクトリに移動
+
+    # Composeはリポジトリ管理を基本とし、欠けている場合だけ公式ファイルを取得する。
+    if [ ! -f "$compose_file" ]; then
+        log_warning "Immich docker-compose.yml が見つかりません。公式ファイルを取得します: $compose_file"
         cd "$compose_dir"
-        
-        # 公式ファイルダウンロード
+
         if wget -O docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml; then
             log_success "docker-compose.yml をダウンロードしました"
         else
             log_error "docker-compose.yml のダウンロードに失敗しました"
             return 1
         fi
-        
-        if wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env; then
-            log_success ".env をダウンロードしました"
-        else
-            log_error ".env のダウンロードに失敗しました"
-            return 1
-        fi
-        
-        log_success "Immich設定ファイルの準備が完了しました"
     else
-        log_info "Immich設定ファイルは既に存在します"
+        log_info "Immich docker-compose.yml はリポジトリ管理ファイルを使用します"
     fi
+
+    # .env は秘匿情報を含むため、既存ファイルを上書きしない。
+    if [ ! -f "$env_file" ]; then
+        if [ -f "$env_example_file" ]; then
+            cp "$env_example_file" "$env_file"
+            log_success ".env.example から .env を作成しました"
+        else
+            log_warning ".env.example が見つかりません。公式 example.env を取得します"
+            cd "$compose_dir"
+
+            if wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env; then
+                log_success ".env をダウンロードしました"
+            else
+                log_error ".env のダウンロードに失敗しました"
+                return 1
+            fi
+        fi
+    else
+        log_info "Immich .env は既存ファイルを使用します"
+    fi
+
+    if [ "${FORCE:-false}" = "true" ]; then
+        log_warning "--force 指定時も docker/immich/.env は上書きしません"
+    fi
+
+    log_success "Immich設定ファイルの準備が完了しました"
 }
 
 # Immich .envファイルの環境調整
