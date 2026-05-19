@@ -2,7 +2,7 @@
 
 家庭内メディアサーバーの運用台帳です。
 
-このリポジトリは、Ubuntu 上で稼働している Immich、Jellyfin、rclone、Cloudflare Tunnel/Access、通知まわりの設定と、日常運用に必要な最小限のスクリプトを管理します。
+このリポジトリは、Ubuntu 上で稼働している Immich、Jellyfin、rclone、Tailscale、通知まわりの設定と、日常運用に必要な最小限のスクリプトを管理します。
 
 ## 目的
 
@@ -14,7 +14,7 @@
 - 長尺動画やミュージックビデオを Jellyfin で視聴する
 - rclone でクラウドストレージからローカルへ同期する
 - バックアップディスクへ重要データを分離して保管する
-- 家庭内ネットワークと Cloudflare Tunnel/Access を使って外部アクセスを制御する
+- Tailscale のプライベートネットワークを使い、ポート開放なしで外部アクセスを制御する
 - 障害時に、サービス状態・ログ・データ配置をすぐ確認できる状態にする
 
 ## 提供サービス
@@ -24,7 +24,7 @@
 | Immich | `http://localhost:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
 | Jellyfin | `http://localhost:8096` | 長尺動画・ミュージックビデオの視聴 |
 | rclone | `rclone-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ同期 |
-| Cloudflare Tunnel/Access | 設定ファイル: `config/cloudflare/tunnel_config.yaml` | 外部アクセス制御 |
+| Tailscale | `100.x.x.x` または MagicDNS 名 | ポート開放なしの外部アクセス |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
 ## 日常的な利用方法
@@ -70,6 +70,60 @@ Jellyfin のデータ配置:
 - ミュージックビデオ: `/mnt/data/jellyfin/music-videos`
 - その他ライブラリ候補: `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
 - Compose: `/home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml`
+
+### Tailscale 経由の外部アクセス
+
+外出先からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
+
+Tailscale 接続中の端末から以下でアクセスします。
+
+```text
+Immich:  http://100.69.11.74:2283
+Jellyfin: http://100.69.11.74:8096
+```
+
+確認コマンド:
+
+```bash
+command -v tailscale
+tailscale status
+tailscale ip -4
+systemctl status tailscaled --no-pager
+```
+
+現在このサーバーは Tailscale に参加済みです。
+
+```text
+Tailscale IP: 100.69.11.74
+Node name: home-ubuntu
+tailscaled.service: enabled / active
+```
+
+再構築時など、未導入の場合は Ubuntu に Tailscale をインストールして認証します。
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+インストール後、Tailscale 管理画面でこの Ubuntu サーバーが tailnet に参加していることを確認します。
+
+Tailscale Serve を使う場合は、Tailscale ネットワーク内だけで HTTPS 化できます。例:
+
+```bash
+sudo tailscale serve --bg --https=443 http://localhost:2283
+sudo tailscale serve --bg --https=8443 http://localhost:8096
+tailscale serve status
+```
+
+この場合のアクセス例:
+
+```text
+Immich:  https://<MagicDNS name>
+Jellyfin: https://<MagicDNS name>:8443
+```
+
+Serve 設定を変更する場合は、既存設定を確認してから上書きします。
 
 ### rclone 同期
 
@@ -157,6 +211,28 @@ du -sh /mnt/data/* /mnt/backup/* 2>/dev/null
 
 `/mnt/backup` は `/dev/sda1` の ext4 マウントです。
 
+### Tailscale 確認
+
+```bash
+tailscale status
+tailscale ip -4
+tailscale serve status
+systemctl status tailscaled --no-pager
+```
+
+Tailscale に未ログインの場合:
+
+```bash
+sudo tailscale up
+```
+
+ファイアウォールを調整する場合は、Tailscale のアドレス範囲から Immich/Jellyfin へのアクセスを許可します。
+
+```bash
+sudo ufw allow in on tailscale0 to any port 2283 proto tcp
+sudo ufw allow in on tailscale0 to any port 8096 proto tcp
+```
+
 ## 環境概要
 
 | 項目 | 値 |
@@ -168,6 +244,8 @@ du -sh /mnt/data/* /mnt/backup/* 2>/dev/null
 | 本番配置 | `/home/mediaserver/ManageMediaServer` |
 | データ領域 | `/mnt/data` |
 | バックアップ領域 | `/mnt/backup` |
+| Tailscale IP | `100.69.11.74` |
+| Tailscale node | `home-ubuntu` |
 | タイムゾーン | `Asia/Tokyo` |
 
 主要ポート:
@@ -197,8 +275,6 @@ scripts/
     start-services.sh
     stop-services.sh
 config/
-  cloudflare/
-    tunnel_config.yaml
   rclone/
     rclone.conf.example
 ```
@@ -244,6 +320,18 @@ WorkingDirectory=/home/mediaserver/ManageMediaServer
 ExecStart=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml up -d
 ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml down
 ```
+
+### 外部アクセスは Tailscale に統一する
+
+外部アクセスは Tailscale のプライベートネットワークを使います。
+
+- ルーターのポート開放は行わない
+- Immich/Jellyfin をインターネットへ直接公開しない
+- Tailscale の WireGuard ベース暗号化を前提にする
+- 家族共有が必要になった場合は Tailscale のユーザー・デバイス管理で許可する
+- HTTPS が必要な場合は Tailscale Serve を使う
+
+通常のアクセスは `100.x.x.x:2283` / `100.x.x.x:8096` または MagicDNS 名を使います。
 
 ### rclone はクラウド全体を同期し、Personal Vault を除外する
 
