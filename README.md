@@ -127,7 +127,7 @@ Serve 設定を変更する場合は、既存設定を確認してから上書�
 
 ### rclone 同期
 
-rclone はクラウドストレージの内容を Immich 外部ライブラリへ同期します。
+rclone はクラウドストレージの内容を Immich 外部ライブラリへ取り込みます。同期方針と削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) を参照します。
 
 ```bash
 systemctl status rclone-sync.timer --no-pager
@@ -136,29 +136,11 @@ systemctl list-timers rclone-sync.timer --no-pager
 sudo tail -100 /mnt/data/config/rclone/logs/sync.log
 ```
 
-定期同期:
-
-- systemd timer: `rclone-sync.timer`
-- 実行間隔: hourly
-- service: `rclone-sync.service`
-- rclone config: `/mnt/data/config/rclone/rclone.conf`
-- 同期元: `cloudstorageremote:/`
-- 同期先: `/mnt/data/immich/external`
-- ログ: `/mnt/data/config/rclone/logs/sync.log`
-
-OneDrive の Personal Vault は rclone から列挙できず同期失敗の原因になるため、以下を除外しています。
-
-```bash
---exclude "/個人用 Vault/**" --exclude "/Personal Vault/**"
-```
-
 手動のメディア同期が必要な場合:
 
 ```bash
 ./scripts/ops/rclone-media-sync.sh
 ```
-
-このスクリプトは画像を同期し、動画をローカルへコピーしたうえでバックアップし、クラウド側から削除する運用を想定しています。実行前に対象と除外条件を確認してください。
 
 ## 運用コマンド
 
@@ -270,6 +252,8 @@ sudo ufw allow in on tailscale0 to any port 8096 proto tcp
 ```text
 README.md
 LICENSE
+docs/
+  同期設計.md
 docker/
   immich/
     docker-compose.yml
@@ -340,20 +324,9 @@ ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/j
 
 通常のアクセスは `100.x.x.x:2283` / `100.x.x.x:8096` または MagicDNS 名を使います。
 
-### rclone はクラウド全体を同期し、Personal Vault を除外する
+### rclone の同期設計は docs に分ける
 
-`rclone-sync.service`:
-
-```ini
-Environment=RCLONE_CONFIG=/mnt/data/config/rclone/rclone.conf
-ExecStart=/usr/bin/rclone sync cloudstorageremote:/ /mnt/data/immich/external --exclude "/個人用 Vault/**" --exclude "/Personal Vault/**" --log-file=/mnt/data/config/rclone/logs/sync.log --log-level INFO
-```
-
-Personal Vault を除外しない場合、以下のようなエラーで同期全体が失敗します。
-
-```text
-invalidRequest: invalidResourceId: ObjectHandle is Invalid
-```
+rclone の同期方針、画像と動画の扱い、削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) にまとめます。
 
 ### データとバックアップを分ける
 
@@ -432,29 +405,7 @@ DB_DATABASE_NAME=immich
 
 ## 同期・バックアップ設計
 
-基本フロー:
-
-```text
-クラウドストレージ
-  -> rclone
-  -> /mnt/data/immich/external
-  -> Immich 外部ライブラリ
-```
-
-バックアップ:
-
-```text
-/mnt/data
-  -> /mnt/backup
-```
-
-運用上の注意:
-
-- rclone の定期同期は hourly
-- Personal Vault は同期対象から除外する
-- Immich 外部ライブラリは read-only として扱う
-- Jellyfin のメディアも原則 read-only mount とする
-- `.env` と `rclone.conf` は Git 管理しない
+同期設計の詳細は [docs/同期設計.md](docs/同期設計.md) を参照します。
 
 ## トラブルシューティング
 
@@ -485,11 +436,7 @@ systemctl status rclone-sync.service --no-pager
 sudo tail -100 /mnt/data/config/rclone/logs/sync.log
 ```
 
-Personal Vault 関連のエラーが出る場合、`rclone-sync.service` の `ExecStart` に以下が含まれているか確認します。
-
-```bash
---exclude "/個人用 Vault/**" --exclude "/Personal Vault/**"
-```
+Personal Vault 関連のエラーが出る場合は、[docs/同期設計.md](docs/同期設計.md) の除外方針を確認します。
 
 反映後は reload して再実行します。
 
