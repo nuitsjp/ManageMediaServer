@@ -235,7 +235,8 @@ sudo ufw allow in on tailscale0 to any port 8096 proto tcp
 | ホスト名 | `home-ubuntu` |
 | 運用ユーザー | `mediaserver` |
 | 作業ユーザー | `ubuntu` |
-| 本番配置 | `/home/mediaserver/ManageMediaServer` |
+| Git checkout | `/home/ubuntu/repos/ManageMediaServer` |
+| 本番配置コピー | `/home/mediaserver/ManageMediaServer` |
 | データ領域 | `/mnt/data` |
 | バックアップ領域 | `/mnt/backup` |
 | Tailscale IP | `100.69.11.74` |
@@ -350,7 +351,7 @@ OnCalendar=*-*-* 08:00:00 Asia/Tokyo
 
 ### rclone-media-sync の配置
 
-本番で `rclone-media-sync.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh` です。配置前に、本番配置へ `scripts/`, `config/`, `systemd/`, `docs/` が反映されていることを確認します。
+本番で `rclone-media-sync.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh` です。`/home/mediaserver/ManageMediaServer` は Git checkout ではなく、本番配置コピーとして扱います。変更後は Git checkout から本番配置へ `scripts/`, `config/`, `systemd/`, `docs/` を反映します。
 
 ```bash
 test -x /home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh
@@ -546,6 +547,8 @@ du -sh /mnt/data/* 2>/dev/null
 ```
 
 `/mnt/data` は専用マウント化を推奨します。移行時はサービス停止、バックアップ、rsync、fstab 更新、再起動確認の順で進めます。
+
+`rclone-media-sync.sh` は事前確認で `/mnt/data/immich/external` と `/mnt/backup` の空き容量を確認し、既定でそれぞれ 1 GiB 未満なら削除フェーズへ進まず終了します。閾値は `DATA_MIN_FREE_KIB` と `BACKUP_MIN_FREE_KIB` で変更できます。
 
 ### `/mnt/backup` がマウントされていない
 

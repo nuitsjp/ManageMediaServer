@@ -15,6 +15,8 @@ LOG_DIR="${LOG_DIR:-/mnt/data/config/rclone/logs}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/media-sync.log}"
 EXCLUDE_FILE="${EXCLUDE_FILE:-${REPO_ROOT}/config/rclone/media-sync-excludes.txt}"
 NOTIFICATION_ENV="${NOTIFICATION_ENV:-${REPO_ROOT}/config/env/notification.env}"
+DATA_MIN_FREE_KIB="${DATA_MIN_FREE_KIB:-1048576}"
+BACKUP_MIN_FREE_KIB="${BACKUP_MIN_FREE_KIB:-1048576}"
 NO_DELETE=false
 
 IMAGE_FILTERS=(
@@ -41,6 +43,7 @@ DELETED_COUNT=0
 CURRENT_STEP="initializing"
 VERIFIED_FILE=""
 DRY_RUN_LOG=""
+NOTIFICATION_ENV_LOADED=false
 
 usage() {
     cat <<'USAGE'
@@ -75,16 +78,24 @@ log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$1" | tee -a "$LOG_FILE"
 }
 
-notify_discord() {
-    local status="$1"
-    local message="$2"
-
+load_notification_env() {
+    if [[ "$NOTIFICATION_ENV_LOADED" == "true" ]]; then
+        return 0
+    fi
     if [[ -f "$NOTIFICATION_ENV" ]]; then
         # shellcheck disable=SC1090
         set -a
         source "$NOTIFICATION_ENV"
         set +a
     fi
+    NOTIFICATION_ENV_LOADED=true
+}
+
+notify_discord() {
+    local status="$1"
+    local message="$2"
+
+    load_notification_env
 
     if [[ "${NOTIFICATION_ENABLED:-false}" != "true" ]]; then
         log "Discord通知は無効です"
@@ -93,6 +104,11 @@ notify_discord() {
 
     if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
         log "WARNING: DISCORD_WEBHOOK_URL が未設定のため通知をスキップします"
+        return 0
+    fi
+
+    if ! command -v curl >/dev/null; then
+        log "WARNING: curl が見つからないため Discord 通知をスキップします"
         return 0
     fi
 
@@ -186,11 +202,36 @@ run_rclone_copy() {
     log "${label} copy 完了"
 }
 
+available_kib_for_path() {
+    df -Pk "$1" | awk 'NR == 2 {print $4}'
+}
+
+assert_min_free_kib() {
+    local label="$1"
+    local path="$2"
+    local min_free_kib="$3"
+    local available_kib
+
+    available_kib=$(available_kib_for_path "$path")
+    if [[ -z "$available_kib" ]]; then
+        log "ERROR: 空き容量を確認できません: ${path}"
+        exit 1
+    fi
+    if (( available_kib < min_free_kib )); then
+        log "ERROR: ${label} の空き容量不足: path=${path} available=${available_kib}KiB required=${min_free_kib}KiB"
+        exit 1
+    fi
+    log "${label} 空き容量 OK: path=${path} available=${available_kib}KiB required=${min_free_kib}KiB"
+}
+
 assert_prerequisites() {
     CURRENT_STEP="preflight"
     command -v rclone >/dev/null || { log "ERROR: rclone が見つかりません"; exit 1; }
     command -v jq >/dev/null || { log "ERROR: jq が見つかりません"; exit 1; }
-    command -v curl >/dev/null || { log "ERROR: curl が見つかりません"; exit 1; }
+    load_notification_env
+    if [[ "${NOTIFICATION_ENABLED:-false}" == "true" ]]; then
+        command -v curl >/dev/null || { log "ERROR: Discord通知が有効ですが curl が見つかりません"; exit 1; }
+    fi
 
     if [[ ! -f "$EXCLUDE_FILE" ]]; then
         log "ERROR: 除外ファイルが見つかりません: $EXCLUDE_FILE"
@@ -223,6 +264,8 @@ assert_prerequisites() {
 
     log "容量確認:"
     df -h "$LOCAL_DIR" "$BACKUP_ROOT" | tee -a "$LOG_FILE"
+    assert_min_free_kib "ローカル同期先" "$LOCAL_DIR" "$DATA_MIN_FREE_KIB"
+    assert_min_free_kib "バックアップ先" "$BACKUP_ROOT" "$BACKUP_MIN_FREE_KIB"
 }
 
 build_verified_file_list() {
