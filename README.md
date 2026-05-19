@@ -1,107 +1,458 @@
-# 家庭用メディアサーバー管理
+# ManageMediaServer
 
-本リポジトリは、家庭用のメディアサーバーをLinux環境で構築・運用するためのスクリプトや設定ファイルを管理します。
+家庭内メディアサーバーの運用台帳です。
 
-## システム概要
+このリポジトリは、Ubuntu 上で稼働している Immich、Jellyfin、rclone、Cloudflare Tunnel/Access、通知まわりの設定と、日常運用に必要な最小限のスクリプトを管理します。
 
-Ubuntu Serverをベースとし、Docker上でImmichとJellyfinを実行して、スマートフォンで撮影したメディアを一元管理します。
+## 目的
 
-### 主要コンポーネント
+この環境は、家庭内の写真・動画・ミュージックビデオを一元管理し、スマートフォンや PC から安全に閲覧できるようにするためのものです。
 
-- **Immich** - 画像・短尺動画の管理・公開
-- **Jellyfin** - 長尺動画の管理・公開  
-- **rclone** - クラウドストレージ連携
-- **Cloudflare Tunnel/Access** - 外部アクセス制御
+主な目的は以下です。
 
-### データフロー
+- スマートフォンやクラウドストレージ上の写真・短尺動画を Immich で管理する
+- 長尺動画やミュージックビデオを Jellyfin で視聴する
+- rclone でクラウドストレージからローカルへ同期する
+- バックアップディスクへ重要データを分離して保管する
+- 家庭内ネットワークと Cloudflare Tunnel/Access を使って外部アクセスを制御する
+- 障害時に、サービス状態・ログ・データ配置をすぐ確認できる状態にする
 
-```
-スマートフォン → クラウドストレージ → rclone → Immich外部ライブラリ
-                                              ↓
-                                        バックアップストレージ
-```
+## 提供サービス
 
-## ドキュメント構成
+| サービス | URL / 役割 | 用途 |
+| --- | --- | --- |
+| Immich | `http://localhost:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
+| Jellyfin | `http://localhost:8096` | 長尺動画・ミュージックビデオの視聴 |
+| rclone | `rclone-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ同期 |
+| Cloudflare Tunnel/Access | 設定ファイル: `config/cloudflare/tunnel_config.yaml` | 外部アクセス制御 |
+| Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
-### 📋 設計・構成
-- [システム設計](docs/design/system-architecture.md) - 全体構成とデータフロー
-- [統一サーバー構成](docs/design/server-configuration.md) - 開発・本番統一構成
+## 日常的な利用方法
 
-### 🛠️ セットアップ・運用
-- [開発環境構築ガイド](docs/setup/development-environment.md) - WSL開発環境セットアップ
-- [運用ガイド](docs/operations/README.md) - 日常運用・メンテナンス
+### Immich
 
-### ⚙️ 設定・スクリプト
-- [Docker設定](docker/) - Immich/Jellyfin用Docker Compose
-- [rclone設定](config/rclone/) - クラウドストレージ連携設定
-- [運用スクリプト](scripts/) - バックアップ・同期スクリプト
-
-## クイックスタート
-
-### 共通手順
-```bash
-# リポジトリクローン
-git clone <repository-url> ManageMediaServer
-cd ManageMediaServer
-
-# 自動環境検出・セットアップ
-./scripts/setup/auto-setup.sh
-```
-
-セットアップスクリプトが自動的に環境を判定し、適切なセットアップを実行：
-- **WSL環境**: 開発環境として構築
-- **Ubuntu Server**: 本番環境として構築
-
-### 通知システム設定（推奨）
-
-システムの状態やバックアップ結果をスマートフォンに通知：
+Immich は写真・短尺動画の管理に使います。
 
 ```bash
-# Discord Webhook通知設定
-./scripts/setup/setup-notification.sh --setup
-
-# 自動監視設定（管理者権限必要）
-sudo ./scripts/setup/setup-monitoring.sh --setup
-sudo ./scripts/setup/setup-monitoring.sh --enable
-
-# 設定確認・テスト
-./scripts/setup/setup-notification.sh --status
-./scripts/setup/setup-monitoring.sh --test
+curl -I --max-time 5 http://localhost:2283
+sudo systemctl status immich --no-pager
+journalctl -u immich -n 100 --no-pager
 ```
 
-詳細手順: [通知システム設定ガイド](docs/setup/notification-setup.md)
+Immich のデータ配置:
 
-### 手動セットアップ（詳細制御が必要な場合）
+- アップロード領域: `/mnt/data/immich/upload`
+- 外部ライブラリ: `/mnt/data/immich/external`
+- PostgreSQL データ: `/mnt/data/immich/postgres`
+- Compose: `/home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml`
+- 実行時 env: `/home/mediaserver/ManageMediaServer/docker/immich/.env`
 
-#### 開発環境（WSL）
-```bash
-# Windows側でクローン後、WSLで実行
-./scripts/setup/auto-setup.sh
+外部ライブラリは Compose で read-only mount しています。
+
+```yaml
+${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro
 ```
 
-詳細手順: [開発環境構築ガイド](docs/setup/development-environment.md)
+### Jellyfin
 
-#### 本番環境（Ubuntu Server）
-```bash
-# Ubuntu Serverで実行
-bash ./scripts/setup/setup-prod.sh
-```
-
-### セキュリティ設定テスト（推奨）
-
-本番環境でのセキュリティ設定適用前に、WSL環境で事前テストを実行：
+Jellyfin は長尺動画・ミュージックビデオの視聴に使います。
 
 ```bash
-# WSL環境でセキュリティ設定をテスト
-wsl -d Ubuntu-24.04
-cd /mnt/d/ManageMediaServer
-bash ./scripts/setup/setup-prod.sh --test-mode --security-only
-
-# 本番環境でセキュリティ設定を適用
-bash ./scripts/setup/setup-prod.sh --security-only
+curl -I --max-time 5 http://localhost:8096
+sudo systemctl status jellyfin --no-pager
+journalctl -u jellyfin -n 100 --no-pager
 ```
 
-詳細手順: [WSL環境でのセキュリティテスト](docs/operations/security-testing-wsl.md)
+Jellyfin のデータ配置:
+
+- 設定: `/mnt/data/jellyfin/config`
+- キャッシュ: `/mnt/data/jellyfin/cache`
+- ミュージックビデオ: `/mnt/data/jellyfin/music-videos`
+- その他ライブラリ候補: `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
+- Compose: `/home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml`
+
+### rclone 同期
+
+rclone はクラウドストレージの内容を Immich 外部ライブラリへ同期します。
+
+```bash
+systemctl status rclone-sync.timer --no-pager
+systemctl status rclone-sync.service --no-pager
+systemctl list-timers rclone-sync.timer --no-pager
+sudo tail -100 /mnt/data/config/rclone/logs/sync.log
+```
+
+定期同期:
+
+- systemd timer: `rclone-sync.timer`
+- 実行間隔: hourly
+- service: `rclone-sync.service`
+- rclone config: `/mnt/data/config/rclone/rclone.conf`
+- 同期元: `cloudstorageremote:/`
+- 同期先: `/mnt/data/immich/external`
+- ログ: `/mnt/data/config/rclone/logs/sync.log`
+
+OneDrive の Personal Vault は rclone から列挙できず同期失敗の原因になるため、以下を除外しています。
+
+```bash
+--exclude "/個人用 Vault/**" --exclude "/Personal Vault/**"
+```
+
+手動のメディア同期が必要な場合:
+
+```bash
+./scripts/ops/rclone-media-sync.sh
+```
+
+このスクリプトは画像を同期し、動画をローカルへコピーしたうえでバックアップし、クラウド側から削除する運用を想定しています。実行前に対象と除外条件を確認してください。
+
+## 運用コマンド
+
+### サービス操作
+
+```bash
+sudo systemctl status immich jellyfin rclone-sync.timer --no-pager
+sudo systemctl restart immich
+sudo systemctl restart jellyfin
+sudo systemctl restart rclone-sync.service
+sudo systemctl stop immich jellyfin
+sudo systemctl start immich jellyfin
+```
+
+残している簡易スクリプト:
+
+```bash
+./scripts/ops/start-services.sh
+./scripts/ops/stop-services.sh
+./scripts/ops/rclone-media-sync.sh
+```
+
+### Docker Compose
+
+```bash
+cd /home/mediaserver/ManageMediaServer
+
+docker compose -f docker/immich/docker-compose.yml ps
+docker compose -f docker/jellyfin/docker-compose.yml ps
+
+docker compose -f docker/immich/docker-compose.yml logs -n 100
+docker compose -f docker/jellyfin/docker-compose.yml logs -n 100
+
+docker compose -f docker/immich/docker-compose.yml pull
+docker compose -f docker/jellyfin/docker-compose.yml pull
+```
+
+`ubuntu` ユーザーが Docker ソケットへアクセスできない場合は、`mediaserver` ユーザーまたは `sudo` で確認します。
+
+### ディスク確認
+
+```bash
+df -h / /mnt/data /mnt/backup
+mountpoint /mnt/data
+mountpoint /mnt/backup
+du -sh /mnt/data/* /mnt/backup/* 2>/dev/null
+```
+
+現在、`/mnt/data` は専用マウントポイントではなく、ルートファイルシステム上のディレクトリです。メディア増加で OS 領域を圧迫しないよう、専用ディスクまたは専用 LVM 論理ボリュームとしてのマウントを推奨します。
+
+`/mnt/backup` は `/dev/sda1` の ext4 マウントです。
+
+## 環境概要
+
+| 項目 | 値 |
+| --- | --- |
+| OS | Ubuntu 24.04 LTS |
+| ホスト名 | `home-ubuntu` |
+| 運用ユーザー | `mediaserver` |
+| 作業ユーザー | `ubuntu` |
+| 本番配置 | `/home/mediaserver/ManageMediaServer` |
+| データ領域 | `/mnt/data` |
+| バックアップ領域 | `/mnt/backup` |
+| タイムゾーン | `Asia/Tokyo` |
+
+主要ポート:
+
+| ポート | サービス |
+| --- | --- |
+| `2283/tcp` | Immich |
+| `8096/tcp` | Jellyfin |
+| `8920/tcp` | Jellyfin HTTPS |
+| `1900/udp` | Jellyfin DLNA |
+| `22/tcp` | SSH |
+
+## リポジトリ構成
+
+```text
+README.md
+LICENSE
+docker/
+  immich/
+    docker-compose.yml
+    .env.example
+  jellyfin/
+    docker-compose.yml
+scripts/
+  ops/
+    rclone-media-sync.sh
+    start-services.sh
+    stop-services.sh
+config/
+  cloudflare/
+    tunnel_config.yaml
+  rclone/
+    rclone.conf.example
+```
+
+実行時に使うが Git 管理しないもの:
+
+- `docker/immich/.env`
+- `docker/*/.env`
+- `config/env/notification.env`
+- `config/rclone/rclone.conf`
+- `/mnt/data/config/rclone/rclone.conf`
+- ログ
+- 実データ
+- バックアップデータ
+
+## 設計方針
+
+### Docker Compose は Git 管理する
+
+Immich と Jellyfin の Compose はリポジトリで管理します。
+
+- Immich: `docker/immich/docker-compose.yml`
+- Jellyfin: `docker/jellyfin/docker-compose.yml`
+
+`.env` はホスト固有値と秘匿情報を含むため Git 管理しません。Immich は `docker/immich/.env.example` をテンプレートとして管理します。
+
+### systemd で Compose を管理する
+
+Immich と Jellyfin は Docker Compose を systemd oneshot service から起動します。
+
+`immich.service`:
+
+```ini
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+ExecStart=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml down
+```
+
+`jellyfin.service`:
+
+```ini
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+ExecStart=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml down
+```
+
+### rclone はクラウド全体を同期し、Personal Vault を除外する
+
+`rclone-sync.service`:
+
+```ini
+Environment=RCLONE_CONFIG=/mnt/data/config/rclone/rclone.conf
+ExecStart=/usr/bin/rclone sync cloudstorageremote:/ /mnt/data/immich/external --exclude "/個人用 Vault/**" --exclude "/Personal Vault/**" --log-file=/mnt/data/config/rclone/logs/sync.log --log-level INFO
+```
+
+Personal Vault を除外しない場合、以下のようなエラーで同期全体が失敗します。
+
+```text
+invalidRequest: invalidResourceId: ObjectHandle is Invalid
+```
+
+### データとバックアップを分ける
+
+運用データ:
+
+```text
+/mnt/data/
+  immich/
+    external/
+    upload/
+    postgres/
+  jellyfin/
+    config/
+    cache/
+    music-videos/
+    movies/
+    tv/
+  config/
+    rclone/
+      rclone.conf
+      logs/
+  temp/
+```
+
+バックアップ:
+
+```text
+/mnt/backup/
+  immich-backup/
+  jellyfin-backup/
+  system-backup/
+  media/
+  config/
+```
+
+`/mnt/backup` は物理的に別ディスクへ分離します。`/mnt/data` も同様に専用マウント化するのが望ましいです。
+
+## 実際の設定
+
+### Immich Compose
+
+主要設定:
+
+- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}`
+- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}`
+- Redis: `docker.io/valkey/valkey:8-bookworm`
+- PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0`
+- port: `2283:2283`
+- upload mount: `${UPLOAD_LOCATION}:/usr/src/app/upload`
+- external mount: `${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro`
+- db mount: `${DB_DATA_LOCATION}:/var/lib/postgresql/data`
+
+`.env.example`:
+
+```env
+UPLOAD_LOCATION=/mnt/data/immich/upload
+DB_DATA_LOCATION=/mnt/data/immich/postgres
+EXTERNAL_PATH=/mnt/data/immich/external
+IMMICH_VERSION=release
+DB_PASSWORD=change-me
+DB_USERNAME=postgres
+DB_DATABASE_NAME=immich
+```
+
+### Jellyfin Compose
+
+主要設定:
+
+- image: `jellyfin/jellyfin:latest`
+- user: `1001:1001`
+- timezone: `Asia/Tokyo`
+- config: `${DATA_ROOT:-/mnt/data}/jellyfin/config:/config`
+- cache: `${DATA_ROOT:-/mnt/data}/jellyfin/cache:/cache`
+- media: `${DATA_ROOT:-/mnt/data}/jellyfin/music-videos:/media/music-videos:ro`
+- ports: `8096`, `8920`, `1900/udp`
+
+## 同期・バックアップ設計
+
+基本フロー:
+
+```text
+クラウドストレージ
+  -> rclone
+  -> /mnt/data/immich/external
+  -> Immich 外部ライブラリ
+```
+
+バックアップ:
+
+```text
+/mnt/data
+  -> /mnt/backup
+```
+
+運用上の注意:
+
+- rclone の定期同期は hourly
+- Personal Vault は同期対象から除外する
+- Immich 外部ライブラリは read-only として扱う
+- Jellyfin のメディアも原則 read-only mount とする
+- `.env` と `rclone.conf` は Git 管理しない
+
+## トラブルシューティング
+
+### Immich が見えない
+
+```bash
+curl -I --max-time 5 http://localhost:2283
+sudo systemctl status immich --no-pager
+journalctl -u immich -n 100 --no-pager
+docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml ps
+docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml logs -n 100
+```
+
+### Jellyfin が見えない
+
+```bash
+curl -I --max-time 5 http://localhost:8096
+sudo systemctl status jellyfin --no-pager
+journalctl -u jellyfin -n 100 --no-pager
+docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml ps
+docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml logs -n 100
+```
+
+### rclone が失敗する
+
+```bash
+systemctl status rclone-sync.service --no-pager
+sudo tail -100 /mnt/data/config/rclone/logs/sync.log
+```
+
+Personal Vault 関連のエラーが出る場合、`rclone-sync.service` の `ExecStart` に以下が含まれているか確認します。
+
+```bash
+--exclude "/個人用 Vault/**" --exclude "/Personal Vault/**"
+```
+
+反映後は reload して再実行します。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart rclone-sync.service
+sudo systemctl status rclone-sync.service --no-pager
+```
+
+### Docker 権限エラー
+
+```bash
+id ubuntu
+id mediaserver
+ls -l /var/run/docker.sock
+```
+
+`ubuntu` ユーザーが Docker グループに入っていない場合、`sudo docker ...` または `mediaserver` ユーザーで確認します。
+
+### `/mnt/data` 容量不足
+
+```bash
+df -h / /mnt/data
+du -sh /mnt/data/* 2>/dev/null
+```
+
+`/mnt/data` は専用マウント化を推奨します。移行時はサービス停止、バックアップ、rsync、fstab 更新、再起動確認の順で進めます。
+
+### `/mnt/backup` がマウントされていない
+
+```bash
+mountpoint /mnt/backup
+df -h /mnt/backup
+sudo mount /mnt/backup
+```
+
+`/etc/fstab` の `/mnt/backup` エントリを確認します。
+
+## Git 管理方針
+
+管理するもの:
+
+- `README.md`
+- `docker/immich/docker-compose.yml`
+- `docker/immich/.env.example`
+- `docker/jellyfin/docker-compose.yml`
+- `scripts/ops/*.sh`
+- 設定テンプレート
+
+管理しないもの:
+
+- 実データ
+- バックアップ
+- ログ
+- `.env`
+- `rclone.conf`
+- `notification.env`
+- 認証情報
 
 ## ライセンス
 
