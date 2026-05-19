@@ -39,7 +39,12 @@ Windows 11
 - `/` (ルート): 473.9GB (全領域活用、LVM拡張実施済み)
 - `/home`: PROJECT_ROOT領域 (ルート内)
 - `/var`: Docker・ログ領域 (ルート内)
-- `/mnt/data`: メディアストレージ（Immich/Jellyfin用、ルート内）
+- `/mnt/data`: メディアストレージ（Immich/Jellyfin用）
+
+**推奨方針:**
+- `/mnt/data` は専用ディスク、または専用LVM論理ボリュームとしてマウントする
+- ルートファイルシステム直下の通常ディレクトリとして運用しない
+- メディア増加でOS領域を圧迫しないよう、容量監視とバックアップを分離する
 
 **バックアップディスク（SATA SSD 894GB - SanDisk Ultra II）:**
 - `/mnt/backup`: バックアップ専用ストレージ（ext4フォーマット済み）
@@ -69,7 +74,7 @@ Windows 11
    └─ ubuntu-lv (473.9GB): / (ルートファイルシステム、全領域利用済み)
       ├─ /home (PROJECT_ROOT)
       ├─ /var (Docker・ログ)
-      └─ /mnt/data (メディアストレージ作成済み)
+      └─ /mnt/data (移行前の暫定配置。専用マウント化を推奨)
 
 /dev/sda (894GB) - バックアップディスク（物理分離）
 └─ sda1 (894GB)       : /mnt/backup（ext4, バックアップ専用、マウント済み）
@@ -94,22 +99,29 @@ sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
 ### マウント設定
 
 ```bash
-# シンプル構成（物理分離、全領域活用）
+# 推奨構成（データ領域を専用マウント化）
 
-# 1. ルート論理ボリュームの拡張（✅ 実施済み）
-# 全領域をルートパーティションに拡張し、/mnt/data をルート内に配置
+# 1. /mnt/data 用ディスクまたはLVM論理ボリュームを準備
+# 例: /dev/disk/by-uuid/<DATA_UUID> /mnt/data ext4 defaults,nofail 0 2
 
-# 2. メディアディレクトリの整備（✅ 実施済み）
-# /mnt/data/{immich,jellyfin,cache} ディレクトリ構造作成完了
-# 権限設定 (ubuntu:ubuntu, 755) 完了
+# 2. 既存データをバックアップ後、専用領域へ移行
+sudo systemctl stop immich jellyfin rclone-sync.timer
+sudo rsync -aHAX --numeric-ids /mnt/data/ /mnt/data.new/
+# fstab更新後に /mnt/data をマウントし、データを配置
 
-# 3. バックアップディスクの準備（✅ 完了）
+# 3. メディアディレクトリの整備
+sudo mkdir -p /mnt/data/{immich,jellyfin,cache,temp,config/rclone}
+sudo chown -R mediaserver:mediaserver /mnt/data
+sudo chmod 755 /mnt/data
+
+# 4. バックアップディスクの準備
 sudo mkdir -p /mnt/backup
 # NTFSからext4への変換済み（Linux最適化）
 # sudo mkfs.ext4 -L "MediaBackup" /dev/sda1  # 実施済み
 sudo mount /dev/sda1 /mnt/backup
 
-# 4. /etc/fstab 設定（現在の設定）
+# 5. /etc/fstab 設定例
+/dev/disk/by-uuid/<DATA_UUID> /mnt/data ext4 defaults,nofail 0 2
 /dev/disk/by-id/dm-uuid-LVM-SRXPjKOEioDrbT9A8PSaTQSnE2yYVy1XSGxuRefphgQmGwaUjP4w0wia0SxCq1jX / ext4 defaults 0 1
 UUID=23d79952-dddd-41be-a97d-edfdb5dd26db /boot ext4 defaults 0 1
 UUID=AB36-B95D /boot/efi vfat defaults 0 1
@@ -119,9 +131,10 @@ UUID=b5afccae-200c-4013-9b41-b832f5c1ef49 /mnt/backup ext4 defaults 0 2
 ### 権限設定
 
 ```bash
-# 1. メディアストレージ設定（NVMe、ルート内）（✅ 実施済み）
-# /mnt/data/{immich,jellyfin,cache} ディレクトリ構造作成完了
-# 所有者設定 (ubuntu:ubuntu) と権限設定 (755) 完了
+# 1. メディアストレージ設定（専用マウント）
+sudo mkdir -p /mnt/data/{immich,jellyfin,cache,temp,config/rclone}
+sudo chown -R mediaserver:mediaserver /mnt/data
+sudo chmod 755 /mnt/data
 
 # 2. バックアップストレージ設定（SATA SSD）（✅ 完了）
 sudo mkdir -p /mnt/backup

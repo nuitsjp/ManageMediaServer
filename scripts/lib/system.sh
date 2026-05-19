@@ -34,6 +34,13 @@ pre_check() {
     if [ "$available_space" -lt 5242880 ]; then  # 5GB
         log_warning "ディスク容量が不足している可能性があります（推奨: 5GB以上）"
     fi
+
+    if [ "$env_type" = "prod" ]; then
+        if ! mountpoint -q "$DATA_ROOT" 2>/dev/null; then
+            log_warning "$DATA_ROOT は専用マウントポイントではありません"
+            log_info "メディア増加によるルートファイルシステム圧迫を避けるため、専用ディスクまたは専用LVMボリュームへのマウントを推奨します"
+        fi
+    fi
     
     log_success "事前チェック完了"
 }

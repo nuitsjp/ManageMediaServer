@@ -61,12 +61,12 @@ wsl -d Ubuntu-22.04
 cd /mnt/d/ManageMediaServer
 
 # 開発環境セットアップスクリプト実行
-./scripts/dev/setup-wsl.sh
+./scripts/setup/auto-setup.sh
 ```
 
 ### セットアップスクリプトが実行する内容
 
-`scripts/dev/setup-wsl.sh` では以下を自動実行：
+`scripts/setup/auto-setup.sh` では以下を自動実行：
 
 1. **システム更新・基本パッケージ**
    ```bash
@@ -94,7 +94,7 @@ cd /mnt/d/ManageMediaServer
 
 5. **設定ファイル準備**
    ```bash
-   cp docker/dev/.env.example docker/dev/.env
+   # 必要に応じて config/env/dev.env を調整
    cp config/rclone/rclone.conf.example ~/dev-data/config/rclone/rclone.conf
    ```
 
@@ -122,14 +122,11 @@ docker ps
 ### .env設定例（WSL用）
 
 ```bash
-# docker/dev/.env
-# データパス（WSL側）
-DATA_PATH=~/dev-data/data
-BACKUP_PATH=~/dev-data/backup
-CONFIG_PATH=~/dev-data/config
-
-# ソースパス（Windows側）
-SOURCE_PATH=/mnt/d/ManageMediaServer
+# config/env/dev.env
+# パス設定
+PROJECT_ROOT="/mnt/d/ManageMediaServer"
+DATA_ROOT="$HOME/dev-data"
+BACKUP_ROOT="$HOME/dev-backup"
 ```
 
 ## 開発用設定
@@ -156,7 +153,7 @@ SOURCE_PATH=/mnt/d/ManageMediaServer
 rclone config
 
 # 環境変数の調整
-nano docker/dev/.env
+nano config/env/dev.env
 ```
 
 ## 開発ワークフロー
@@ -172,11 +169,8 @@ nano docker/dev/.env
 ### セットアップスクリプト失敗時
 
 ```bash
-# ログ確認
-cat ~/setup-wsl.log
-
 # 手動修復後、再実行
-./scripts/dev/setup-wsl.sh --force
+./scripts/setup/auto-setup.sh --force
 ```
 
 ### Docker権限問題

@@ -37,7 +37,7 @@ cd /mnt/d/ManageMediaServer
 
 ```bash
 # 本番環境セットアップスクリプトを直接テストモードで実行
-./scripts/setup/setup-prod.sh --test-mode --security-only
+bash ./scripts/setup/setup-prod.sh --test-mode --security-only
 ```
 
 ### 3. テスト出力例
@@ -134,7 +134,7 @@ MaxAuthTries 3                  # 認証試行制限
 
 ```bash
 # セキュリティ設定のみ実行
-./scripts/setup/setup-prod.sh --security-only
+bash ./scripts/setup/setup-prod.sh --security-only
 ```
 
 ### 3. 設定確認
