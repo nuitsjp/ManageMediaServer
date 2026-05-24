@@ -70,7 +70,7 @@ BACKUP_ROOT="${BACKUP_ROOT:-/mnt/backup}"
 RUN_APT_UPDATE="${RUN_APT_UPDATE:-true}"
 RUN_APT_UPGRADE="${RUN_APT_UPGRADE:-true}"
 APT_UPGRADE_COMMAND="${APT_UPGRADE_COMMAND:-full-upgrade}"
-RUN_APT_AUTOREMOVE="${RUN_APT_AUTOREMOVE:-true}"
+RUN_APT_AUTOREMOVE="${RUN_APT_AUTOREMOVE:-false}"
 RUN_SNAP_REFRESH="${RUN_SNAP_REFRESH:-true}"
 APT_LOCK_TIMEOUT_SECONDS="${APT_LOCK_TIMEOUT_SECONDS:-600}"
 
@@ -271,7 +271,11 @@ run_apt_upgrade() {
 }
 
 run_apt_autoremove() {
-    [[ "$RUN_APT_AUTOREMOVE" == "true" ]] || return 0
+    if [[ "$RUN_APT_AUTOREMOVE" != "true" ]]; then
+        AUTOREMOVE_STATUS="disabled"
+        log "apt-get autoremove is disabled"
+        return 0
+    fi
     CURRENT_STEP="apt autoremove"
     if [[ "$CHECK_ONLY" == "true" ]]; then
         AUTOREMOVE_STATUS="skipped_check_only"

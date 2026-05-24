@@ -713,14 +713,14 @@ sudo tail -100 /mnt/data/config/media-app-update/logs/media-app-update.log
 
 ### OS / パッケージ更新バッチの設計
 
-OS と apt / snap パッケージの更新は `media-os-update.sh` が担当します。日次メンテナンスの最後に実行し、`apt-get update`、`apt-get -y full-upgrade`、`apt-get -y autoremove`、`snap refresh` を実行します。
+OS と apt / snap パッケージの更新は `media-os-update.sh` が担当します。日次メンテナンスの最後に実行し、`apt-get update`、`apt-get -y full-upgrade`、`snap refresh` を実行します。
 
 対象:
 
 | 種別 | 処理 | 備考 |
 | --- | --- | --- |
 | Ubuntu / apt | `apt-get update && apt-get -y full-upgrade` | Ubuntu 標準、Docker、Tailscale など apt repository 由来の更新を含む |
-| apt cleanup | `apt-get -y autoremove` | 古い kernel などの不要依存を削除 |
+| apt cleanup | `apt-get -y autoremove` | 既定では無効。必要な場合だけ `RUN_APT_AUTOREMOVE=true` で有効化 |
 | snap | `snap refresh` | snap パッケージを更新。`snap` がない場合は警告のみ |
 | reboot | `/var/run/reboot-required` を確認 | 必要なら日次処理完了後に自動再起動を予約 |
 
@@ -778,6 +778,7 @@ sync:
 - verified videos: `123`
 - deleted videos: `123`
 - skipped videos: `0`
+- dry-run: `false`
 - no-delete: `false`
 
 backup:
@@ -793,7 +794,7 @@ os updates:
 - apt upgraded count: `2`
 - snap refreshed: `none`
 - snap refreshed count: `0`
-- autoremove: `succeeded`
+- autoremove: `disabled`
 - reboot required: `no`
 - reboot required by: `none`
 

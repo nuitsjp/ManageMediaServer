@@ -213,15 +213,18 @@ run_media_app_update() {
 
 run_rclone_sync() {
     [[ "$RUN_RCLONE_SYNC" == "true" ]] || return 0
-    if [[ "$CHECK_ONLY" == "true" || "$DRY_RUN" == "true" ]]; then
-        RCLONE_SYNC_STATUS="skipped_dry_run"
-        log "dry-run/check-only mode; skipping rclone media sync"
+    if [[ "$CHECK_ONLY" == "true" ]]; then
+        RCLONE_SYNC_STATUS="skipped_check_only"
+        log "check-only mode; skipping rclone media sync"
         return 0
     fi
 
     CURRENT_STEP="rclone media sync"
     local summary="${SUMMARY_DIR}/rclone-media-sync.env"
     local args=()
+    if [[ "$DRY_RUN" == "true" ]]; then
+        args+=(--dry-run)
+    fi
     if [[ "$RCLONE_SYNC_NO_DELETE" == "true" ]]; then
         args+=(--no-delete)
     fi
@@ -319,6 +322,7 @@ build_notification_body() {
         printf -- '- verified videos: `%s`\n' "$(summary_value RCLONE_VERIFIED_COUNT 0)"
         printf -- '- deleted videos: `%s`\n' "$(summary_value RCLONE_DELETED_COUNT 0)"
         printf -- '- skipped videos: `%s`\n' "$(summary_value RCLONE_SKIPPED_VIDEO_COUNT 0)"
+        printf -- '- dry-run: `%s`\n' "$(summary_value RCLONE_DRY_RUN "$DRY_RUN")"
         printf -- '- no-delete: `%s`\n' "$(summary_value RCLONE_NO_DELETE "$RCLONE_SYNC_NO_DELETE")"
 
         printf '\nbackup:\n'

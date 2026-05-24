@@ -47,18 +47,24 @@ DRY_RUN_LOG=""
 NOTIFICATION_ENV_LOADED=false
 SUPPRESS_DISCORD="${SUPPRESS_DISCORD:-false}"
 SUMMARY_FILE="${SUMMARY_FILE:-}"
+DRY_RUN=false
 
 usage() {
     cat <<'USAGE'
-Usage: rclone-media-sync.sh [--no-delete]
+Usage: rclone-media-sync.sh [--dry-run] [--no-delete]
 
 Options:
+  --dry-run    Run copy and delete checks without writing files or deleting remote files.
   --no-delete  Copy images/videos and backup local files, but skip dry-run and remote deletion.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
         --no-delete)
             NO_DELETE=true
             shift
@@ -134,6 +140,7 @@ notify_discord() {
         --arg verified "$VERIFIED_COUNT" \
         --arg deleted "$DELETED_COUNT" \
         --arg skipped "$SKIPPED_VIDEO_COUNT" \
+        --arg dry_run "$DRY_RUN" \
         --arg no_delete "$NO_DELETE" \
         --arg log_file "$LOG_FILE" \
         '{content: ("**rclone media sync " + $status + "**\n"
@@ -146,6 +153,7 @@ notify_discord() {
             + "verified videos: `" + $verified + "`\n"
             + "deleted videos: `" + $deleted + "`\n"
             + "skipped videos: `" + $skipped + "`\n"
+            + "dry-run: `" + $dry_run + "`\n"
             + "no-delete: `" + $no_delete + "`\n"
             + "log: `" + $log_file + "`")}')
 
@@ -168,6 +176,7 @@ write_summary() {
         printf 'RCLONE_VERIFIED_COUNT=%q\n' "$VERIFIED_COUNT"
         printf 'RCLONE_DELETED_COUNT=%q\n' "$DELETED_COUNT"
         printf 'RCLONE_SKIPPED_VIDEO_COUNT=%q\n' "$SKIPPED_VIDEO_COUNT"
+        printf 'RCLONE_DRY_RUN=%q\n' "$DRY_RUN"
         printf 'RCLONE_NO_DELETE=%q\n' "$NO_DELETE"
         printf 'RCLONE_LOG_FILE=%q\n' "$LOG_FILE"
         printf 'RCLONE_VERIFIED_FILE=%q\n' "$VERIFIED_FILE"
@@ -231,9 +240,17 @@ run_rclone_copy() {
     mapfile -d '' -t common < <(rclone_common_args)
 
     log "${label} copy 開始: ${src} -> ${dst}"
-    rclone copy "$src" "$dst" \
-        "${common[@]}" \
+    local args=(
+        copy
+        "$src"
+        "$dst"
+        "${common[@]}"
         --filter-from "$filter_file"
+    )
+    if [[ "$DRY_RUN" == "true" ]]; then
+        args+=(--dry-run)
+    fi
+    rclone "${args[@]}"
     rm -f "$filter_file"
     log "${label} copy 完了"
 }
@@ -381,6 +398,12 @@ delete_verified_videos() {
         "${common[@]}" | tee "$DRY_RUN_LOG"
     log "クラウド動画削除 dry-run 完了: $DRY_RUN_LOG"
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "dry-run 指定のため実削除をスキップします"
+        DELETED_COUNT=0
+        return 0
+    fi
+
     CURRENT_STEP="delete remote videos"
     log "クラウド動画削除開始: $VERIFIED_FILE"
     rclone delete "$REMOTE_SOURCE" \
@@ -396,6 +419,7 @@ main() {
     log "LOCAL_DIR=${LOCAL_DIR}"
     log "BACKUP_DIR=${BACKUP_DIR}"
     log "BACKUP_ROOT=${BACKUP_ROOT}"
+    log "DRY_RUN=${DRY_RUN}"
     log "NO_DELETE=${NO_DELETE}"
 
     assert_prerequisites
