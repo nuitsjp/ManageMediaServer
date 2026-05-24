@@ -37,10 +37,9 @@ type = dropbox
 # token = {"access_token":"","token_type":"bearer","refresh_token":"","expiry":""}
 
 # 設定手順:
-# 1. このファイルを適切な場所にコピー
-#    開発環境: $DATA_ROOT/config/rclone/rclone.conf
-#    本番環境: $DATA_ROOT/config/rclone/rclone.conf
-# 
+# 1. このファイルを実設定の配置先へコピー
+#    /mnt/data/config/rclone/rclone.conf
+#
 # 2. rclone config コマンドで対話的に設定
 #    rclone config
 #
@@ -48,5 +47,5 @@ type = dropbox
 #
 # 注意:
 # - このファイルには機密情報を含めないでください
-# - 実際の認証情報は環境変数または実際の設定ファイルで管理
-# - バージョン管理には含めないでください (.gitignore で除外)
+# - 実際の認証情報は /mnt/data/config/rclone/rclone.conf で管理
+# - repo 内に実設定の rclone.conf を置かないでください

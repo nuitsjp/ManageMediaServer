@@ -157,6 +157,19 @@ Funnel はインターネット公開用なので、通常運用では使いま�
 
 rclone はクラウドストレージの内容を Immich 外部ライブラリへ取り込みます。同期方針と削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) を参照します。
 
+`rclone.conf` は認証情報を含むため Git 管理しません。リポジトリでは `config/rclone/rclone.conf.example` だけを管理し、実設定は `/mnt/data/config/rclone/rclone.conf` に配置します。
+
+初期セットアップ:
+
+```bash
+sudo install -m 0700 -d /mnt/data/config/rclone
+sudo install -m 0600 config/rclone/rclone.conf.example /mnt/data/config/rclone/rclone.conf
+sudo rclone config --config /mnt/data/config/rclone/rclone.conf
+test -f /mnt/data/config/rclone/rclone.conf
+```
+
+repo 内の `config/rclone/rclone.conf` は使いません。作成してしまった場合は、必要な内容を `/mnt/data/config/rclone/rclone.conf` へ移してから削除します。
+
 ```bash
 systemctl status rclone-media-sync.timer --no-pager
 systemctl status rclone-media-sync.service --no-pager
@@ -428,7 +441,6 @@ config/
 - `docker/*/.env`
 - `config/env/notification.env`
 - `config/env/media-app-update.env`
-- `config/rclone/rclone.conf`
 - `/mnt/data/config/rclone/rclone.conf`
 - ログ
 - 実データ
@@ -497,6 +509,7 @@ OnCalendar=*-*-* 08:00:00 Asia/Tokyo
 ```bash
 test -x /home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh
 test -f /home/mediaserver/ManageMediaServer/config/rclone/media-sync-excludes.txt
+test -f /mnt/data/config/rclone/rclone.conf
 ```
 
 systemd unit/timer を配置します。
