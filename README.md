@@ -122,6 +122,7 @@ systemctl status tailscaled --no-pager
 ```text
 Tailscale IP: 100.69.11.74
 Node name: home-ubuntu
+MagicDNS name: home-ubuntu.tail1bf795.ts.net
 tailscaled.service: enabled / active
 ```
 
@@ -136,22 +137,43 @@ sudo tailscale up
 
 HTTPS が必要な場合は Tailscale Serve を使い、Tailscale ネットワーク内だけで HTTPS 化できます。標準アクセスは raw port ですが、Serve を使う場合は既存設定を確認してから設定します。
 
+この構成では、証明書は Tailscale の MagicDNS と HTTPS Certificates に任せます。Immich/Jellyfin コンテナには証明書を配置せず、HTTPS 終端は `tailscaled` が担当します。Tailscale 管理画面で MagicDNS と HTTPS Certificates が有効であることが前提です。
+
 ```bash
 tailscale serve status
 tailscale funnel status
 sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
 tailscale serve status
+tailscale funnel status
 ```
 
 この場合のアクセス例:
 
 ```text
-Immich:  https://<MagicDNS name>
-Jellyfin: https://<MagicDNS name>:8443
+Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
 ```
 
-Funnel はインターネット公開用なので、通常運用では使いません。
+Funnel はインターネット公開用なので、通常運用では使いません。`tailscale funnel status` に同じ endpoint が表示されても、`(tailnet only)` と表示されている場合は Funnel によるインターネット公開ではありません。
+
+HTTPS endpoint の確認:
+
+```bash
+curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net/
+curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net:8443/
+```
+
+Immich は `/` に対して `404` を返す場合がありますが、HTTPS で応答が返っていれば Tailscale Serve から Immich への到達確認として扱えます。Jellyfin は `302` で `/web/` へリダイレクトします。
+
+停止・ロールバック:
+
+```bash
+sudo tailscale serve --https=443 off
+sudo tailscale serve --https=8443 off
+tailscale serve status
+tailscale funnel status
+```
 
 ### rclone 同期
 
@@ -487,8 +509,15 @@ ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/j
 - Tailscale の WireGuard ベース暗号化を前提にする
 - 家族共有が必要になった場合は Tailscale のユーザー・デバイス管理で許可する
 - HTTPS が必要な場合は Tailscale Serve を使う
+- Tailscale Serve の証明書は MagicDNS と HTTPS Certificates に任せ、Immich/Jellyfin 側では管理しない
 
 通常のアクセスは、家庭内では LAN IP、家庭外では `100.x.x.x:2283` / `100.x.x.x:8096` または MagicDNS 名を使います。
+HTTPS を使う場合は、Tailscale 接続中の端末から以下へアクセスします。
+
+```text
+Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
+```
 
 ### rclone の同期設計は docs に分ける
 
@@ -732,6 +761,37 @@ DB_DATABASE_NAME=immich
 - firewall: 家庭内 LAN と `tailscale0` からのみ `8096/tcp` を許可。Docker published port は `DOCKER-USER` でも制限
 - `8920/tcp`: 標準構成では使わない
 - `1900/udp`: DLNA を使う場合だけ家庭内 LAN から許可
+
+### Tailscale Serve
+
+HTTPS が必要な場合は、Tailscale Serve で `home-ubuntu.tail1bf795.ts.net` に HTTPS endpoint を作ります。`443/tcp` は Immich、`8443/tcp` は Jellyfin へ転送します。
+
+```bash
+tailscale serve status
+tailscale funnel status
+sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
+tailscale serve status
+tailscale funnel status
+```
+
+`tailscale funnel status` に endpoint が表示されても、`(tailnet only)` であれば Funnel による公開ではありません。
+
+期待する URL:
+
+```text
+Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
+```
+
+停止する場合:
+
+```bash
+sudo tailscale serve --https=443 off
+sudo tailscale serve --https=8443 off
+tailscale serve status
+tailscale funnel status
+```
 
 ## 同期・バックアップ設計
 
