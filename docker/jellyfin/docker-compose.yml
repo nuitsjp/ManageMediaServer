@@ -14,8 +14,6 @@ services:
       - /etc/localtime:/etc/localtime:ro
     ports:
       - "8096:8096"
-      - "8920:8920"  # HTTPS
-      - "1900:1900/udp"  # DLNA
     networks:
       - jellyfin-network
     # 権限問題のデバッグ用

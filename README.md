@@ -21,10 +21,10 @@
 
 | サービス | URL / 役割 | 用途 |
 | --- | --- | --- |
-| Immich | `http://localhost:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
-| Jellyfin | `http://localhost:8096` | 長尺動画・ミュージックビデオの視聴 |
+| Immich | `http://<LAN IP>:2283` / `http://<Tailscale IP>:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
+| Jellyfin | `http://<LAN IP>:8096` / `http://<Tailscale IP>:8096` | 長尺動画・ミュージックビデオの視聴 |
 | rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
-| Tailscale | `100.x.x.x` または MagicDNS 名 | ポート開放なしの外部アクセス |
+| Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
 ## 日常的な利用方法
@@ -34,7 +34,7 @@
 Immich は写真・短尺動画の管理に使います。
 
 ```bash
-curl -I --max-time 5 http://localhost:2283
+curl -I --max-time 5 http://127.0.0.1:2283
 sudo systemctl status immich --no-pager
 journalctl -u immich -n 100 --no-pager
 ```
@@ -58,7 +58,7 @@ ${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro
 Jellyfin は長尺動画・ミュージックビデオの視聴に使います。
 
 ```bash
-curl -I --max-time 5 http://localhost:8096
+curl -I --max-time 5 http://127.0.0.1:8096
 sudo systemctl status jellyfin --no-pager
 journalctl -u jellyfin -n 100 --no-pager
 ```
@@ -71,15 +71,20 @@ Jellyfin のデータ配置:
 - その他ライブラリ候補: `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
 - Compose: `/home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml`
 
-### Tailscale 経由の外部アクセス
+### アクセス範囲
 
-外出先からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
+家庭内 LAN は内部ネットワークとして扱い、家庭内の端末からはサーバーの LAN IP へ直接アクセスします。家庭外からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
 
-Tailscale 接続中の端末から以下でアクセスします。
+利用者向けの標準アクセス先:
 
 ```text
-Immich:  http://100.69.11.74:2283
-Jellyfin: http://100.69.11.74:8096
+家庭内 LAN:
+  Immich:  http://<LAN IP>:2283
+  Jellyfin: http://<LAN IP>:8096
+
+家庭外 + Tailscale 接続中:
+  Immich:  http://100.69.11.74:2283
+  Jellyfin: http://100.69.11.74:8096
 ```
 
 確認コマンド:
@@ -108,11 +113,13 @@ sudo tailscale up
 
 インストール後、Tailscale 管理画面でこの Ubuntu サーバーが tailnet に参加していることを確認します。
 
-Tailscale Serve を使う場合は、Tailscale ネットワーク内だけで HTTPS 化できます。例:
+HTTPS が必要な場合は Tailscale Serve を使い、Tailscale ネットワーク内だけで HTTPS 化できます。標準アクセスは raw port ですが、Serve を使う場合は既存設定を確認してから設定します。
 
 ```bash
-sudo tailscale serve --bg --https=443 http://localhost:2283
-sudo tailscale serve --bg --https=8443 http://localhost:8096
+tailscale serve status
+tailscale funnel status
+sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
 tailscale serve status
 ```
 
@@ -123,7 +130,7 @@ Immich:  https://<MagicDNS name>
 Jellyfin: https://<MagicDNS name>:8443
 ```
 
-Serve 設定を変更する場合は、既存設定を確認してから上書きします。
+Funnel はインターネット公開用なので、通常運用では使いません。
 
 ### rclone 同期
 
@@ -211,6 +218,7 @@ du -sh /mnt/data/* /mnt/backup/* 2>/dev/null
 tailscale status
 tailscale ip -4
 tailscale serve status
+tailscale funnel status
 systemctl status tailscaled --no-pager
 ```
 
@@ -220,12 +228,53 @@ Tailscale に未ログインの場合:
 sudo tailscale up
 ```
 
-ファイアウォールを調整する場合は、Tailscale のアドレス範囲から Immich/Jellyfin へのアクセスを許可します。
+ファイアウォールは、家庭内 LAN と Tailscale からの Immich/Jellyfin だけを許可します。`LAN_CIDR` は家庭内 LAN の実際の CIDR に置き換えます。UFW を有効化する前に SSH の許可状態を確認します。
+
+Docker の published port は Docker が iptables ルールを追加するため、UFW だけでは制限できない場合があります。UFW はホスト側サービスの基本方針として使い、Docker published port の制限は `media-firewall.service` で `DOCKER-USER` chain に明示します。
 
 ```bash
+LAN_CIDR=192.168.0.0/24
+
+sudo ufw status verbose
+sudo ufw allow OpenSSH
+sudo ufw allow from "$LAN_CIDR" to any port 2283 proto tcp
+sudo ufw allow from "$LAN_CIDR" to any port 8096 proto tcp
 sudo ufw allow in on tailscale0 to any port 2283 proto tcp
 sudo ufw allow in on tailscale0 to any port 8096 proto tcp
+sudo ufw status numbered
+
+sudo install -m 0644 -D docker/jellyfin/docker-compose.yml /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml
+sudo install -m 0755 -D scripts/ops/apply-media-firewall.sh /home/mediaserver/ManageMediaServer/scripts/ops/apply-media-firewall.sh
+sudo test -f /home/mediaserver/ManageMediaServer/config/env/media-firewall.env || sudo install -m 0644 -D config/env/media-firewall.env.example /home/mediaserver/ManageMediaServer/config/env/media-firewall.env
+sudoedit /home/mediaserver/ManageMediaServer/config/env/media-firewall.env
+sudo cp systemd/media-firewall.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now media-firewall.service
+sudo systemctl restart jellyfin
+sudo systemctl status media-firewall.service --no-pager
+sudo iptables -S DOCKER-USER
 ```
+
+Jellyfin DLNA を使う場合だけ、家庭内 LAN から `1900/udp` を許可します。DLNA を使わない場合は、Jellyfin 管理画面でも無効化します。`DOCKER-USER` の制限は `media-firewall.service` で再起動後も再適用します。
+
+反映後は、サーバー上と別端末から到達性を確認します。
+
+```bash
+ss -ltnup | grep -E ':(2283|8096|8920)\b' || true
+ss -lunp | grep ':1900\b' || true
+sudo ufw status numbered
+sudo iptables -S DOCKER-USER
+
+# 家庭内 LAN の端末から
+curl -I --max-time 5 http://<LAN IP>:2283
+curl -I --max-time 5 http://<LAN IP>:8096
+
+# Tailscale 接続中の端末から
+curl -I --max-time 5 http://<Tailscale IP>:2283
+curl -I --max-time 5 http://<Tailscale IP>:8096
+```
+
+家庭内 LAN でも Tailscale でもない到達元からは、Immich/Jellyfin に接続できないことを確認します。
 
 ## 環境概要
 
@@ -239,6 +288,7 @@ sudo ufw allow in on tailscale0 to any port 8096 proto tcp
 | 本番配置コピー | `/home/mediaserver/ManageMediaServer` |
 | データ領域 | `/mnt/data` |
 | バックアップ領域 | `/mnt/backup` |
+| 家庭内 LAN CIDR | `192.168.0.0/24` |
 | Tailscale IP | `100.69.11.74` |
 | Tailscale node | `home-ubuntu` |
 | システムタイムゾーン | `Etc/UTC` |
@@ -248,10 +298,10 @@ sudo ufw allow in on tailscale0 to any port 8096 proto tcp
 
 | ポート | サービス |
 | --- | --- |
-| `2283/tcp` | Immich |
-| `8096/tcp` | Jellyfin |
-| `8920/tcp` | Jellyfin HTTPS |
-| `1900/udp` | Jellyfin DLNA |
+| `2283/tcp` | Immich。家庭内 LAN と Tailscale からのみ許可。Docker published port は `DOCKER-USER` でも制限 |
+| `8096/tcp` | Jellyfin。家庭内 LAN と Tailscale からのみ許可。Docker published port は `DOCKER-USER` でも制限 |
+| `8920/tcp` | Jellyfin HTTPS。標準構成では使わない |
+| `1900/udp` | Jellyfin DLNA。使う場合だけ家庭内 LAN から許可 |
 | `22/tcp` | SSH |
 
 ## リポジトリ構成
@@ -262,6 +312,7 @@ LICENSE
 docs/
   同期設計.md
 systemd/
+  media-firewall.service
   rclone-media-sync.service
   rclone-media-sync.timer
 docker/
@@ -272,11 +323,13 @@ docker/
     docker-compose.yml
 scripts/
   ops/
+    apply-media-firewall.sh
     rclone-media-sync.sh
     start-services.sh
     stop-services.sh
 config/
   env/
+    media-firewall.env.example
     notification.env.example
   rclone/
     rclone.conf.example
@@ -327,15 +380,16 @@ ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/j
 
 ### 外部アクセスは Tailscale に統一する
 
-外部アクセスは Tailscale のプライベートネットワークを使います。
+家庭内 LAN は内部ネットワークとして扱い、家庭外からのアクセスは Tailscale のプライベートネットワークを使います。
 
 - ルーターのポート開放は行わない
 - Immich/Jellyfin をインターネットへ直接公開しない
+- UFW と Docker の `DOCKER-USER` chain で家庭内 LAN と Tailscale 以外からの Immich/Jellyfin への到達を許可しない
 - Tailscale の WireGuard ベース暗号化を前提にする
 - 家族共有が必要になった場合は Tailscale のユーザー・デバイス管理で許可する
 - HTTPS が必要な場合は Tailscale Serve を使う
 
-通常のアクセスは `100.x.x.x:2283` / `100.x.x.x:8096` または MagicDNS 名を使います。
+通常のアクセスは、家庭内では LAN IP、家庭外では `100.x.x.x:2283` / `100.x.x.x:8096` または MagicDNS 名を使います。
 
 ### rclone の同期設計は docs に分ける
 
@@ -458,6 +512,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 - Redis: `docker.io/valkey/valkey:8-bookworm`
 - PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0`
 - port: `2283:2283`
+- firewall: 家庭内 LAN と `tailscale0` からのみ `2283/tcp` を許可。Docker published port は `DOCKER-USER` でも制限
 - upload mount: `${UPLOAD_LOCATION}:/usr/src/app/upload`
 - external mount: `${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro`
 - db mount: `${DB_DATA_LOCATION}:/var/lib/postgresql/data`
@@ -484,7 +539,10 @@ DB_DATABASE_NAME=immich
 - config: `${DATA_ROOT:-/mnt/data}/jellyfin/config:/config`
 - cache: `${DATA_ROOT:-/mnt/data}/jellyfin/cache:/cache`
 - media: `${DATA_ROOT:-/mnt/data}/jellyfin/music-videos:/media/music-videos:ro`
-- ports: `8096`, `8920`, `1900/udp`
+- ports: `8096`
+- firewall: 家庭内 LAN と `tailscale0` からのみ `8096/tcp` を許可。Docker published port は `DOCKER-USER` でも制限
+- `8920/tcp`: 標準構成では使わない
+- `1900/udp`: DLNA を使う場合だけ家庭内 LAN から許可
 
 ## 同期・バックアップ設計
 
@@ -495,21 +553,23 @@ DB_DATABASE_NAME=immich
 ### Immich が見えない
 
 ```bash
-curl -I --max-time 5 http://localhost:2283
+curl -I --max-time 5 http://127.0.0.1:2283
 sudo systemctl status immich --no-pager
 journalctl -u immich -n 100 --no-pager
 docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml ps
 docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml logs -n 100
+sudo ufw status numbered
 ```
 
 ### Jellyfin が見えない
 
 ```bash
-curl -I --max-time 5 http://localhost:8096
+curl -I --max-time 5 http://127.0.0.1:8096
 sudo systemctl status jellyfin --no-pager
 journalctl -u jellyfin -n 100 --no-pager
 docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml ps
 docker compose -f /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml logs -n 100
+sudo ufw status numbered
 ```
 
 ### rclone が失敗する
@@ -568,7 +628,10 @@ sudo mount /mnt/backup
 - `docker/immich/docker-compose.yml`
 - `docker/immich/.env.example`
 - `docker/jellyfin/docker-compose.yml`
+- `config/env/*.env.example`
 - `scripts/ops/*.sh`
+- `systemd/*.service`
+- `systemd/*.timer`
 - 設定テンプレート
 
 管理しないもの:
@@ -579,6 +642,7 @@ sudo mount /mnt/backup
 - `.env`
 - `rclone.conf`
 - `notification.env`
+- `media-firewall.env`
 - 認証情報
 
 ## ライセンス
