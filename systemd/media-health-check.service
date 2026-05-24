@@ -1,0 +1,16 @@
+[Unit]
+Description=Check Immich, Jellyfin, rclone timer, and media disk health
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=mediaserver
+Group=mediaserver
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/media-health-check.env
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/notification.env
+ExecStart=/usr/bin/bash /home/mediaserver/ManageMediaServer/scripts/ops/media-health-check.sh
+StandardOutput=journal
+StandardError=journal

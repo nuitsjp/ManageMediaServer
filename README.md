@@ -26,6 +26,7 @@
 | rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
 | メディアバックアップ | `media-backup.timer` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
 | アプリ更新 | `media-app-update.timer` | Immich/Jellyfin を同一 major 内で日次更新し、major 更新は通知だけ行う |
+| ヘルス監視 | `media-health-check.timer` | Immich/Jellyfin、rclone timer、ディスク空き容量を定期確認 |
 | Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
@@ -211,6 +212,7 @@ sudo systemctl restart immich
 sudo systemctl restart jellyfin
 sudo systemctl restart rclone-media-sync.service
 sudo systemctl restart media-backup.service
+sudo systemctl restart media-health-check.service
 sudo systemctl stop immich jellyfin
 sudo systemctl start immich jellyfin
 ```
@@ -222,6 +224,7 @@ sudo systemctl start immich jellyfin
 ./scripts/ops/stop-services.sh
 ./scripts/ops/rclone-media-sync.sh
 ./scripts/ops/media-backup.sh
+./scripts/ops/media-health-check.sh
 ```
 
 ### Docker Compose
@@ -392,6 +395,8 @@ systemd/
   media-backup.timer
   media-app-update.service
   media-app-update.timer
+  media-health-check.service
+  media-health-check.timer
   rclone-media-sync.service
   rclone-media-sync.timer
 docker/
@@ -406,8 +411,10 @@ scripts/
     deploy-managed-files.sh
     install-media-app-update-systemd.sh
     install-media-backup-systemd.sh
+    install-media-health-check-systemd.sh
     media-app-update.sh
     media-backup.sh
+    media-health-check.sh
     rclone-media-sync.sh
     start-services.sh
     stop-services.sh
@@ -416,6 +423,7 @@ config/
     media-firewall.env.example
     media-backup.env.example
     media-app-update.env.example
+    media-health-check.env.example
     notification.env.example
   rclone/
     rclone.conf.example
@@ -428,6 +436,7 @@ config/
 - `docker/*/.env`
 - `config/env/notification.env`
 - `config/env/media-app-update.env`
+- `config/env/media-health-check.env`
 - `config/rclone/rclone.conf`
 - `/mnt/data/config/rclone/rclone.conf`
 - ログ
@@ -578,6 +587,7 @@ systemd unit:
 | --- | --- | --- |
 | `media-backup.timer` | daily AM 4:00 JST | メディアファイルを `/mnt/backup` へ追加コピー |
 | `media-app-update.timer` | daily AM 5:00 JST | バックアップ後に Immich/Jellyfin を同一 major 内で更新 |
+| `media-health-check.timer` | every 10 minutes | Immich/Jellyfin、rclone timer、ディスク空き容量を監視 |
 | `rclone-media-sync.timer` | daily AM 8:00 JST | クラウドストレージから新規メディアを取り込み |
 
 `media-app-update.service` は `/home/mediaserver/ManageMediaServer/scripts/ops/media-app-update.sh` を呼びます。処理順序は以下です。
@@ -627,6 +637,41 @@ sudo tail -100 /mnt/data/config/media-app-update/logs/media-app-update.log
 
 ```bash
 sudo systemctl disable --now media-app-update.timer
+```
+
+### ヘルス監視
+
+`media-health-check.timer` は 10 分ごとに以下を確認します。
+
+- Immich/Jellyfin の HTTP 応答
+- Immich/Jellyfin の Docker Compose サービスが running であること
+- `rclone-media-sync.timer` が active/enabled であること
+- `/`, `/mnt/data`, `/mnt/backup` の空き容量
+- `/mnt/backup` が mountpoint であること
+
+閾値や URL は `/home/mediaserver/ManageMediaServer/config/env/media-health-check.env` で変更できます。既定の空き容量閾値は各 1 GiB です。失敗時は `notification.env` の Discord 設定を使って通知します。通常時の成功通知は `NOTIFY_ON_SUCCESS=false` で抑制します。
+
+systemd timer の導入:
+
+```bash
+./scripts/ops/deploy-managed-files.sh
+./scripts/ops/install-media-health-check-systemd.sh
+```
+
+手動確認:
+
+```bash
+./scripts/ops/media-health-check.sh --no-notify
+systemctl status media-health-check.timer --no-pager
+systemctl list-timers media-health-check.timer --no-pager
+journalctl -u media-health-check.service -n 100 --no-pager
+sudo tail -100 /mnt/data/config/media-health-check/logs/media-health-check.log
+```
+
+停止する場合:
+
+```bash
+sudo systemctl disable --now media-health-check.timer
 ```
 
 ### Discord 通知
