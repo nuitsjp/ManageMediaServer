@@ -1,0 +1,17 @@
+[Unit]
+Description=Update Immich and Jellyfin within the configured major versions
+Wants=network-online.target docker.service media-backup.service
+After=network-online.target docker.service media-backup.service
+RequiresMountsFor=/mnt/backup
+
+[Service]
+Type=oneshot
+User=mediaserver
+Group=mediaserver
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/media-app-update.env
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/notification.env
+ExecStart=/usr/bin/bash /home/mediaserver/ManageMediaServer/scripts/ops/media-app-update.sh
+StandardOutput=journal
+StandardError=journal

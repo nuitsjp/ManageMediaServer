@@ -25,6 +25,7 @@
 | Jellyfin | `http://<LAN IP>:8096` / `http://<Tailscale IP>:8096` | 長尺動画・ミュージックビデオの視聴 |
 | rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
 | メディアバックアップ | `media-backup.timer` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
+| アプリ更新 | `media-app-update.timer` | Immich/Jellyfin を同一 major 内で日次更新し、major 更新は通知だけ行う |
 | Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
@@ -240,6 +241,15 @@ docker compose -f docker/jellyfin/docker-compose.yml pull
 
 `ubuntu` ユーザーが Docker ソケットへアクセスできない場合は、`mediaserver` ユーザーまたは `sudo` で確認します。
 
+Immich/Jellyfin は個人運用で手動のリリース監視を続けるのが難しいため、完全固定ではなく major 範囲を固定して日次更新する設計にします。
+
+- Immich: `IMMICH_VERSION=v2`
+- Jellyfin: `jellyfin/jellyfin:10`
+
+`release` や `latest` は major をまたいだ意図しない更新を招くため使いません。major 更新が公開された場合は自動適用せず、Discord へ通知して手動判断します。
+
+実運用の `docker/immich/.env` に `IMMICH_VERSION=release` が残っている場合、Compose の既定値より `.env` が優先されます。本番反映時は `IMMICH_VERSION=v2` へ変更します。
+
 ### ディスク確認
 
 ```bash
@@ -362,6 +372,8 @@ systemd/
   media-firewall.service
   media-backup.service
   media-backup.timer
+  media-app-update.service
+  media-app-update.timer
   rclone-media-sync.service
   rclone-media-sync.timer
 docker/
@@ -373,7 +385,9 @@ docker/
 scripts/
   ops/
     apply-media-firewall.sh
+    install-media-app-update-systemd.sh
     install-media-backup-systemd.sh
+    media-app-update.sh
     media-backup.sh
     rclone-media-sync.sh
     start-services.sh
@@ -382,6 +396,7 @@ config/
   env/
     media-firewall.env.example
     media-backup.env.example
+    media-app-update.env.example
     notification.env.example
   rclone/
     rclone.conf.example
@@ -393,6 +408,7 @@ config/
 - `docker/immich/.env`
 - `docker/*/.env`
 - `config/env/notification.env`
+- `config/env/media-app-update.env`
 - `config/rclone/rclone.conf`
 - `/mnt/data/config/rclone/rclone.conf`
 - ログ
@@ -525,6 +541,66 @@ OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 
 このバックアップはメディアファイルの退避専用です。Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュ、ユーザー操作履歴の完全復元は対象外です。アプリケーション移行時は、バックアップ先のメディアファイルを新しいアプリケーションへ再取り込みします。
 
+### アプリ更新バッチの設計
+
+Immich/Jellyfin のセキュリティアップデートを人手で追い続ける運用は現実的ではないため、アプリ更新は日次バッチで処理します。ただし major 更新は破壊的変更を含む可能性があるため、自動適用せず通知だけ行います。
+
+systemd unit:
+
+| unit | 時刻 | 役割 |
+| --- | --- | --- |
+| `media-backup.timer` | daily AM 4:00 JST | メディアファイルを `/mnt/backup` へ追加コピー |
+| `media-app-update.timer` | daily AM 5:00 JST | バックアップ後に Immich/Jellyfin を同一 major 内で更新 |
+| `rclone-media-sync.timer` | daily AM 8:00 JST | クラウドストレージから新規メディアを取り込み |
+
+`media-app-update.service` は `/home/mediaserver/ManageMediaServer/scripts/ops/media-app-update.sh` を呼びます。処理順序は以下です。
+
+1. `/mnt/backup` が mountpoint であることを確認する
+2. `media-backup.service` の直近実行が成功していることを確認する
+3. `/`, `/mnt/data`, `/mnt/backup` の空き容量を確認する
+4. GitHub Releases から Immich/Jellyfin の最新 major を確認する
+5. 現在の固定 major より新しい major があれば、更新せず Discord へ通知する
+6. major が同じ範囲の更新だけ `docker compose pull && docker compose up -d` で適用する
+7. `docker compose ps` と HTTP 疎通で Immich/Jellyfin の起動状態を確認する
+8. 成功、更新なし、失敗、major 更新検知を Discord へ通知する
+
+自動更新対象:
+
+| サービス | 自動更新タグ | 自動適用範囲 | major 更新時 |
+| --- | --- | --- | --- |
+| Immich | `IMMICH_VERSION=v2` | `v2.x.x` | 通知のみ |
+| Jellyfin | `jellyfin/jellyfin:10` | `10.x.x` | 通知のみ |
+
+現行の `media-backup.timer` は写真・動画ファイルの保全が目的であり、Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュの完全復元は保証しません。そのため、日次自動更新は「メディアファイルを失わないこと」を最優先にし、アプリの完全ロールバックは前提にしません。Immich は downgrade が安全とは限らないため、更新失敗時は旧タグへ戻すよりも、ログ確認、必要に応じた公式手順での forward fix、最終的にはメディア再取り込みを復旧方針とします。
+
+手動確認:
+
+```bash
+./scripts/ops/media-app-update.sh --check-only
+./scripts/ops/media-app-update.sh --dry-run
+```
+
+systemd timer の導入:
+
+```bash
+./scripts/ops/install-media-app-update-systemd.sh
+```
+
+systemd timer の確認:
+
+```bash
+systemctl status media-app-update.timer --no-pager
+systemctl list-timers media-app-update.timer --no-pager
+journalctl -u media-app-update.service -n 100 --no-pager
+sudo tail -100 /mnt/data/config/media-app-update/logs/media-app-update.log
+```
+
+停止する場合:
+
+```bash
+sudo systemctl disable --now media-app-update.timer
+```
+
 ### Discord 通知
 
 通知設定はテンプレートから作成します。
@@ -588,8 +664,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 主要設定:
 
-- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}`
-- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}`
+- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v2}`
+- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v2}`
 - Redis: `docker.io/valkey/valkey:8-bookworm`
 - PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0`
 - port: `2283:2283`
@@ -604,7 +680,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 UPLOAD_LOCATION=/mnt/data/immich/upload
 DB_DATA_LOCATION=/mnt/data/immich/postgres
 EXTERNAL_PATH=/mnt/data/immich/external
-IMMICH_VERSION=release
+IMMICH_VERSION=v2
 DB_PASSWORD=change-me
 DB_USERNAME=postgres
 DB_DATABASE_NAME=immich
@@ -614,7 +690,7 @@ DB_DATABASE_NAME=immich
 
 主要設定:
 
-- image: `jellyfin/jellyfin:latest`
+- image: `jellyfin/jellyfin:10`
 - user: `1001:1001`
 - timezone: `Asia/Tokyo`
 - config: `${DATA_ROOT:-/mnt/data}/jellyfin/config:/config`
@@ -742,6 +818,7 @@ sudo mount /mnt/backup
 - `notification.env`
 - `media-firewall.env`
 - `media-backup.env`
+- `media-app-update.env`
 - 認証情報
 
 ## ライセンス
