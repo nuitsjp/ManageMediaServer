@@ -1,0 +1,17 @@
+[Unit]
+Description=Copy media files to the backup drive
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/mnt/backup
+
+[Service]
+Type=oneshot
+User=mediaserver
+Group=mediaserver
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/media-backup.env
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/notification.env
+ExecStart=/usr/bin/bash /home/mediaserver/ManageMediaServer/scripts/ops/media-backup.sh
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,9 @@
+[Unit]
+Description=Copy media files to the backup drive daily
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Tokyo
+Persistent=true
+
+[Install]
+WantedBy=timers.target

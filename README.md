@@ -24,6 +24,7 @@
 | Immich | `http://<LAN IP>:2283` / `http://<Tailscale IP>:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
 | Jellyfin | `http://<LAN IP>:8096` / `http://<Tailscale IP>:8096` | 長尺動画・ミュージックビデオの視聴 |
 | rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
+| メディアバックアップ | `media-backup.timer` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
 | Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
 
@@ -155,6 +156,50 @@ sudo tail -100 /mnt/data/config/rclone/logs/media-sync.log
 ./scripts/ops/rclone-media-sync.sh --no-delete
 ```
 
+### メディアバックアップ
+
+`media-backup.timer` は、アプリケーションの完全復元ではなく、写真・動画ファイルそのものを物理的に別のドライブへ守るための仕組みです。
+
+対象:
+
+| 元 | 先 | 内容 |
+| --- | --- | --- |
+| `/mnt/data/immich/upload` | `/mnt/backup/immich-upload` | Immich に直接アップロードされた写真・動画 |
+| `/mnt/data/immich/external` | `/mnt/backup/immich-backup` | rclone で取り込んだ Immich 外部ライブラリ |
+| `/mnt/data/jellyfin/music-videos` | `/mnt/backup/jellyfin-backup` | Jellyfin のミュージックビデオ |
+
+方針:
+
+- `rclone copy` で追加コピーする
+- バックアップ先からの自動削除は行わない
+- 世代管理、暗号化リポジトリ、PostgreSQL dump は行わない
+- Immich/Jellyfin の設定、操作履歴、DB の完全復元は目的にしない
+- 復旧時は、メディアファイルを Immich/Jellyfin または別アプリケーションへ再取り込みできることを重視する
+
+手動確認:
+
+```bash
+./scripts/ops/media-backup.sh --dry-run
+./scripts/ops/media-backup.sh
+```
+
+systemd timer の確認:
+
+```bash
+systemctl status media-backup.timer --no-pager
+systemctl list-timers media-backup.timer --no-pager
+journalctl -u media-backup.service -n 100 --no-pager
+sudo tail -100 /mnt/data/config/media-backup/logs/media-backup.log
+```
+
+初回導入または本番反映時は、リポジトリの作業コピーから以下を実行します。
+
+```bash
+./scripts/ops/install-media-backup-systemd.sh
+```
+
+必要に応じて `/home/mediaserver/ManageMediaServer/config/env/media-backup.env` を編集し、バックアップ対象や空き容量閾値を変更します。
+
 ## 運用コマンド
 
 ### サービス操作
@@ -164,6 +209,7 @@ sudo systemctl status immich jellyfin rclone-media-sync.timer --no-pager
 sudo systemctl restart immich
 sudo systemctl restart jellyfin
 sudo systemctl restart rclone-media-sync.service
+sudo systemctl restart media-backup.service
 sudo systemctl stop immich jellyfin
 sudo systemctl start immich jellyfin
 ```
@@ -174,6 +220,7 @@ sudo systemctl start immich jellyfin
 ./scripts/ops/start-services.sh
 ./scripts/ops/stop-services.sh
 ./scripts/ops/rclone-media-sync.sh
+./scripts/ops/media-backup.sh
 ```
 
 ### Docker Compose
@@ -313,6 +360,8 @@ docs/
   同期設計.md
 systemd/
   media-firewall.service
+  media-backup.service
+  media-backup.timer
   rclone-media-sync.service
   rclone-media-sync.timer
 docker/
@@ -324,12 +373,15 @@ docker/
 scripts/
   ops/
     apply-media-firewall.sh
+    install-media-backup-systemd.sh
+    media-backup.sh
     rclone-media-sync.sh
     start-services.sh
     stop-services.sh
 config/
   env/
     media-firewall.env.example
+    media-backup.env.example
     notification.env.example
   rclone/
     rclone.conf.example
@@ -448,6 +500,31 @@ sudo systemctl disable rclone-media-sync.timer
 
 旧 `rclone-sync.timer` の再有効化は `rclone sync` の削除反映リスクがあるため、最終手段として扱います。
 
+### media-backup の配置
+
+`media-backup.timer` は daily AM 4:00 JST に実行します。`rclone-media-sync.timer` より前に動かし、前回までに取り込まれているメディアを `/mnt/backup` へ追加コピーします。
+
+```ini
+OnCalendar=*-*-* 04:00:00 Asia/Tokyo
+```
+
+本番で `media-backup.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/media-backup.sh` です。反映には配置用スクリプトを使います。
+
+```bash
+./scripts/ops/install-media-backup-systemd.sh
+```
+
+配置後の期待状態:
+
+- `media-backup.timer` が enabled / active
+- `/mnt/backup` が mountpoint
+- `/mnt/backup/immich-upload`
+- `/mnt/backup/immich-backup`
+- `/mnt/backup/jellyfin-backup`
+- `/mnt/data/config/media-backup/logs/media-backup.log`
+
+このバックアップはメディアファイルの退避専用です。Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュ、ユーザー操作履歴の完全復元は対象外です。アプリケーション移行時は、バックアップ先のメディアファイルを新しいアプリケーションへ再取り込みします。
+
 ### Discord 通知
 
 通知設定はテンプレートから作成します。
@@ -485,6 +562,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
     rclone/
       rclone.conf
       logs/
+    media-backup/
+      logs/
   temp/
 ```
 
@@ -492,14 +571,16 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 ```text
 /mnt/backup/
+  immich-upload/
   immich-backup/
   jellyfin-backup/
-  system-backup/
   media/
   config/
 ```
 
-`/mnt/backup` は物理的に別ディスクへ分離します。`/mnt/data` も同様に専用マウント化するのが望ましいです。
+`/mnt/backup` は物理的に別ディスクへ分離します。メディアバックアップは現在状態のミラーではなく、復旧用の追加コピー先として扱います。`/mnt/data` 側でファイルを削除しても、バックアップ先から自動削除しません。
+
+`/mnt/data` も同様に専用マウント化するのが望ましいです。
 
 ## 実際の設定
 
@@ -589,6 +670,23 @@ sudo systemctl restart rclone-media-sync.service
 sudo systemctl status rclone-media-sync.service --no-pager
 ```
 
+### メディアバックアップが失敗する
+
+```bash
+systemctl status media-backup.timer --no-pager
+systemctl status media-backup.service --no-pager
+systemctl list-timers media-backup.timer --no-pager
+sudo tail -100 /mnt/data/config/media-backup/logs/media-backup.log
+```
+
+dry-run でコピー対象を確認します。
+
+```bash
+./scripts/ops/media-backup.sh --dry-run
+```
+
+`/mnt/backup` がマウントされていない、または空き容量が閾値未満の場合は hard fail します。`media-backup.env` の既定閾値は 1 GiB です。
+
 ### Docker 権限エラー
 
 ```bash
@@ -643,6 +741,7 @@ sudo mount /mnt/backup
 - `rclone.conf`
 - `notification.env`
 - `media-firewall.env`
+- `media-backup.env`
 - 認証情報
 
 ## ライセンス
