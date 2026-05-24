@@ -300,12 +300,9 @@ sudo ufw allow in on tailscale0 to any port 2283 proto tcp
 sudo ufw allow in on tailscale0 to any port 8096 proto tcp
 sudo ufw status numbered
 
-sudo install -m 0644 -D docker/jellyfin/docker-compose.yml /home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml
-sudo install -m 0755 -D scripts/ops/apply-media-firewall.sh /home/mediaserver/ManageMediaServer/scripts/ops/apply-media-firewall.sh
-sudo test -f /home/mediaserver/ManageMediaServer/config/env/media-firewall.env || sudo install -m 0644 -D config/env/media-firewall.env.example /home/mediaserver/ManageMediaServer/config/env/media-firewall.env
+./scripts/ops/deploy-managed-files.sh
+sudo test -f /home/mediaserver/ManageMediaServer/config/env/media-firewall.env || sudo install -m 0640 -o mediaserver -g mediaserver config/env/media-firewall.env.example /home/mediaserver/ManageMediaServer/config/env/media-firewall.env
 sudoedit /home/mediaserver/ManageMediaServer/config/env/media-firewall.env
-sudo cp systemd/media-firewall.service /etc/systemd/system/
-sudo systemctl daemon-reload
 sudo systemctl enable --now media-firewall.service
 sudo systemctl restart jellyfin
 sudo systemctl status media-firewall.service --no-pager
@@ -351,6 +348,27 @@ curl -I --max-time 5 http://<Tailscale IP>:8096
 | システムタイムゾーン | `Etc/UTC` |
 | rclone timer timezone | `Asia/Tokyo` |
 
+### Git checkout と本番配置コピーの役割
+
+`/home/ubuntu/repos/ManageMediaServer` は Git 管理される作業コピーで、変更元です。README、Compose、systemd unit、運用スクリプト、設定テンプレートはここで編集し、commit/push します。
+
+`/home/mediaserver/ManageMediaServer` は systemd や Docker Compose が参照する本番配置コピーです。本番配置コピーを直接編集して正とせず、作業コピーから管理対象ファイルだけを反映します。
+
+本番反映は作業コピーで実行します。
+
+```bash
+cd /home/ubuntu/repos/ManageMediaServer
+./scripts/ops/deploy-managed-files.sh --dry-run
+./scripts/ops/deploy-managed-files.sh
+```
+
+`deploy-managed-files.sh` は以下を行います。
+
+- Git 管理対象の README、docs、Compose、systemd unit/timer、運用スクリプト、設定テンプレートを `/home/mediaserver/ManageMediaServer` へ反映する
+- systemd unit/timer を `/etc/systemd/system` へ反映し、`systemctl daemon-reload` を実行する
+- 上書き前のファイルを `/home/mediaserver/ManageMediaServer/.deploy-backups/` にバックアップする
+- `.env`、`config/env/*.env`、`config/rclone/rclone.conf`、ログ、`/mnt/data`、`/mnt/backup` はコピーも上書きもしない
+
 主要ポート:
 
 | ポート | サービス |
@@ -385,6 +403,7 @@ docker/
 scripts/
   ops/
     apply-media-firewall.sh
+    deploy-managed-files.sh
     install-media-app-update-systemd.sh
     install-media-backup-systemd.sh
     media-app-update.sh
@@ -414,8 +433,17 @@ config/
 - ログ
 - 実データ
 - バックアップデータ
+- 本番配置コピーの `.deploy-backups/`
 
 ## 設計方針
+
+### 本番配置は deploy-managed-files.sh で反映する
+
+Git checkout は `/home/ubuntu/repos/ManageMediaServer`、本番配置コピーは `/home/mediaserver/ManageMediaServer` として分けます。systemd unit は本番配置コピー内の Compose とスクリプトを参照します。
+
+管理ファイルを更新したら、作業コピーから `scripts/ops/deploy-managed-files.sh` を実行して本番配置コピーへ反映します。反映対象は明示リストで管理し、実値入りの env、`rclone.conf`、ログ、実データ、バックアップデータは対象外です。
+
+このスクリプトは systemd unit/timer も `/etc/systemd/system` へ反映しますが、timer の enable/disable やサービス起動状態の変更は行いません。初回導入や有効化は各 install script または個別の運用手順で行います。
 
 ### Docker Compose は Git 管理する
 
@@ -473,7 +501,7 @@ OnCalendar=*-*-* 08:00:00 Asia/Tokyo
 
 ### rclone-media-sync の配置
 
-本番で `rclone-media-sync.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh` です。`/home/mediaserver/ManageMediaServer` は Git checkout ではなく、本番配置コピーとして扱います。変更後は Git checkout から本番配置へ `scripts/`, `config/`, `systemd/`, `docs/` を反映します。
+本番で `rclone-media-sync.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh` です。`/home/mediaserver/ManageMediaServer` は Git checkout ではなく、本番配置コピーとして扱います。変更後は Git checkout から本番配置へ `deploy-managed-files.sh` で反映します。
 
 ```bash
 test -x /home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh
@@ -483,9 +511,7 @@ test -f /home/mediaserver/ManageMediaServer/config/rclone/media-sync-excludes.tx
 systemd unit/timer を配置します。
 
 ```bash
-sudo cp systemd/rclone-media-sync.service /etc/systemd/system/
-sudo cp systemd/rclone-media-sync.timer /etc/systemd/system/
-sudo systemctl daemon-reload
+./scripts/ops/deploy-managed-files.sh
 sudo systemctl enable --now rclone-media-sync.timer
 systemctl list-timers 'rclone*' --no-pager
 ```
@@ -524,9 +550,10 @@ sudo systemctl disable rclone-media-sync.timer
 OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 ```
 
-本番で `media-backup.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/media-backup.sh` です。反映には配置用スクリプトを使います。
+本番で `media-backup.service` が呼ぶ正のスクリプトは `/home/mediaserver/ManageMediaServer/scripts/ops/media-backup.sh` です。管理ファイルの反映には `deploy-managed-files.sh` を使います。初回導入や timer の有効化は `install-media-backup-systemd.sh` を使います。
 
 ```bash
+./scripts/ops/deploy-managed-files.sh
 ./scripts/ops/install-media-backup-systemd.sh
 ```
 
@@ -583,6 +610,7 @@ systemd unit:
 systemd timer の導入:
 
 ```bash
+./scripts/ops/deploy-managed-files.sh
 ./scripts/ops/install-media-app-update-systemd.sh
 ```
 
@@ -799,6 +827,7 @@ sudo mount /mnt/backup
 管理するもの:
 
 - `README.md`
+- `AGENTS.md`
 - `docker/immich/docker-compose.yml`
 - `docker/immich/.env.example`
 - `docker/jellyfin/docker-compose.yml`
@@ -807,6 +836,7 @@ sudo mount /mnt/backup
 - `systemd/*.service`
 - `systemd/*.timer`
 - 設定テンプレート
+- 本番配置へ反映する管理ファイルの一覧は `scripts/ops/deploy-managed-files.sh`
 
 管理しないもの:
 
@@ -820,6 +850,7 @@ sudo mount /mnt/backup
 - `media-backup.env`
 - `media-app-update.env`
 - 認証情報
+- `/home/mediaserver/ManageMediaServer/.deploy-backups/`
 
 ## ライセンス
 
