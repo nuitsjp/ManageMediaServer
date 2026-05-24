@@ -23,11 +23,12 @@
 | --- | --- | --- |
 | Immich | `http://<LAN IP>:2283` / `http://<Tailscale IP>:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
 | Jellyfin | `http://<LAN IP>:8096` / `http://<Tailscale IP>:8096` | 長尺動画・ミュージックビデオの視聴 |
-| rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
-| メディアバックアップ | `media-backup.timer` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
-| アプリ更新 | `media-app-update.timer` | Immich/Jellyfin を同一 major 内で日次更新し、major 更新は通知だけ行う |
+| 日次メンテナンス | `media-daily-maintenance.timer` | バックアップ、アプリ更新、rclone 同期、OS 更新、必要時の再起動を直列実行 |
+| rclone | `rclone-media-sync.service` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
+| メディアバックアップ | `media-backup.service` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
+| アプリ更新 | `media-app-update.service` | Immich/Jellyfin を同一 major 内で更新し、major 更新は検知だけ行う |
 | Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
-| Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
+| Discord 通知 | 設定ファイル: `config/env/notification.env` | 日次メンテナンス結果を 1 日 1 本に集約して通知 |
 
 ## 日常的な利用方法
 
@@ -424,6 +425,8 @@ docs/
   同期設計.md
 systemd/
   media-firewall.service
+  media-daily-maintenance.service
+  media-daily-maintenance.timer
   media-backup.service
   media-backup.timer
   media-app-update.service
@@ -439,8 +442,11 @@ docker/
 scripts/
   ops/
     apply-media-firewall.sh
+    install-media-daily-maintenance-systemd.sh
     install-media-app-update-systemd.sh
     install-media-backup-systemd.sh
+    media-daily-maintenance.sh
+    media-os-update.sh
     media-app-update.sh
     media-backup.sh
     rclone-media-sync.sh
@@ -449,6 +455,8 @@ scripts/
 config/
   env/
     media-firewall.env.example
+    media-daily-maintenance.env.example
+    media-os-update.env.example
     media-backup.env.example
     media-app-update.env.example
     notification.env.example
@@ -523,7 +531,7 @@ Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
 
 rclone の同期方針、画像と動画の扱い、削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) にまとめます。
 
-`rclone-media-sync.timer` は daily AM 8:00 JST に実行します。サーバー全体の timezone は変更せず、timer 側で `Asia/Tokyo` を指定します。
+通常運用では `rclone-media-sync.timer` を直接使わず、`media-daily-maintenance.timer` が `rclone-media-sync.sh` を部品として呼びます。旧構成の単体 timer は daily AM 8:00 JST でしたが、日次メンテナンス導入後は無効化します。
 
 ```ini
 OnCalendar=*-*-* 08:00:00 Asia/Tokyo
@@ -541,7 +549,7 @@ test -f /home/mediaserver/ManageMediaServer/config/rclone/media-sync-excludes.tx
 test -f /mnt/data/config/rclone/rclone.conf
 ```
 
-systemd unit/timer を配置します。
+単体 systemd unit/timer を配置する場合:
 
 ```bash
 sudo cp systemd/rclone-media-sync.service /etc/systemd/system/
@@ -565,7 +573,8 @@ systemctl list-timers 'rclone*' --no-pager
 
 - `rclone-sync.timer` は disabled / inactive
 - `rclone-sync.timer` は次回実行対象に出ない
-- `rclone-media-sync.timer` だけが JST AM 8:00 の次回実行として出る
+- 通常運用では `rclone-media-sync.timer` も disabled / inactive
+- 日次実行対象には `media-daily-maintenance.timer` だけが出る
 
 問題が出た場合は、まず削除なしの手動実行へ退避します。
 
@@ -579,7 +588,7 @@ sudo systemctl disable rclone-media-sync.timer
 
 ### media-backup の配置
 
-`media-backup.timer` は daily AM 4:00 JST に実行します。`rclone-media-sync.timer` より前に動かし、前回までに取り込まれているメディアを `/mnt/backup` へ追加コピーします。
+通常運用では `media-backup.timer` を直接使わず、`media-daily-maintenance.timer` が `media-backup.sh` を最初のメディア処理として呼びます。旧構成の単体 timer は daily AM 4:00 JST でしたが、日次メンテナンス導入後は無効化します。
 
 ```ini
 OnCalendar=*-*-* 04:00:00 Asia/Tokyo
@@ -593,7 +602,8 @@ OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 
 配置後の期待状態:
 
-- `media-backup.timer` が enabled / active
+- 通常運用では `media-backup.timer` は disabled / inactive
+- 日次実行対象には `media-daily-maintenance.timer` だけが出る
 - `/mnt/backup` が mountpoint
 - `/mnt/backup/immich-upload`
 - `/mnt/backup/immich-backup`
@@ -602,28 +612,80 @@ OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 
 このバックアップはメディアファイルの退避専用です。Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュ、ユーザー操作履歴の完全復元は対象外です。アプリケーション移行時は、バックアップ先のメディアファイルを新しいアプリケーションへ再取り込みします。
 
-### アプリ更新バッチの設計
+### 日次メンテナンスバッチの設計
 
-Immich/Jellyfin のセキュリティアップデートを人手で追い続ける運用は現実的ではないため、アプリ更新は日次バッチで処理します。ただし major 更新は破壊的変更を含む可能性があるため、自動適用せず通知だけ行います。
+日次運用は `media-daily-maintenance.timer` を唯一の定期実行入口にします。個別の `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer` は通常運用では無効化し、各 service / script は手動実行または日次メンテナンスから呼ばれる部品として残します。
+
+`media-daily-maintenance.service` は root で `/home/mediaserver/ManageMediaServer/scripts/ops/media-daily-maintenance.sh` を呼びます。メディア処理は `mediaserver` ユーザーで実行し、OS 更新だけ root で実行します。
 
 systemd unit:
 
 | unit | 時刻 | 役割 |
 | --- | --- | --- |
-| `media-backup.timer` | daily AM 4:00 JST | メディアファイルを `/mnt/backup` へ追加コピー |
-| `media-app-update.timer` | daily AM 5:00 JST | バックアップ後に Immich/Jellyfin を同一 major 内で更新 |
-| `rclone-media-sync.timer` | daily AM 8:00 JST | クラウドストレージから新規メディアを取り込み |
+| `media-daily-maintenance.timer` | daily AM 4:00 JST | バックアップ、アプリ更新、rclone 同期、OS 更新、必要時の再起動を直列実行 |
+
+処理順序:
+
+1. 全体 lock を取得する
+2. メディアバックアップを実行する
+3. Immich/Jellyfin を同一 major 内で更新する
+4. rclone でクラウドストレージからメディアを取り込み、バックアップ確認済み動画をクラウド側から削除する
+5. apt / snap による OS・パッケージ更新を実行する
+6. `/var/run/reboot-required` があれば、日次処理完了後に自動再起動を予約する
+7. Discord へ日次結果を 1 本だけ通知する
+
+OS や Docker daemon、Tailscale、kernel は更新時に daemon restart や再起動を伴う可能性があるため、OS 更新は最後に行います。これにより、バックアップ・アプリ更新・同期を終えてから OS 更新と再起動で締める運用にします。
+
+日次メンテナンス配下では、個別スクリプトの Discord 通知は `SUPPRESS_DISCORD=true` で抑止します。各スクリプトは `SUMMARY_FILE` に実行結果を書き出し、親スクリプトが 1 本の Discord 通知に集約します。
+
+日次メンテナンスの導入:
+
+```bash
+./scripts/ops/install-media-daily-maintenance-systemd.sh
+```
+
+この導入スクリプトは以下を行います。
+
+- `media-daily-maintenance.timer` を enable / start する
+- `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer`、`apt-daily-upgrade.timer` を disable / stop する
+- 個別 service と script は削除せず、手動実行用として残す
+
+確認:
+
+```bash
+systemctl status media-daily-maintenance.timer --no-pager
+systemctl list-timers media-daily-maintenance.timer --no-pager
+journalctl -u media-daily-maintenance.service -n 100 --no-pager
+sudo tail -100 /mnt/data/config/media-daily-maintenance/logs/media-daily-maintenance.log
+```
+
+手動確認:
+
+```bash
+sudo ./scripts/ops/media-daily-maintenance.sh --check-only
+sudo ./scripts/ops/media-daily-maintenance.sh --dry-run
+```
+
+停止する場合:
+
+```bash
+sudo systemctl disable --now media-daily-maintenance.timer
+```
+
+### アプリ更新バッチの設計
+
+Immich/Jellyfin のセキュリティアップデートを人手で追い続ける運用は現実的ではないため、アプリ更新は日次メンテナンス内で処理します。ただし major 更新は破壊的変更を含む可能性があるため、自動適用せず日次通知内の warning として報告します。
 
 `media-app-update.service` は `/home/mediaserver/ManageMediaServer/scripts/ops/media-app-update.sh` を呼びます。処理順序は以下です。
 
 1. `/mnt/backup` が mountpoint であることを確認する
-2. `media-backup.service` の直近実行が成功していることを確認する
+2. 単体実行時は `media-backup.service` の直近実行が成功していることを確認する
 3. `/`, `/mnt/data`, `/mnt/backup` の空き容量を確認する
 4. GitHub Releases から Immich/Jellyfin の最新 major を確認する
-5. 現在の固定 major より新しい major があれば、更新せず Discord へ通知する
+5. 現在の固定 major より新しい major があれば、更新せずサマリへ warning として書き出す
 6. major が同じ範囲の更新だけ `docker compose pull && docker compose up -d` で適用する
 7. `docker compose ps` と HTTP 疎通で Immich/Jellyfin の起動状態を確認する
-8. 成功、更新なし、失敗、major 更新検知を Discord へ通知する
+8. 成功、更新なし、失敗、major 更新検知をサマリへ書き出す
 
 自動更新対象:
 
@@ -641,25 +703,36 @@ systemd unit:
 ./scripts/ops/media-app-update.sh --dry-run
 ```
 
-systemd timer の導入:
-
-```bash
-./scripts/ops/install-media-app-update-systemd.sh
-```
-
-systemd timer の確認:
+単体 systemd timer は通常運用では使いません。手動確認:
 
 ```bash
 systemctl status media-app-update.timer --no-pager
-systemctl list-timers media-app-update.timer --no-pager
 journalctl -u media-app-update.service -n 100 --no-pager
 sudo tail -100 /mnt/data/config/media-app-update/logs/media-app-update.log
 ```
 
-停止する場合:
+### OS / パッケージ更新バッチの設計
+
+OS と apt / snap パッケージの更新は `media-os-update.sh` が担当します。日次メンテナンスの最後に実行し、`apt-get update`、`apt-get -y full-upgrade`、`apt-get -y autoremove`、`snap refresh` を実行します。
+
+対象:
+
+| 種別 | 処理 | 備考 |
+| --- | --- | --- |
+| Ubuntu / apt | `apt-get update && apt-get -y full-upgrade` | Ubuntu 標準、Docker、Tailscale など apt repository 由来の更新を含む |
+| apt cleanup | `apt-get -y autoremove` | 古い kernel などの不要依存を削除 |
+| snap | `snap refresh` | snap パッケージを更新。`snap` がない場合は警告のみ |
+| reboot | `/var/run/reboot-required` を確認 | 必要なら日次処理完了後に自動再起動を予約 |
+
+既定では `AUTO_REBOOT=true`、`AUTO_REBOOT_DELAY_MINUTES=5` です。再起動が必要な場合、Discord 通知に `reboot: scheduled_in_5_minutes` と記録してから `shutdown -r +5` を実行します。夜間に人間の判断を要求する通知は出しません。
+
+標準の `apt-daily.timer` は package list 更新として残しても問題ありませんが、実際の upgrade は `media-os-update.sh` に一本化するため、導入時に `apt-daily-upgrade.timer` は無効化します。
+
+手動確認:
 
 ```bash
-sudo systemctl disable --now media-app-update.timer
+sudo ./scripts/ops/media-os-update.sh --check-only
+sudo ./scripts/ops/media-os-update.sh --dry-run
 ```
 
 ### Discord 通知
@@ -678,6 +751,66 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
 実値入り `notification.env` は Git 管理しません。過去コミットに Webhook URL が含まれていたため、本番 Webhook URL はローテーション済みのものを使います。
+
+日次運用では Discord 通知は `media-daily-maintenance.sh` だけが送ります。個別バッチは日次配下では通知を抑止し、実行結果だけを親スクリプトへ渡します。通知は成功・失敗・warning・再起動予約のいずれでも 1 日 1 本です。
+
+通知に含める主な内容:
+
+```text
+**media daily maintenance succeeded**
+
+host: `home-ubuntu`
+time: `2026-05-24 05:58:12 JST`
+duration: `1h 34m`
+result: `succeeded`
+
+steps:
+- media backup: `ok`
+- app update: `ok`
+- rclone sync: `ok`
+- os update: `ok`
+- reboot: `not_required`
+
+sync:
+- image copy: `succeeded`
+- video copy: `succeeded`
+- sync backup: `succeeded`
+- verified videos: `123`
+- deleted videos: `123`
+- skipped videos: `0`
+- no-delete: `false`
+
+backup:
+- targets: `immich-upload, immich-external, jellyfin-media`
+
+app updates:
+- latest: `Immich=v2.x.x; Jellyfin=v10.x.x`
+- updated containers: `none`
+- major updates: `none`
+
+os updates:
+- apt upgraded: `tailscale, snapd`
+- apt upgraded count: `2`
+- snap refreshed: `none`
+- snap refreshed count: `0`
+- autoremove: `succeeded`
+- reboot required: `no`
+- reboot required by: `none`
+
+storage:
+- `/`: `42.1G free / 20% used`
+- `/mnt/data`: `512G free / 55% used`
+- `/mnt/backup`: `1.8T free / 44% used`
+
+logs:
+- daily: `/mnt/data/config/media-daily-maintenance/logs/media-daily-maintenance.log`
+- backup: `/mnt/data/config/media-backup/logs/media-backup.log`
+- app update: `/mnt/data/config/media-app-update/logs/media-app-update.log`
+- sync: `/mnt/data/config/rclone/logs/media-sync.log`
+- os update: `/mnt/data/config/media-os-update/logs/media-os-update.log`
+```
+
+`skipped videos` が 0 でない場合、または Immich/Jellyfin の major 更新を検知した場合は、日次通知のタイトルを `completed with warnings` にします。再起動が必要で自動再起動を予約した場合は、タイトルを `completed; reboot scheduled` にします。
 
 ### データとバックアップを分ける
 
@@ -909,6 +1042,8 @@ sudo mount /mnt/backup
 - `rclone.conf`
 - `notification.env`
 - `media-firewall.env`
+- `media-daily-maintenance.env`
+- `media-os-update.env`
 - `media-backup.env`
 - `media-app-update.env`
 - 認証情報
