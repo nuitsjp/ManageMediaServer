@@ -49,6 +49,25 @@ Immich のデータ配置:
 - Compose: `/home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml`
 - 実行時 env: `/home/mediaserver/ManageMediaServer/docker/immich/.env`
 
+PostgreSQL データディレクトリは、ホスト上ではコンテナ内 PostgreSQL の UID/GID に由来する所有者として見える場合があります。復旧時や手動確認時に所有者が `ubuntu` や `mediaserver` でなくても、異常とは限りません。
+
+復旧時は、原因が明確でないまま `/mnt/data/immich/postgres` に対して `chown -R`、`chmod -R`、所有者の一括変更を行わないでください。PostgreSQL が期待する所有者や権限を崩すと、DB が起動できなくなる可能性があります。
+
+所有者と権限を確認する場合:
+
+```bash
+sudo find /mnt/data/immich/postgres -maxdepth 1 -printf '%M %u:%g %p\n'
+sudo find /mnt/data/immich/postgres -mindepth 1 -maxdepth 1 -printf '%M %u:%g %p\n' | head
+findmnt /mnt/data
+docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml ps
+```
+
+復旧後に Immich が起動しない場合は、まず Compose の状態と PostgreSQL コンテナのログを確認します。権限変更で直す前に、現在の所有者、権限、エラーログを記録します。
+
+```bash
+docker compose -f /home/mediaserver/ManageMediaServer/docker/immich/docker-compose.yml logs -n 100 database
+```
+
 外部ライブラリは Compose で read-only mount しています。
 
 ```yaml
