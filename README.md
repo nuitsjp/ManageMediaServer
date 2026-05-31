@@ -93,6 +93,26 @@ Jellyfin のデータ配置:
 - その他ライブラリ候補: `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
 - Compose: `/home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml`
 
+Windows サーバーから動画を投入する場合は、Linux 側の Jellyfin ライブラリディレクトリを Samba 共有として公開し、Windows 側から追加コピーします。
+
+想定する共有:
+
+| Windows からの共有名 | Linux 上の実体 | 用途 |
+| --- | --- | --- |
+| `\\home-ubuntu\jellyfin-music-videos` | `/mnt/data/jellyfin/music-videos` | ミュージックビデオ投入 |
+| `\\home-ubuntu\jellyfin-movies` | `/mnt/data/jellyfin/movies` | 映画・長尺動画投入 |
+| `\\home-ubuntu\jellyfin-tv` | `/mnt/data/jellyfin/tv` | TV 番組などのシリーズ投入 |
+
+日常運用では、Windows 側から `robocopy` で追加コピーします。Jellyfin 側でライブラリスキャンを行えば、コピー後の動画を認識できます。
+
+```powershell
+robocopy D:\Videos \\home-ubuntu\jellyfin-music-videos /E /Z /R:2 /W:5
+```
+
+安全のため、通常運用では `/MIR` や `/PURGE` を使った削除同期は行いません。Windows 側の整理や誤削除が Linux 側の Jellyfin ライブラリへ波及しないよう、まずは追加コピーを標準にします。
+
+Samba 共有は家庭内 LAN または Tailscale 経由でのみ利用します。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
+
 ### アクセス範囲
 
 家庭内 LAN は内部ネットワークとして扱い、家庭内の端末からはサーバーの LAN IP へ直接アクセスします。家庭外からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
