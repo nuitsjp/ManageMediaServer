@@ -318,12 +318,14 @@ docker compose -f docker/jellyfin/docker-compose.yml pull
 
 Immich/Jellyfin は個人運用で手動のリリース監視を続けるのが難しいため、完全固定ではなく major 範囲を固定して日次更新する設計にします。
 
-- Immich: `IMMICH_VERSION=v2`
+- Immich: `IMMICH_VERSION=v3`
 - Jellyfin: `jellyfin/jellyfin:10`
 
 `release` や `latest` は major をまたいだ意図しない更新を招くため使いません。major 更新が公開された場合は自動適用せず、Discord へ通知して手動判断します。
 
-実運用の `docker/immich/.env` に `IMMICH_VERSION=release` が残っている場合、Compose の既定値より `.env` が優先されます。本番反映時は `IMMICH_VERSION=v2` へ変更します。
+実運用の `docker/immich/.env` に `IMMICH_VERSION=release` が残っている場合、Compose の既定値より `.env` が優先されます。本番反映時は `IMMICH_VERSION=v3` へ変更します。
+
+v2 から v3 へ移行する場合は、公式の [v3 移行ガイド](https://immich.app/blog/v3-migration) と [アップグレード手順](https://docs.immich.app/install/upgrading/)を先に確認します。v3 は pgvecto.rs をサポートせず、旧 ML 環境変数や旧タイムライン/API に変更があります。Compose のアップロード mount は `/data` を使い、外部ライブラリの既存コンテナパスは維持します。更新前に Immich の DB dump と `/mnt/backup` へのメディア・設定コピーを完了させ、更新後はモバイルクライアントを含む HTTP、DB、外部ライブラリの疎通を確認します。
 
 ### ディスク確認
 
@@ -711,7 +713,7 @@ Immich/Jellyfin のセキュリティアップデートを人手で追い続け�
 
 | サービス | 自動更新タグ | 自動適用範囲 | major 更新時 |
 | --- | --- | --- | --- |
-| Immich | `IMMICH_VERSION=v2` | `v2.x.x` | 通知のみ |
+| Immich | `IMMICH_VERSION=v3` | `v3.x.x` | 通知のみ |
 | Jellyfin | `jellyfin/jellyfin:10` | `10.x.x` | 通知のみ |
 
 現行の `media-backup.timer` は写真・動画ファイルの保全が目的であり、Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュの完全復元は保証しません。そのため、日次自動更新は「メディアファイルを失わないこと」を最優先にし、アプリの完全ロールバックは前提にしません。Immich は downgrade が安全とは限らないため、更新失敗時は旧タグへ戻すよりも、ログ確認、必要に応じた公式手順での forward fix、最終的にはメディア再取り込みを復旧方針とします。
@@ -805,7 +807,7 @@ backup:
 - targets: `immich-upload, immich-external, jellyfin-media`
 
 app updates:
-- latest: `Immich=v2.x.x; Jellyfin=v10.x.x`
+- latest: `Immich=v3.x.x; Jellyfin=v10.x.x`
 - updated containers: `none`
 - major updates: `none`
 
@@ -879,13 +881,13 @@ logs:
 
 主要設定:
 
-- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v2}`
-- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v2}`
-- Redis: `docker.io/valkey/valkey:8-bookworm`
-- PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0`
+- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v3}`
+- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v3}`
+- Redis: `docker.io/valkey/valkey:9`
+- PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0`
 - port: `2283:2283`
 - firewall: 家庭内 LAN と `tailscale0` からのみ `2283/tcp` を許可。Docker published port は `DOCKER-USER` でも制限
-- upload mount: `${UPLOAD_LOCATION}:/usr/src/app/upload`
+- upload mount: `${UPLOAD_LOCATION}:/data`
 - external mount: `${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro`
 - db mount: `${DB_DATA_LOCATION}:/var/lib/postgresql/data`
 
@@ -895,7 +897,7 @@ logs:
 UPLOAD_LOCATION=/mnt/data/immich/upload
 DB_DATA_LOCATION=/mnt/data/immich/postgres
 EXTERNAL_PATH=/mnt/data/immich/external
-IMMICH_VERSION=v2
+IMMICH_VERSION=v3
 DB_PASSWORD=change-me
 DB_USERNAME=postgres
 DB_DATABASE_NAME=immich
