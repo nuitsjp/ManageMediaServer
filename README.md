@@ -113,6 +113,24 @@ robocopy D:\Videos \\home-ubuntu\jellyfin-music-videos /E /Z /R:2 /W:5
 
 Samba 共有は家庭内 LAN または Tailscale 経由でのみ利用します。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
 
+Samba の標準設定:
+
+- Samba ユーザー: `mediaserver`
+- 書き込み所有者: `mediaserver:mediaserver`
+- 共有対象: `/mnt/data/jellyfin/music-videos`, `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
+- 作成ファイル権限: `0664`
+- 作成ディレクトリ権限: `0775`
+
+初回適用時は、`mediaserver` の Samba パスワードを設定します。このパスワードは Windows から Samba 共有へ接続するためのもので、Linux ログインパスワードとは別に管理できます。
+
+適用後の確認:
+
+```bash
+testparm -s
+systemctl status smbd --no-pager
+find /mnt/data/jellyfin -maxdepth 1 -type d -printf '%M %u:%g %p\n'
+```
+
 ### アクセス範囲
 
 家庭内 LAN は内部ネットワークとして扱い、家庭内の端末からはサーバーの LAN IP へ直接アクセスします。家庭外からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。

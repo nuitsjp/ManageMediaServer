@@ -11,6 +11,8 @@ services:
       - ${DATA_ROOT:-/mnt/data}/jellyfin/config:/config
       - ${DATA_ROOT:-/mnt/data}/jellyfin/cache:/cache
       - ${DATA_ROOT:-/mnt/data}/jellyfin/music-videos:/media/music-videos:ro
+      - ${DATA_ROOT:-/mnt/data}/jellyfin/movies:/media/movies:ro
+      - ${DATA_ROOT:-/mnt/data}/jellyfin/tv:/media/tv:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
       - "8096:8096"
