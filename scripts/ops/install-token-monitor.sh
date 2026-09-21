@@ -21,6 +21,7 @@ required=(
     "${REPO_ROOT}/token-monitor/compose.yaml"
     "${REPO_ROOT}/token-monitor/scripts/update.sh"
     "${REPO_ROOT}/token-monitor/systemd/token-monitor.service"
+    "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh"
     "$SOURCE_COMMON_ENV"
 )
 for file in "${required[@]}"; do
@@ -34,6 +35,10 @@ install -d -m 0750 -o mediaserver -g mediaserver "$BACKUP_DIR"
 if [[ -d "$PROD_TOKEN_ROOT" ]]; then
     cp -a "$PROD_TOKEN_ROOT" "$BACKUP_DIR/token-monitor"
 fi
+if [[ -f "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh" ]]; then
+    install -d -m 0750 -o mediaserver -g mediaserver "$BACKUP_DIR/scripts/ops"
+    cp -a "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh" "$BACKUP_DIR/scripts/ops/"
+fi
 for file in token-monitor-common.env token-monitor-private.env token-monitor-work.env \
     token-monitor-agent-private.env token-monitor-deploy.env; do
     if [[ -f "${PROD_CONFIG_ROOT}/${file}" ]]; then
@@ -45,6 +50,10 @@ install -d -m 0755 -o root -g root "$PROD_TOKEN_ROOT"
 cp -a "${REPO_ROOT}/token-monitor/." "$PROD_TOKEN_ROOT/"
 chown -R root:root "$PROD_TOKEN_ROOT"
 find "$PROD_TOKEN_ROOT/scripts" -type f -name '*.sh' -exec chmod 0755 {} +
+install -m 0755 -D "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh" \
+    "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh"
+install -m 0644 -D "${REPO_ROOT}/config/env/media-daily-maintenance.env.example" \
+    "${PROD_ROOT}/config/env/media-daily-maintenance.env.example"
 
 install -d -m 0750 -o mediaserver -g mediaserver "$PROD_CONFIG_ROOT"
 install -m 0640 -o mediaserver -g mediaserver "$SOURCE_COMMON_ENV" \
