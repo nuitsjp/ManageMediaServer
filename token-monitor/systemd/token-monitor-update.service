@@ -1,0 +1,16 @@
+[Unit]
+Description=Check and update both Token Monitor hubs and the private agent
+Wants=network-online.target docker.service
+After=network-online.target docker.service token-monitor.service
+Requires=docker.service
+RequiresMountsFor=/mnt/data /mnt/backup
+
+[Service]
+Type=oneshot
+User=mediaserver
+Group=mediaserver
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/bash /home/mediaserver/ManageMediaServer/token-monitor/scripts/update.sh
+StandardOutput=journal
+StandardError=journal

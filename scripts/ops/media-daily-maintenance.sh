@@ -69,6 +69,7 @@ CHILD_USER="${CHILD_USER:-mediaserver}"
 
 RUN_MEDIA_BACKUP="${RUN_MEDIA_BACKUP:-true}"
 RUN_MEDIA_APP_UPDATE="${RUN_MEDIA_APP_UPDATE:-true}"
+RUN_TOKEN_MONITOR_UPDATE="${RUN_TOKEN_MONITOR_UPDATE:-true}"
 RUN_RCLONE_SYNC="${RUN_RCLONE_SYNC:-true}"
 RUN_OS_UPDATE="${RUN_OS_UPDATE:-true}"
 RCLONE_SYNC_NO_DELETE="${RCLONE_SYNC_NO_DELETE:-false}"
@@ -78,11 +79,13 @@ AUTO_REBOOT_DELAY_MINUTES="${AUTO_REBOOT_DELAY_MINUTES:-5}"
 
 MEDIA_BACKUP_SCRIPT="${MEDIA_BACKUP_SCRIPT:-${PROD_ROOT}/scripts/ops/media-backup.sh}"
 MEDIA_APP_UPDATE_SCRIPT="${MEDIA_APP_UPDATE_SCRIPT:-${PROD_ROOT}/scripts/ops/media-app-update.sh}"
+TOKEN_MONITOR_UPDATE_SCRIPT="${TOKEN_MONITOR_UPDATE_SCRIPT:-${PROD_ROOT}/token-monitor/scripts/update.sh}"
 RCLONE_MEDIA_SYNC_SCRIPT="${RCLONE_MEDIA_SYNC_SCRIPT:-${PROD_ROOT}/scripts/ops/rclone-media-sync.sh}"
 MEDIA_OS_UPDATE_SCRIPT="${MEDIA_OS_UPDATE_SCRIPT:-${PROD_ROOT}/scripts/ops/media-os-update.sh}"
 
 MEDIA_BACKUP_STATUS="skipped"
 MEDIA_APP_UPDATE_STATUS="skipped"
+TOKEN_MONITOR_UPDATE_STATUS="skipped"
 RCLONE_SYNC_STATUS="skipped"
 MEDIA_OS_UPDATE_STATUS="skipped"
 DAILY_RESULT="succeeded"
@@ -211,6 +214,30 @@ run_media_app_update() {
     fi
 }
 
+run_token_monitor_update() {
+    [[ "$RUN_TOKEN_MONITOR_UPDATE" == "true" ]] || return 0
+    CURRENT_STEP="Token Monitor update"
+    local summary="${SUMMARY_DIR}/token-monitor-update.env"
+    local args=()
+    if [[ "$CHECK_ONLY" == "true" ]]; then
+        args+=(--check-only)
+    elif [[ "$DRY_RUN" == "true" ]]; then
+        args+=(--dry-run)
+    fi
+
+    log "Token Monitor update start"
+    if run_as_child_user env SUMMARY_FILE="$summary" /usr/bin/bash "$TOKEN_MONITOR_UPDATE_SCRIPT" "${args[@]}"; then
+        source_summary "$summary"
+        TOKEN_MONITOR_UPDATE_STATUS="${TOKEN_MONITOR_UPDATE_STATUS:-succeeded}"
+        log "Token Monitor update completed: ${TOKEN_MONITOR_UPDATE_STATUS}"
+    else
+        source_summary "$summary"
+        TOKEN_MONITOR_UPDATE_STATUS="${TOKEN_MONITOR_UPDATE_STATUS:-failed}"
+        mark_failed "Token Monitor update" "Token Monitor update failed"
+        return 1
+    fi
+}
+
 run_rclone_sync() {
     [[ "$RUN_RCLONE_SYNC" == "true" ]] || return 0
     if [[ "$CHECK_ONLY" == "true" ]]; then
@@ -311,6 +338,7 @@ build_notification_body() {
         printf '\nsteps:\n'
         printf -- '- media backup: `%s`\n' "$(status_word "$MEDIA_BACKUP_STATUS")"
         printf -- '- app update: `%s`\n' "$(status_word "$MEDIA_APP_UPDATE_STATUS")"
+        printf -- '- Token Monitor update: `%s`\n' "$(status_word "$TOKEN_MONITOR_UPDATE_STATUS")"
         printf -- '- rclone sync: `%s`\n' "$(status_word "$RCLONE_SYNC_STATUS")"
         printf -- '- os update: `%s`\n' "$(status_word "$MEDIA_OS_UPDATE_STATUS")"
         printf -- '- reboot: `%s`\n' "$REBOOT_ACTION"
@@ -332,6 +360,11 @@ build_notification_body() {
         printf -- '- latest: `%s`\n' "$(summary_value MEDIA_APP_LATEST_VERSIONS unknown)"
         printf -- '- updated containers: `%s`\n' "$(summary_value MEDIA_APP_UPDATED_CONTAINERS none)"
         printf -- '- major updates: `%s`\n' "$(summary_value MEDIA_APP_MAJOR_UPDATES none)"
+
+        printf '\nToken Monitor:\n'
+        printf -- '- current: `%s`\n' "$(summary_value TOKEN_MONITOR_CURRENT_VERSION unknown)"
+        printf -- '- latest: `%s`\n' "$(summary_value TOKEN_MONITOR_LATEST_VERSION unknown)"
+        printf -- '- updated: `%s`\n' "$(summary_value TOKEN_MONITOR_UPDATED_VERSION none)"
 
         printf '\nos updates:\n'
         printf -- '- apt upgraded: `%s`\n' "$(summary_value MEDIA_OS_APT_UPGRADED_PACKAGES none)"
@@ -359,6 +392,7 @@ build_notification_body() {
         printf -- '- daily: `%s`\n' "$LOG_FILE"
         printf -- '- backup: `%s`\n' "$(summary_value MEDIA_BACKUP_LOG_FILE /mnt/data/config/media-backup/logs/media-backup.log)"
         printf -- '- app update: `%s`\n' "$(summary_value MEDIA_APP_LOG_FILE /mnt/data/config/media-app-update/logs/media-app-update.log)"
+        printf -- '- Token Monitor: `%s`\n' "$(summary_value TOKEN_MONITOR_UPDATE_LOG_FILE /mnt/data/token-monitor/update/logs/update.log)"
         printf -- '- sync: `%s`\n' "$(summary_value RCLONE_LOG_FILE /mnt/data/config/rclone/logs/media-sync.log)"
         printf -- '- os update: `%s`\n' "$(summary_value MEDIA_OS_LOG_FILE /mnt/data/config/media-os-update/logs/media-os-update.log)"
     }
@@ -439,6 +473,9 @@ assert_prerequisites() {
     command -v jq >/dev/null || { log "ERROR: jq is not installed"; exit 1; }
     [[ -f "$MEDIA_BACKUP_SCRIPT" ]] || { log "ERROR: missing script: $MEDIA_BACKUP_SCRIPT"; exit 1; }
     [[ -f "$MEDIA_APP_UPDATE_SCRIPT" ]] || { log "ERROR: missing script: $MEDIA_APP_UPDATE_SCRIPT"; exit 1; }
+    if [[ "$RUN_TOKEN_MONITOR_UPDATE" == "true" ]]; then
+        [[ -f "$TOKEN_MONITOR_UPDATE_SCRIPT" ]] || { log "ERROR: missing script: $TOKEN_MONITOR_UPDATE_SCRIPT"; exit 1; }
+    fi
     [[ -f "$RCLONE_MEDIA_SYNC_SCRIPT" ]] || { log "ERROR: missing script: $RCLONE_MEDIA_SYNC_SCRIPT"; exit 1; }
     [[ -f "$MEDIA_OS_UPDATE_SCRIPT" ]] || { log "ERROR: missing script: $MEDIA_OS_UPDATE_SCRIPT"; exit 1; }
 }
@@ -461,6 +498,7 @@ main() {
 
     run_media_backup
     run_media_app_update
+    run_token_monitor_update
     run_rclone_sync
     run_os_update
 

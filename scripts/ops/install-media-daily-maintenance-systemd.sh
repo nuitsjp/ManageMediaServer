@@ -11,6 +11,10 @@ sudo install -m 0755 -D "${REPO_ROOT}/scripts/ops/media-app-update.sh" "${PROD_R
 sudo install -m 0755 -D "${REPO_ROOT}/scripts/ops/rclone-media-sync.sh" "${PROD_ROOT}/scripts/ops/rclone-media-sync.sh"
 sudo install -m 0755 -D "${REPO_ROOT}/scripts/ops/media-os-update.sh" "${PROD_ROOT}/scripts/ops/media-os-update.sh"
 sudo install -m 0755 -D "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh" "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh"
+sudo install -m 0755 -D "${REPO_ROOT}/token-monitor/scripts/update.sh" "${PROD_ROOT}/token-monitor/scripts/update.sh"
+sudo install -m 0755 -D "${REPO_ROOT}/token-monitor/scripts/build-image.sh" "${PROD_ROOT}/token-monitor/scripts/build-image.sh"
+sudo install -m 0755 -D "${REPO_ROOT}/token-monitor/scripts/backup-data.sh" "${PROD_ROOT}/token-monitor/scripts/backup-data.sh"
+sudo install -m 0755 -D "${REPO_ROOT}/token-monitor/scripts/healthcheck.sh" "${PROD_ROOT}/token-monitor/scripts/healthcheck.sh"
 
 sudo install -m 0644 -D "${REPO_ROOT}/config/env/media-backup.env.example" "${PROD_ROOT}/config/env/media-backup.env.example"
 sudo install -m 0644 -D "${REPO_ROOT}/config/env/media-app-update.env.example" "${PROD_ROOT}/config/env/media-app-update.env.example"

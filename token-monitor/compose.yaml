@@ -1,0 +1,95 @@
+name: token-monitor
+
+x-hub-common: &hub-common
+  image: manage-media/token-monitor:${TOKEN_MONITOR_VERSION}
+  build:
+    context: .
+    args:
+      TOKEN_MONITOR_VERSION: ${TOKEN_MONITOR_VERSION}
+  command: ["node", "src/hub/server.js"]
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=32m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  hub-private:
+    <<: *hub-common
+    container_name: token-monitor-hub-private
+    user: "${TOKEN_MONITOR_HUB_UID}:${TOKEN_MONITOR_HUB_GID}"
+    env_file:
+      - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-common.env
+      - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-private.env
+    volumes:
+      - ${TOKEN_MONITOR_DATA_ROOT}/private/data:/var/lib/token-monitor
+    ports:
+      - "127.0.0.1:17321:17321"
+      - "${TOKEN_MONITOR_LAN_IP}:17321:17321"
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17321/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  hub-work:
+    <<: *hub-common
+    container_name: token-monitor-hub-work
+    user: "${TOKEN_MONITOR_HUB_UID}:${TOKEN_MONITOR_HUB_GID}"
+    env_file:
+      - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-common.env
+      - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-work.env
+    volumes:
+      - ${TOKEN_MONITOR_DATA_ROOT}/work/data:/var/lib/token-monitor
+    ports:
+      - "127.0.0.1:17322:17322"
+    networks:
+      - work
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17322/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  agent-private:
+    image: manage-media/token-monitor:${TOKEN_MONITOR_VERSION}
+    container_name: token-monitor-agent-private
+    command: ["node", "src/agent/agent.js"]
+    restart: unless-stopped
+    user: "${TOKEN_MONITOR_AGENT_UID}:${TOKEN_MONITOR_AGENT_GID}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      HOME: /home/collector
+      TOKEN_MONITOR_HUB_URL: http://hub-private:17321
+      TOKEN_MONITOR_SHARED_DIR: /var/lib/token-monitor
+    env_file:
+      - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-common.env
+      - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-agent-private.env
+    volumes:
+      - ${TOKEN_MONITOR_AGENT_HOME}/.codex:/home/collector/.codex:ro
+      - ${TOKEN_MONITOR_AGENT_HOME}/.claude:/home/collector/.claude:ro
+      - ${TOKEN_MONITOR_DATA_ROOT}/agent-private/state:/var/lib/token-monitor
+    networks:
+      - private
+    depends_on:
+      hub-private:
+        condition: service_healthy
+
+networks:
+  private:
+    internal: true
+  work:
+    internal: true
