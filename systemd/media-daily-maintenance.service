@@ -1,0 +1,16 @@
+[Unit]
+Description=Run ManageMediaServer daily maintenance workflow
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+RequiresMountsFor=/mnt/backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mediaserver/ManageMediaServer
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/media-daily-maintenance.env
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/media-os-update.env
+EnvironmentFile=-/home/mediaserver/ManageMediaServer/config/env/notification.env
+ExecStart=/usr/bin/bash /home/mediaserver/ManageMediaServer/scripts/ops/media-daily-maintenance.sh
+StandardOutput=journal
+StandardError=journal

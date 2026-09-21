@@ -24,6 +24,8 @@ JELLYFIN_MEDIA_BACKUP="${JELLYFIN_MEDIA_BACKUP:-/mnt/backup/jellyfin-backup}"
 DRY_RUN=false
 CURRENT_STEP="initializing"
 COPIED_TARGETS=()
+SUPPRESS_DISCORD="${SUPPRESS_DISCORD:-false}"
+SUMMARY_FILE="${SUMMARY_FILE:-}"
 
 usage() {
     cat <<'USAGE'
@@ -59,6 +61,21 @@ log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$1" | tee -a "$LOG_FILE"
 }
 
+join_items() {
+    local separator="$1"
+    shift || true
+    local output=""
+    local item
+    for item in "$@"; do
+        if [[ -z "$output" ]]; then
+            output="$item"
+        else
+            output="${output}${separator}${item}"
+        fi
+    done
+    printf '%s' "$output"
+}
+
 load_env_file() {
     local file="$1"
     if [[ -f "$file" ]]; then
@@ -79,6 +96,11 @@ LOCK_FILE="${LOCK_FILE:-${LOG_DIR}/media-backup.lock}"
 notify_discord() {
     local status="$1"
     local message="$2"
+
+    if [[ "$SUPPRESS_DISCORD" == "true" ]]; then
+        log "Discord notification is suppressed"
+        return 0
+    fi
 
     if [[ "${NOTIFICATION_ENABLED:-false}" != "true" ]]; then
         log "Discord notification is disabled"
@@ -122,14 +144,37 @@ notify_discord() {
     fi
 }
 
+write_summary() {
+    [[ -n "$SUMMARY_FILE" ]] || return 0
+
+    local status="$1"
+    local message="$2"
+    local targets
+    targets=$(join_items ', ' "${COPIED_TARGETS[@]}")
+    [[ -n "$targets" ]] || targets="none"
+
+    {
+        printf 'MEDIA_BACKUP_STATUS=%q\n' "$status"
+        printf 'MEDIA_BACKUP_MESSAGE=%q\n' "$message"
+        printf 'MEDIA_BACKUP_TARGETS=%q\n' "$targets"
+        printf 'MEDIA_BACKUP_DRY_RUN=%q\n' "$DRY_RUN"
+        printf 'MEDIA_BACKUP_LOG_FILE=%q\n' "$LOG_FILE"
+    } > "$SUMMARY_FILE"
+}
+
 on_exit() {
     local exit_code=$?
+    local status message
     trap - EXIT
     if [[ $exit_code -eq 0 ]]; then
-        notify_discord "succeeded" "media backup completed"
+        status="succeeded"
+        message="media backup completed"
     else
-        notify_discord "failed" "failed at step: ${CURRENT_STEP}"
+        status="failed"
+        message="failed at step: ${CURRENT_STEP}"
     fi
+    write_summary "$status" "$message"
+    notify_discord "$status" "$message"
     exit "$exit_code"
 }
 

@@ -23,11 +23,12 @@
 | --- | --- | --- |
 | Immich | `http://<LAN IP>:2283` / `http://<Tailscale IP>:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
 | Jellyfin | `http://<LAN IP>:8096` / `http://<Tailscale IP>:8096` | 長尺動画・ミュージックビデオの視聴 |
-| rclone | `rclone-media-sync.timer` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
-| メディアバックアップ | `media-backup.timer` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
-| アプリ更新 | `media-app-update.timer` | Immich/Jellyfin を同一 major 内で日次更新し、major 更新は通知だけ行う |
+| 日次メンテナンス | `media-daily-maintenance.timer` | バックアップ、アプリ更新、rclone 同期、OS 更新、必要時の再起動を直列実行 |
+| rclone | `rclone-media-sync.service` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
+| メディアバックアップ | `media-backup.service` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
+| アプリ更新 | `media-app-update.service` | Immich/Jellyfin を同一 major 内で更新し、major 更新は検知だけ行う |
 | Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
-| Discord 通知 | 設定ファイル: `config/env/notification.env` | 監視・バックアップ結果通知 |
+| Discord 通知 | 設定ファイル: `config/env/notification.env` | 日次メンテナンス結果を 1 日 1 本に集約して通知 |
 
 ## 日常的な利用方法
 
@@ -92,6 +93,44 @@ Jellyfin のデータ配置:
 - その他ライブラリ候補: `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
 - Compose: `/home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml`
 
+Windows サーバーから動画を投入する場合は、Linux 側の Jellyfin ライブラリディレクトリを Samba 共有として公開し、Windows 側から追加コピーします。
+
+想定する共有:
+
+| Windows からの共有名 | Linux 上の実体 | 用途 |
+| --- | --- | --- |
+| `\\home-ubuntu\jellyfin-music-videos` | `/mnt/data/jellyfin/music-videos` | ミュージックビデオ投入 |
+| `\\home-ubuntu\jellyfin-movies` | `/mnt/data/jellyfin/movies` | 映画・長尺動画投入 |
+| `\\home-ubuntu\jellyfin-tv` | `/mnt/data/jellyfin/tv` | TV 番組などのシリーズ投入 |
+
+日常運用では、Windows 側から `robocopy` で追加コピーします。Jellyfin 側でライブラリスキャンを行えば、コピー後の動画を認識できます。
+
+```powershell
+robocopy D:\Videos \\home-ubuntu\jellyfin-music-videos /E /Z /R:2 /W:5
+```
+
+安全のため、通常運用では `/MIR` や `/PURGE` を使った削除同期は行いません。Windows 側の整理や誤削除が Linux 側の Jellyfin ライブラリへ波及しないよう、まずは追加コピーを標準にします。
+
+Samba 共有は家庭内 LAN または Tailscale 経由でのみ利用します。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
+
+Samba の標準設定:
+
+- Samba ユーザー: `mediaserver`
+- 書き込み所有者: `mediaserver:mediaserver`
+- 共有対象: `/mnt/data/jellyfin/music-videos`, `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
+- 作成ファイル権限: `0664`
+- 作成ディレクトリ権限: `0775`
+
+初回適用時は、`mediaserver` の Samba パスワードを設定します。このパスワードは Windows から Samba 共有へ接続するためのもので、Linux ログインパスワードとは別に管理できます。
+
+適用後の確認:
+
+```bash
+testparm -s
+systemctl status smbd --no-pager
+find /mnt/data/jellyfin -maxdepth 1 -type d -printf '%M %u:%g %p\n'
+```
+
 ### アクセス範囲
 
 家庭内 LAN は内部ネットワークとして扱い、家庭内の端末からはサーバーの LAN IP へ直接アクセスします。家庭外からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
@@ -122,6 +161,7 @@ systemctl status tailscaled --no-pager
 ```text
 Tailscale IP: 100.69.11.74
 Node name: home-ubuntu
+MagicDNS name: home-ubuntu.tail1bf795.ts.net
 tailscaled.service: enabled / active
 ```
 
@@ -136,26 +176,60 @@ sudo tailscale up
 
 HTTPS が必要な場合は Tailscale Serve を使い、Tailscale ネットワーク内だけで HTTPS 化できます。標準アクセスは raw port ですが、Serve を使う場合は既存設定を確認してから設定します。
 
+この構成では、証明書は Tailscale の MagicDNS と HTTPS Certificates に任せます。Immich/Jellyfin コンテナには証明書を配置せず、HTTPS 終端は `tailscaled` が担当します。Tailscale 管理画面で MagicDNS と HTTPS Certificates が有効であることが前提です。
+
 ```bash
 tailscale serve status
 tailscale funnel status
 sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
 tailscale serve status
+tailscale funnel status
 ```
 
 この場合のアクセス例:
 
 ```text
-Immich:  https://<MagicDNS name>
-Jellyfin: https://<MagicDNS name>:8443
+Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
 ```
 
-Funnel はインターネット公開用なので、通常運用では使いません。
+Funnel はインターネット公開用なので、通常運用では使いません。`tailscale funnel status` に同じ endpoint が表示されても、`(tailnet only)` と表示されている場合は Funnel によるインターネット公開ではありません。
+
+HTTPS endpoint の確認:
+
+```bash
+curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net/
+curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net:8443/
+```
+
+Immich は `/` に対して `404` を返す場合がありますが、HTTPS で応答が返っていれば Tailscale Serve から Immich への到達確認として扱えます。Jellyfin は `302` で `/web/` へリダイレクトします。
+
+停止・ロールバック:
+
+```bash
+sudo tailscale serve --https=443 off
+sudo tailscale serve --https=8443 off
+tailscale serve status
+tailscale funnel status
+```
 
 ### rclone 同期
 
 rclone はクラウドストレージの内容を Immich 外部ライブラリへ取り込みます。同期方針と削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) を参照します。
+
+`rclone.conf` は認証情報を含むため Git 管理しません。リポジトリでは `config/rclone/rclone.conf.example` だけを管理し、実設定は `/mnt/data/config/rclone/rclone.conf` に配置します。
+
+初期セットアップ:
+
+```bash
+sudo install -m 0700 -d /mnt/data/config/rclone
+sudo install -m 0600 config/rclone/rclone.conf.example /mnt/data/config/rclone/rclone.conf
+sudo rclone config --config /mnt/data/config/rclone/rclone.conf
+test -f /mnt/data/config/rclone/rclone.conf
+```
+
+repo 内の `config/rclone/rclone.conf` は使いません。作成してしまった場合は、必要な内容を `/mnt/data/config/rclone/rclone.conf` へ移してから削除します。
 
 ```bash
 systemctl status rclone-media-sync.timer --no-pager
@@ -262,12 +336,14 @@ docker compose -f docker/jellyfin/docker-compose.yml pull
 
 Immich/Jellyfin は個人運用で手動のリリース監視を続けるのが難しいため、完全固定ではなく major 範囲を固定して日次更新する設計にします。
 
-- Immich: `IMMICH_VERSION=v2`
+- Immich: `IMMICH_VERSION=v3`
 - Jellyfin: `jellyfin/jellyfin:10`
 
 `release` や `latest` は major をまたいだ意図しない更新を招くため使いません。major 更新が公開された場合は自動適用せず、Discord へ通知して手動判断します。
 
-実運用の `docker/immich/.env` に `IMMICH_VERSION=release` が残っている場合、Compose の既定値より `.env` が優先されます。本番反映時は `IMMICH_VERSION=v2` へ変更します。
+実運用の `docker/immich/.env` に `IMMICH_VERSION=release` が残っている場合、Compose の既定値より `.env` が優先されます。本番反映時は `IMMICH_VERSION=v3` へ変更します。
+
+v2 から v3 へ移行する場合は、公式の [v3 移行ガイド](https://immich.app/blog/v3-migration) と [アップグレード手順](https://docs.immich.app/install/upgrading/)を先に確認します。v3 は pgvecto.rs をサポートせず、旧 ML 環境変数や旧タイムライン/API に変更があります。Compose のアップロード mount は `/data` を使い、外部ライブラリの既存コンテナパスは維持します。更新前に Immich の DB dump と `/mnt/backup` へのメディア・設定コピーを完了させ、更新後はモバイルクライアントを含む HTTP、DB、外部ライブラリの疎通を確認します。
 
 ### ディスク確認
 
@@ -389,6 +465,8 @@ docs/
   同期設計.md
 systemd/
   media-firewall.service
+  media-daily-maintenance.service
+  media-daily-maintenance.timer
   media-backup.service
   media-backup.timer
   media-app-update.service
@@ -404,8 +482,11 @@ docker/
 scripts/
   ops/
     apply-media-firewall.sh
+    install-media-daily-maintenance-systemd.sh
     install-media-app-update-systemd.sh
     install-media-backup-systemd.sh
+    media-daily-maintenance.sh
+    media-os-update.sh
     media-app-update.sh
     media-backup.sh
     rclone-media-sync.sh
@@ -414,6 +495,8 @@ scripts/
 config/
   env/
     media-firewall.env.example
+    media-daily-maintenance.env.example
+    media-os-update.env.example
     media-backup.env.example
     media-app-update.env.example
     notification.env.example
@@ -428,7 +511,6 @@ config/
 - `docker/*/.env`
 - `config/env/notification.env`
 - `config/env/media-app-update.env`
-- `config/rclone/rclone.conf`
 - `/mnt/data/config/rclone/rclone.conf`
 - ログ
 - 実データ
@@ -475,14 +557,21 @@ ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/j
 - Tailscale の WireGuard ベース暗号化を前提にする
 - 家族共有が必要になった場合は Tailscale のユーザー・デバイス管理で許可する
 - HTTPS が必要な場合は Tailscale Serve を使う
+- Tailscale Serve の証明書は MagicDNS と HTTPS Certificates に任せ、Immich/Jellyfin 側では管理しない
 
 通常のアクセスは、家庭内では LAN IP、家庭外では `100.x.x.x:2283` / `100.x.x.x:8096` または MagicDNS 名を使います。
+HTTPS を使う場合は、Tailscale 接続中の端末から以下へアクセスします。
+
+```text
+Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
+```
 
 ### rclone の同期設計は docs に分ける
 
 rclone の同期方針、画像と動画の扱い、削除操作の安全条件は [docs/同期設計.md](docs/同期設計.md) にまとめます。
 
-`rclone-media-sync.timer` は daily AM 8:00 JST に実行します。サーバー全体の timezone は変更せず、timer 側で `Asia/Tokyo` を指定します。
+通常運用では `rclone-media-sync.timer` を直接使わず、`media-daily-maintenance.timer` が `rclone-media-sync.sh` を部品として呼びます。旧構成の単体 timer は daily AM 8:00 JST でしたが、日次メンテナンス導入後は無効化します。
 
 ```ini
 OnCalendar=*-*-* 08:00:00 Asia/Tokyo
@@ -497,9 +586,10 @@ OnCalendar=*-*-* 08:00:00 Asia/Tokyo
 ```bash
 test -x /home/mediaserver/ManageMediaServer/scripts/ops/rclone-media-sync.sh
 test -f /home/mediaserver/ManageMediaServer/config/rclone/media-sync-excludes.txt
+test -f /mnt/data/config/rclone/rclone.conf
 ```
 
-systemd unit/timer を配置します。
+単体 systemd unit/timer を配置する場合:
 
 ```bash
 sudo cp systemd/rclone-media-sync.service /etc/systemd/system/
@@ -523,7 +613,8 @@ systemctl list-timers 'rclone*' --no-pager
 
 - `rclone-sync.timer` は disabled / inactive
 - `rclone-sync.timer` は次回実行対象に出ない
-- `rclone-media-sync.timer` だけが JST AM 8:00 の次回実行として出る
+- 通常運用では `rclone-media-sync.timer` も disabled / inactive
+- 日次実行対象には `media-daily-maintenance.timer` だけが出る
 
 問題が出た場合は、まず削除なしの手動実行へ退避します。
 
@@ -537,7 +628,7 @@ sudo systemctl disable rclone-media-sync.timer
 
 ### media-backup の配置
 
-`media-backup.timer` は daily AM 4:00 JST に実行します。`rclone-media-sync.timer` より前に動かし、前回までに取り込まれているメディアを `/mnt/backup` へ追加コピーします。
+通常運用では `media-backup.timer` を直接使わず、`media-daily-maintenance.timer` が `media-backup.sh` を最初のメディア処理として呼びます。旧構成の単体 timer は daily AM 4:00 JST でしたが、日次メンテナンス導入後は無効化します。
 
 ```ini
 OnCalendar=*-*-* 04:00:00 Asia/Tokyo
@@ -551,7 +642,8 @@ OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 
 配置後の期待状態:
 
-- `media-backup.timer` が enabled / active
+- 通常運用では `media-backup.timer` は disabled / inactive
+- 日次実行対象には `media-daily-maintenance.timer` だけが出る
 - `/mnt/backup` が mountpoint
 - `/mnt/backup/immich-upload`
 - `/mnt/backup/immich-backup`
@@ -560,34 +652,86 @@ OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 
 このバックアップはメディアファイルの退避専用です。Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュ、ユーザー操作履歴の完全復元は対象外です。アプリケーション移行時は、バックアップ先のメディアファイルを新しいアプリケーションへ再取り込みします。
 
-### アプリ更新バッチの設計
+### 日次メンテナンスバッチの設計
 
-Immich/Jellyfin のセキュリティアップデートを人手で追い続ける運用は現実的ではないため、アプリ更新は日次バッチで処理します。ただし major 更新は破壊的変更を含む可能性があるため、自動適用せず通知だけ行います。
+日次運用は `media-daily-maintenance.timer` を唯一の定期実行入口にします。個別の `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer` は通常運用では無効化し、各 service / script は手動実行または日次メンテナンスから呼ばれる部品として残します。
+
+`media-daily-maintenance.service` は root で `/home/mediaserver/ManageMediaServer/scripts/ops/media-daily-maintenance.sh` を呼びます。メディア処理は `mediaserver` ユーザーで実行し、OS 更新だけ root で実行します。
 
 systemd unit:
 
 | unit | 時刻 | 役割 |
 | --- | --- | --- |
-| `media-backup.timer` | daily AM 4:00 JST | メディアファイルを `/mnt/backup` へ追加コピー |
-| `media-app-update.timer` | daily AM 5:00 JST | バックアップ後に Immich/Jellyfin を同一 major 内で更新 |
-| `rclone-media-sync.timer` | daily AM 8:00 JST | クラウドストレージから新規メディアを取り込み |
+| `media-daily-maintenance.timer` | daily AM 4:00 JST | バックアップ、アプリ更新、rclone 同期、OS 更新、必要時の再起動を直列実行 |
+
+処理順序:
+
+1. 全体 lock を取得する
+2. メディアバックアップを実行する
+3. Immich/Jellyfin を同一 major 内で更新する
+4. rclone でクラウドストレージからメディアを取り込み、バックアップ確認済み動画をクラウド側から削除する
+5. apt / snap による OS・パッケージ更新を実行する
+6. `/var/run/reboot-required` があれば、日次処理完了後に自動再起動を予約する
+7. Discord へ日次結果を 1 本だけ通知する
+
+OS や Docker daemon、Tailscale、kernel は更新時に daemon restart や再起動を伴う可能性があるため、OS 更新は最後に行います。これにより、バックアップ・アプリ更新・同期を終えてから OS 更新と再起動で締める運用にします。
+
+日次メンテナンス配下では、個別スクリプトの Discord 通知は `SUPPRESS_DISCORD=true` で抑止します。各スクリプトは `SUMMARY_FILE` に実行結果を書き出し、親スクリプトが 1 本の Discord 通知に集約します。
+
+日次メンテナンスの導入:
+
+```bash
+./scripts/ops/install-media-daily-maintenance-systemd.sh
+```
+
+この導入スクリプトは以下を行います。
+
+- `media-daily-maintenance.timer` を enable / start する
+- `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer`、`apt-daily-upgrade.timer` を disable / stop する
+- 個別 service と script は削除せず、手動実行用として残す
+
+確認:
+
+```bash
+systemctl status media-daily-maintenance.timer --no-pager
+systemctl list-timers media-daily-maintenance.timer --no-pager
+journalctl -u media-daily-maintenance.service -n 100 --no-pager
+sudo tail -100 /mnt/data/config/media-daily-maintenance/logs/media-daily-maintenance.log
+```
+
+手動確認:
+
+```bash
+sudo ./scripts/ops/media-daily-maintenance.sh --check-only
+sudo ./scripts/ops/media-daily-maintenance.sh --dry-run
+```
+
+停止する場合:
+
+```bash
+sudo systemctl disable --now media-daily-maintenance.timer
+```
+
+### アプリ更新バッチの設計
+
+Immich/Jellyfin のセキュリティアップデートを人手で追い続ける運用は現実的ではないため、アプリ更新は日次メンテナンス内で処理します。ただし major 更新は破壊的変更を含む可能性があるため、自動適用せず日次通知内の warning として報告します。
 
 `media-app-update.service` は `/home/mediaserver/ManageMediaServer/scripts/ops/media-app-update.sh` を呼びます。処理順序は以下です。
 
 1. `/mnt/backup` が mountpoint であることを確認する
-2. `media-backup.service` の直近実行が成功していることを確認する
+2. 単体実行時は `media-backup.service` の直近実行が成功していることを確認する
 3. `/`, `/mnt/data`, `/mnt/backup` の空き容量を確認する
 4. GitHub Releases から Immich/Jellyfin の最新 major を確認する
-5. 現在の固定 major より新しい major があれば、更新せず Discord へ通知する
+5. 現在の固定 major より新しい major があれば、更新せずサマリへ warning として書き出す
 6. major が同じ範囲の更新だけ `docker compose pull && docker compose up -d` で適用する
 7. `docker compose ps` と HTTP 疎通で Immich/Jellyfin の起動状態を確認する
-8. 成功、更新なし、失敗、major 更新検知を Discord へ通知する
+8. 成功、更新なし、失敗、major 更新検知をサマリへ書き出す
 
 自動更新対象:
 
 | サービス | 自動更新タグ | 自動適用範囲 | major 更新時 |
 | --- | --- | --- | --- |
-| Immich | `IMMICH_VERSION=v2` | `v2.x.x` | 通知のみ |
+| Immich | `IMMICH_VERSION=v3` | `v3.x.x` | 通知のみ |
 | Jellyfin | `jellyfin/jellyfin:10` | `10.x.x` | 通知のみ |
 
 現行の `media-backup.timer` は写真・動画ファイルの保全が目的であり、Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュの完全復元は保証しません。そのため、日次自動更新は「メディアファイルを失わないこと」を最優先にし、アプリの完全ロールバックは前提にしません。Immich は downgrade が安全とは限らないため、更新失敗時は旧タグへ戻すよりも、ログ確認、必要に応じた公式手順での forward fix、最終的にはメディア再取り込みを復旧方針とします。
@@ -599,25 +743,36 @@ systemd unit:
 ./scripts/ops/media-app-update.sh --dry-run
 ```
 
-systemd timer の導入:
-
-```bash
-./scripts/ops/install-media-app-update-systemd.sh
-```
-
-systemd timer の確認:
+単体 systemd timer は通常運用では使いません。手動確認:
 
 ```bash
 systemctl status media-app-update.timer --no-pager
-systemctl list-timers media-app-update.timer --no-pager
 journalctl -u media-app-update.service -n 100 --no-pager
 sudo tail -100 /mnt/data/config/media-app-update/logs/media-app-update.log
 ```
 
-停止する場合:
+### OS / パッケージ更新バッチの設計
+
+OS と apt / snap パッケージの更新は `media-os-update.sh` が担当します。日次メンテナンスの最後に実行し、`apt-get update`、`apt-get -y full-upgrade`、`snap refresh` を実行します。
+
+対象:
+
+| 種別 | 処理 | 備考 |
+| --- | --- | --- |
+| Ubuntu / apt | `apt-get update && apt-get -y full-upgrade` | Ubuntu 標準、Docker、Tailscale など apt repository 由来の更新を含む |
+| apt cleanup | `apt-get -y autoremove` | 既定では無効。必要な場合だけ `RUN_APT_AUTOREMOVE=true` で有効化 |
+| snap | `snap refresh` | snap パッケージを更新。`snap` がない場合は警告のみ |
+| reboot | `/var/run/reboot-required` を確認 | 必要なら日次処理完了後に自動再起動を予約 |
+
+既定では `AUTO_REBOOT=true`、`AUTO_REBOOT_DELAY_MINUTES=5` です。再起動が必要な場合、Discord 通知に `reboot: scheduled_in_5_minutes` と記録してから `shutdown -r +5` を実行します。夜間に人間の判断を要求する通知は出しません。
+
+標準の `apt-daily.timer` は package list 更新として残しても問題ありませんが、実際の upgrade は `media-os-update.sh` に一本化するため、導入時に `apt-daily-upgrade.timer` は無効化します。
+
+手動確認:
 
 ```bash
-sudo systemctl disable --now media-app-update.timer
+sudo ./scripts/ops/media-os-update.sh --check-only
+sudo ./scripts/ops/media-os-update.sh --dry-run
 ```
 
 ### Discord 通知
@@ -636,6 +791,67 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
 実値入り `notification.env` は Git 管理しません。過去コミットに Webhook URL が含まれていたため、本番 Webhook URL はローテーション済みのものを使います。
+
+日次運用では Discord 通知は `media-daily-maintenance.sh` だけが送ります。個別バッチは日次配下では通知を抑止し、実行結果だけを親スクリプトへ渡します。通知は成功・失敗・warning・再起動予約のいずれでも 1 日 1 本です。
+
+通知に含める主な内容:
+
+```text
+**media daily maintenance succeeded**
+
+host: `home-ubuntu`
+time: `2026-05-24 05:58:12 JST`
+duration: `1h 34m`
+result: `succeeded`
+
+steps:
+- media backup: `ok`
+- app update: `ok`
+- rclone sync: `ok`
+- os update: `ok`
+- reboot: `not_required`
+
+sync:
+- image copy: `succeeded`
+- video copy: `succeeded`
+- sync backup: `succeeded`
+- verified videos: `123`
+- deleted videos: `123`
+- skipped videos: `0`
+- dry-run: `false`
+- no-delete: `false`
+
+backup:
+- targets: `immich-upload, immich-external, jellyfin-media`
+
+app updates:
+- latest: `Immich=v3.x.x; Jellyfin=v10.x.x`
+- updated containers: `none`
+- major updates: `none`
+
+os updates:
+- apt upgraded: `tailscale, snapd`
+- apt upgraded count: `2`
+- snap refreshed: `none`
+- snap refreshed count: `0`
+- autoremove: `disabled`
+- reboot required: `no`
+- reboot required by: `none`
+
+storage:
+- `/`: `42.1G free / 20% used`
+- `/mnt/data`: `512G free / 55% used`
+- `/mnt/backup`: `1.8T free / 44% used`
+
+logs:
+- daily: `/mnt/data/config/media-daily-maintenance/logs/media-daily-maintenance.log`
+- backup: `/mnt/data/config/media-backup/logs/media-backup.log`
+- app update: `/mnt/data/config/media-app-update/logs/media-app-update.log`
+- sync: `/mnt/data/config/rclone/logs/media-sync.log`
+- os update: `/mnt/data/config/media-os-update/logs/media-os-update.log`
+```
+
+`skipped videos` が 0 でない場合、または Immich/Jellyfin の major 更新を検知した場合は、日次通知のタイトルを `completed with warnings` にします。再起動が必要で自動再起動を予約した場合は、タイトルを `completed; reboot scheduled` にします。
 
 ### データとバックアップを分ける
 
@@ -683,13 +899,13 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 主要設定:
 
-- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v2}`
-- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v2}`
-- Redis: `docker.io/valkey/valkey:8-bookworm`
-- PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0`
+- image: `ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v3}`
+- ML image: `ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v3}`
+- Redis: `docker.io/valkey/valkey:9`
+- PostgreSQL: `ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0`
 - port: `2283:2283`
 - firewall: 家庭内 LAN と `tailscale0` からのみ `2283/tcp` を許可。Docker published port は `DOCKER-USER` でも制限
-- upload mount: `${UPLOAD_LOCATION}:/usr/src/app/upload`
+- upload mount: `${UPLOAD_LOCATION}:/data`
 - external mount: `${EXTERNAL_PATH:-/tmp/empty}:/usr/src/app/external:ro`
 - db mount: `${DB_DATA_LOCATION}:/var/lib/postgresql/data`
 
@@ -699,7 +915,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 UPLOAD_LOCATION=/mnt/data/immich/upload
 DB_DATA_LOCATION=/mnt/data/immich/postgres
 EXTERNAL_PATH=/mnt/data/immich/external
-IMMICH_VERSION=v2
+IMMICH_VERSION=v3
 DB_PASSWORD=change-me
 DB_USERNAME=postgres
 DB_DATABASE_NAME=immich
@@ -719,6 +935,37 @@ DB_DATABASE_NAME=immich
 - firewall: 家庭内 LAN と `tailscale0` からのみ `8096/tcp` を許可。Docker published port は `DOCKER-USER` でも制限
 - `8920/tcp`: 標準構成では使わない
 - `1900/udp`: DLNA を使う場合だけ家庭内 LAN から許可
+
+### Tailscale Serve
+
+HTTPS が必要な場合は、Tailscale Serve で `home-ubuntu.tail1bf795.ts.net` に HTTPS endpoint を作ります。`443/tcp` は Immich、`8443/tcp` は Jellyfin へ転送します。
+
+```bash
+tailscale serve status
+tailscale funnel status
+sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
+tailscale serve status
+tailscale funnel status
+```
+
+`tailscale funnel status` に endpoint が表示されても、`(tailnet only)` であれば Funnel による公開ではありません。
+
+期待する URL:
+
+```text
+Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
+```
+
+停止する場合:
+
+```bash
+sudo tailscale serve --https=443 off
+sudo tailscale serve --https=8443 off
+tailscale serve status
+tailscale funnel status
+```
 
 ## 同期・バックアップ設計
 
@@ -836,6 +1083,8 @@ sudo mount /mnt/backup
 - `rclone.conf`
 - `notification.env`
 - `media-firewall.env`
+- `media-daily-maintenance.env`
+- `media-os-update.env`
 - `media-backup.env`
 - `media-app-update.env`
 - 認証情報

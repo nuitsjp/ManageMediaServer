@@ -40,22 +40,31 @@ VIDEO_COPY_STATUS="not_run"
 BACKUP_STATUS="not_run"
 VERIFIED_COUNT=0
 DELETED_COUNT=0
+SKIPPED_VIDEO_COUNT=0
 CURRENT_STEP="initializing"
 VERIFIED_FILE=""
 DRY_RUN_LOG=""
 NOTIFICATION_ENV_LOADED=false
+SUPPRESS_DISCORD="${SUPPRESS_DISCORD:-false}"
+SUMMARY_FILE="${SUMMARY_FILE:-}"
+DRY_RUN=false
 
 usage() {
     cat <<'USAGE'
-Usage: rclone-media-sync.sh [--no-delete]
+Usage: rclone-media-sync.sh [--dry-run] [--no-delete]
 
 Options:
+  --dry-run    Run copy and delete checks without writing files or deleting remote files.
   --no-delete  Copy images/videos and backup local files, but skip dry-run and remote deletion.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
         --no-delete)
             NO_DELETE=true
             shift
@@ -95,6 +104,11 @@ notify_discord() {
     local status="$1"
     local message="$2"
 
+    if [[ "$SUPPRESS_DISCORD" == "true" ]]; then
+        log "Discord通知は抑止されています"
+        return 0
+    fi
+
     load_notification_env
 
     if [[ "${NOTIFICATION_ENABLED:-false}" != "true" ]]; then
@@ -125,6 +139,8 @@ notify_discord() {
         --arg backup "$BACKUP_STATUS" \
         --arg verified "$VERIFIED_COUNT" \
         --arg deleted "$DELETED_COUNT" \
+        --arg skipped "$SKIPPED_VIDEO_COUNT" \
+        --arg dry_run "$DRY_RUN" \
         --arg no_delete "$NO_DELETE" \
         --arg log_file "$LOG_FILE" \
         '{content: ("**rclone media sync " + $status + "**\n"
@@ -136,6 +152,8 @@ notify_discord() {
             + "backup: `" + $backup + "`\n"
             + "verified videos: `" + $verified + "`\n"
             + "deleted videos: `" + $deleted + "`\n"
+            + "skipped videos: `" + $skipped + "`\n"
+            + "dry-run: `" + $dry_run + "`\n"
             + "no-delete: `" + $no_delete + "`\n"
             + "log: `" + $log_file + "`")}')
 
@@ -144,14 +162,41 @@ notify_discord() {
     fi
 }
 
+write_summary() {
+    [[ -n "$SUMMARY_FILE" ]] || return 0
+
+    local status="$1"
+    local message="$2"
+    {
+        printf 'RCLONE_SYNC_STATUS=%q\n' "$status"
+        printf 'RCLONE_SYNC_MESSAGE=%q\n' "$message"
+        printf 'RCLONE_IMAGE_COPY_STATUS=%q\n' "$IMAGE_COPY_STATUS"
+        printf 'RCLONE_VIDEO_COPY_STATUS=%q\n' "$VIDEO_COPY_STATUS"
+        printf 'RCLONE_BACKUP_STATUS=%q\n' "$BACKUP_STATUS"
+        printf 'RCLONE_VERIFIED_COUNT=%q\n' "$VERIFIED_COUNT"
+        printf 'RCLONE_DELETED_COUNT=%q\n' "$DELETED_COUNT"
+        printf 'RCLONE_SKIPPED_VIDEO_COUNT=%q\n' "$SKIPPED_VIDEO_COUNT"
+        printf 'RCLONE_DRY_RUN=%q\n' "$DRY_RUN"
+        printf 'RCLONE_NO_DELETE=%q\n' "$NO_DELETE"
+        printf 'RCLONE_LOG_FILE=%q\n' "$LOG_FILE"
+        printf 'RCLONE_VERIFIED_FILE=%q\n' "$VERIFIED_FILE"
+        printf 'RCLONE_DRY_RUN_LOG=%q\n' "$DRY_RUN_LOG"
+    } > "$SUMMARY_FILE"
+}
+
 on_exit() {
     local exit_code=$?
+    local status message
     trap - EXIT
     if [[ $exit_code -eq 0 ]]; then
-        notify_discord "succeeded" "media sync completed"
+        status="succeeded"
+        message="media sync completed"
     else
-        notify_discord "failed" "failed at step: ${CURRENT_STEP}"
+        status="failed"
+        message="failed at step: ${CURRENT_STEP}"
     fi
+    write_summary "$status" "$message"
+    notify_discord "$status" "$message"
     exit "$exit_code"
 }
 
@@ -195,9 +240,17 @@ run_rclone_copy() {
     mapfile -d '' -t common < <(rclone_common_args)
 
     log "${label} copy 開始: ${src} -> ${dst}"
-    rclone copy "$src" "$dst" \
-        "${common[@]}" \
+    local args=(
+        copy
+        "$src"
+        "$dst"
+        "${common[@]}"
         --filter-from "$filter_file"
+    )
+    if [[ "$DRY_RUN" == "true" ]]; then
+        args+=(--dry-run)
+    fi
+    rclone "${args[@]}"
     rm -f "$filter_file"
     log "${label} copy 完了"
 }
@@ -296,10 +349,12 @@ build_verified_file_list() {
 
         if [[ ! -f "$local_path" ]]; then
             log "SKIP: localなし: $path"
+            ((SKIPPED_VIDEO_COUNT+=1))
             continue
         fi
         if [[ ! -f "$backup_path" ]]; then
             log "SKIP: backupなし: $path"
+            ((SKIPPED_VIDEO_COUNT+=1))
             continue
         fi
 
@@ -307,6 +362,7 @@ build_verified_file_list() {
         backup_size=$(stat -c '%s' "$backup_path")
         if [[ "$size" != "$local_size" || "$size" != "$backup_size" ]]; then
             log "SKIP: サイズ不一致: $path remote=$size local=$local_size backup=$backup_size"
+            ((SKIPPED_VIDEO_COUNT+=1))
             continue
         fi
 
@@ -316,6 +372,7 @@ build_verified_file_list() {
     rm -f "$remote_json" "$filter_file"
     VERIFIED_COUNT=$(wc -l < "$VERIFIED_FILE" | tr -d ' ')
     log "確認済み動画数: ${VERIFIED_COUNT}"
+    log "削除スキップ動画数: ${SKIPPED_VIDEO_COUNT}"
 }
 
 delete_verified_videos() {
@@ -341,6 +398,12 @@ delete_verified_videos() {
         "${common[@]}" | tee "$DRY_RUN_LOG"
     log "クラウド動画削除 dry-run 完了: $DRY_RUN_LOG"
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "dry-run 指定のため実削除をスキップします"
+        DELETED_COUNT=0
+        return 0
+    fi
+
     CURRENT_STEP="delete remote videos"
     log "クラウド動画削除開始: $VERIFIED_FILE"
     rclone delete "$REMOTE_SOURCE" \
@@ -356,6 +419,7 @@ main() {
     log "LOCAL_DIR=${LOCAL_DIR}"
     log "BACKUP_DIR=${BACKUP_DIR}"
     log "BACKUP_ROOT=${BACKUP_ROOT}"
+    log "DRY_RUN=${DRY_RUN}"
     log "NO_DELETE=${NO_DELETE}"
 
     assert_prerequisites

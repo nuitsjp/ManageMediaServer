@@ -16,6 +16,8 @@ UPDATED_CONTAINERS=()
 MAJOR_UPDATE_MESSAGES=()
 LATEST_VERSION_SUMMARY=()
 BEFORE_FILE=""
+SUPPRESS_DISCORD="${SUPPRESS_DISCORD:-false}"
+SUMMARY_FILE="${SUMMARY_FILE:-}"
 
 usage() {
     cat <<'USAGE'
@@ -80,7 +82,7 @@ ROOT_MIN_FREE_KIB="${ROOT_MIN_FREE_KIB:-1048576}"
 DATA_MIN_FREE_KIB="${DATA_MIN_FREE_KIB:-1048576}"
 BACKUP_MIN_FREE_KIB="${BACKUP_MIN_FREE_KIB:-1048576}"
 
-IMMICH_ALLOWED_MAJOR="${IMMICH_ALLOWED_MAJOR:-2}"
+IMMICH_ALLOWED_MAJOR="${IMMICH_ALLOWED_MAJOR:-3}"
 JELLYFIN_ALLOWED_MAJOR="${JELLYFIN_ALLOWED_MAJOR:-10}"
 
 IMMICH_COMPOSE_DIR="${IMMICH_COMPOSE_DIR:-${PROD_ROOT}/docker/immich}"
@@ -116,6 +118,11 @@ join_items() {
 notify_discord() {
     local status="$1"
     local message="$2"
+
+    if [[ "$SUPPRESS_DISCORD" == "true" ]]; then
+        log "Discord notification is suppressed"
+        return 0
+    fi
 
     if [[ "${NOTIFICATION_ENABLED:-false}" != "true" ]]; then
         log "Discord notification is disabled"
@@ -169,6 +176,31 @@ notify_discord() {
     fi
 }
 
+write_summary() {
+    [[ -n "$SUMMARY_FILE" ]] || return 0
+
+    local status="$1"
+    local message="$2"
+    local updated major_updates latest_versions
+    updated=$(join_items ', ' "${UPDATED_CONTAINERS[@]}")
+    major_updates=$(join_items '; ' "${MAJOR_UPDATE_MESSAGES[@]}")
+    latest_versions=$(join_items '; ' "${LATEST_VERSION_SUMMARY[@]}")
+    [[ -n "$updated" ]] || updated="none"
+    [[ -n "$major_updates" ]] || major_updates="none"
+    [[ -n "$latest_versions" ]] || latest_versions="unknown"
+
+    {
+        printf 'MEDIA_APP_UPDATE_STATUS=%q\n' "$status"
+        printf 'MEDIA_APP_UPDATE_MESSAGE=%q\n' "$message"
+        printf 'MEDIA_APP_UPDATED_CONTAINERS=%q\n' "$updated"
+        printf 'MEDIA_APP_MAJOR_UPDATES=%q\n' "$major_updates"
+        printf 'MEDIA_APP_LATEST_VERSIONS=%q\n' "$latest_versions"
+        printf 'MEDIA_APP_DRY_RUN=%q\n' "$DRY_RUN"
+        printf 'MEDIA_APP_CHECK_ONLY=%q\n' "$CHECK_ONLY"
+        printf 'MEDIA_APP_LOG_FILE=%q\n' "$LOG_FILE"
+    } > "$SUMMARY_FILE"
+}
+
 on_exit() {
     local exit_code=$?
     local status message
@@ -194,8 +226,10 @@ on_exit() {
         else
             message="app update completed"
         fi
+        write_summary "$status" "$message"
         notify_discord "$status" "$message"
     else
+        write_summary "failed" "failed at step: ${CURRENT_STEP}"
         notify_discord "failed" "failed at step: ${CURRENT_STEP}"
     fi
 

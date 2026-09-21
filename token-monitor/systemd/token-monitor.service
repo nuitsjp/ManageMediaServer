@@ -1,0 +1,20 @@
+[Unit]
+Description=Run private/work Token Monitor hubs and the private agent
+Wants=network-online.target docker.service tailscaled.service
+After=network-online.target docker.service tailscaled.service
+Requires=docker.service
+RequiresMountsFor=/mnt/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=mediaserver
+Group=mediaserver
+WorkingDirectory=/home/mediaserver/ManageMediaServer/token-monitor
+ExecStart=/usr/bin/docker compose --env-file /home/mediaserver/ManageMediaServer/config/env/token-monitor-deploy.env -f /home/mediaserver/ManageMediaServer/token-monitor/compose.yaml up -d --no-build
+ExecStop=/usr/bin/docker compose --env-file /home/mediaserver/ManageMediaServer/config/env/token-monitor-deploy.env -f /home/mediaserver/ManageMediaServer/token-monitor/compose.yaml stop
+TimeoutStartSec=180
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
