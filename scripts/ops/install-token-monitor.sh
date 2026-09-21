@@ -22,6 +22,8 @@ required=(
     "${REPO_ROOT}/token-monitor/scripts/update.sh"
     "${REPO_ROOT}/token-monitor/systemd/token-monitor.service"
     "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh"
+    "${REPO_ROOT}/systemd/media-daily-maintenance.service"
+    "${REPO_ROOT}/systemd/media-daily-maintenance.timer"
     "$SOURCE_COMMON_ENV"
 )
 for file in "${required[@]}"; do
@@ -55,6 +57,12 @@ install -m 0755 -D "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh" \
 install -m 0644 -D "${REPO_ROOT}/config/env/media-daily-maintenance.env.example" \
     "${PROD_ROOT}/config/env/media-daily-maintenance.env.example"
 
+if [[ ! -f "${PROD_CONFIG_ROOT}/media-daily-maintenance.env" ]]; then
+    install -m 0640 -o mediaserver -g mediaserver \
+        "${REPO_ROOT}/config/env/media-daily-maintenance.env.example" \
+        "${PROD_CONFIG_ROOT}/media-daily-maintenance.env"
+fi
+
 install -d -m 0750 -o mediaserver -g mediaserver "$PROD_CONFIG_ROOT"
 install -m 0640 -o mediaserver -g mediaserver "$SOURCE_COMMON_ENV" \
     "${PROD_CONFIG_ROOT}/token-monitor-common.env"
@@ -84,25 +92,35 @@ install -m 0644 "${REPO_ROOT}/token-monitor/systemd/token-monitor-update.service
     /etc/systemd/system/token-monitor-update.service
 install -m 0644 "${REPO_ROOT}/token-monitor/systemd/token-monitor-update.timer" \
     /etc/systemd/system/token-monitor-update.timer
+install -m 0644 "${REPO_ROOT}/systemd/media-daily-maintenance.service" \
+    /etc/systemd/system/media-daily-maintenance.service
+install -m 0644 "${REPO_ROOT}/systemd/media-daily-maintenance.timer" \
+    /etc/systemd/system/media-daily-maintenance.timer
 
 systemctl daemon-reload
 systemctl disable --now token-monitor-update.timer >/dev/null 2>&1 || true
+systemctl disable --now \
+    media-backup.timer \
+    media-app-update.timer \
+    rclone-media-sync.timer \
+    apt-daily-upgrade.timer >/dev/null 2>&1 || true
 
 set -a
 # shellcheck disable=SC1090
 source "${PROD_CONFIG_ROOT}/token-monitor-deploy.env"
 set +a
 
-docker compose --env-file "${PROD_CONFIG_ROOT}/token-monitor-deploy.env" \
-    -f "${PROD_TOKEN_ROOT}/compose.yaml" build
+"${PROD_TOKEN_ROOT}/scripts/build-image.sh" "$TOKEN_MONITOR_VERSION"
 systemctl enable token-monitor.service
 systemctl restart token-monitor.service
+systemctl enable --now media-daily-maintenance.timer
 
 tailscale serve --yes --bg --https=17321 http://127.0.0.1:17321
 tailscale serve --yes --bg --https=17322 http://127.0.0.1:17322
 
 "${PROD_TOKEN_ROOT}/scripts/healthcheck.sh"
 systemctl --no-pager --full status token-monitor.service
+systemctl --no-pager --full status media-daily-maintenance.timer
 docker compose --env-file "${PROD_CONFIG_ROOT}/token-monitor-deploy.env" \
     -f "${PROD_TOKEN_ROOT}/compose.yaml" ps
 tailscale serve status

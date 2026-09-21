@@ -7,11 +7,14 @@ Node hubs and one headless agent.
 | --- | --- | --- |
 | `hub-private` | `192.168.0.23:17321`, `127.0.0.1:17321` | Private devices over the home LAN or Tailscale |
 | `hub-work` | `127.0.0.1:17322` | Work devices over Tailscale only |
-| `agent-private` | Docker internal network only | Reads this host's Codex and Claude logs and sends them to `hub-private` |
+| `agent-private` | Private internal bridge only | Reads this host's Codex and Claude logs and sends them to `hub-private` |
 
-Both hubs use the same shared secret, but have separate containers, networks,
+Both hubs use the same shared secret, but have separate containers and edge bridge networks,
 data files, logs, and backup directories. The work hub has no LAN-published
-port. Tailscale Serve terminates HTTPS for both localhost ports.
+port. The bridge networks must permit Docker's published-port forwarding;
+exposure is restricted by the explicit host bindings instead of Docker's
+`internal` network flag. The private Agent remains on a separate internal-only
+bridge shared with the private Hub. Tailscale Serve terminates HTTPS for both localhost ports.
 
 ## Files and data
 
@@ -44,7 +47,8 @@ sudo ./scripts/ops/install-token-monitor.sh
 
 The installer validates required files, backs up an existing production copy,
 creates the persistent directories, builds the pinned image, enables
-`token-monitor.service`, configures Tailscale Serve, and runs health checks.
+`token-monitor.service`, installs the integrated daily-maintenance timer,
+configures Tailscale Serve, and runs health checks.
 
 ## Client URLs
 

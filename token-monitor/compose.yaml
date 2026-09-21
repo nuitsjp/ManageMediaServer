@@ -30,7 +30,8 @@ services:
       - "127.0.0.1:17321:17321"
       - "${TOKEN_MONITOR_LAN_IP}:17321:17321"
     networks:
-      - private
+      - private-edge
+      - private-agent
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17321/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
@@ -83,13 +84,15 @@ services:
       - ${TOKEN_MONITOR_AGENT_HOME}/.claude:/home/collector/.claude:ro
       - ${TOKEN_MONITOR_DATA_ROOT}/agent-private/state:/var/lib/token-monitor
     networks:
-      - private
+      - private-agent
     depends_on:
       hub-private:
         condition: service_healthy
 
 networks:
-  private:
+  private-edge:
+    driver: bridge
+  private-agent:
     internal: true
   work:
-    internal: true
+    driver: bridge
