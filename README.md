@@ -24,6 +24,7 @@
 | Immich | `http://<LAN IP>:2283` / `http://<Tailscale IP>:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |
 | Jellyfin | `http://<LAN IP>:8096` / `http://<Tailscale IP>:8096` | 長尺動画・ミュージックビデオの視聴 |
 | 日次メンテナンス | `media-daily-maintenance.timer` | バックアップ、アプリ更新、rclone 同期、OS 更新、必要時の再起動を直列実行 |
+| メディアヘルスチェック | `media-health-check.timer` | 10 分ごとにサービス、日次メンテナンス、ディスク状態を監視 |
 | rclone | `rclone-media-sync.service` | クラウドストレージから `/mnt/data/immich/external` へ取り込み |
 | メディアバックアップ | `media-backup.service` | 写真・動画を物理別ドライブの `/mnt/backup` へ追加コピー |
 | アプリ更新 | `media-app-update.service` | Immich/Jellyfin を同一 major 内で更新し、major 更新は検知だけ行う |
@@ -465,6 +466,8 @@ docs/
   同期設計.md
 systemd/
   media-firewall.service
+  media-health-check.service
+  media-health-check.timer
   media-daily-maintenance.service
   media-daily-maintenance.timer
   media-backup.service
@@ -482,10 +485,12 @@ docker/
 scripts/
   ops/
     apply-media-firewall.sh
+    install-media-health-check-systemd.sh
     install-media-daily-maintenance-systemd.sh
     install-media-app-update-systemd.sh
     install-media-backup-systemd.sh
     media-daily-maintenance.sh
+    media-health-check.sh
     media-os-update.sh
     media-app-update.sh
     media-backup.sh
@@ -495,6 +500,7 @@ scripts/
 config/
   env/
     media-firewall.env.example
+    media-health-check.env.example
     media-daily-maintenance.env.example
     media-os-update.env.example
     media-backup.env.example
@@ -792,7 +798,9 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 実値入り `notification.env` は Git 管理しません。過去コミットに Webhook URL が含まれていたため、本番 Webhook URL はローテーション済みのものを使います。
 
-日次運用では Discord 通知は `media-daily-maintenance.sh` だけが送ります。個別バッチは日次配下では通知を抑止し、実行結果だけを親スクリプトへ渡します。通知は成功・失敗・warning・再起動予約のいずれでも 1 日 1 本です。
+日次バッチの結果通知は `media-daily-maintenance.sh` に集約します。個別バッチは日次配下では通知を抑止し、実行結果だけを親スクリプトへ渡します。通知は成功・失敗・warning・再起動予約のいずれでも 1 日 1 本です。
+
+これとは別に `media-health-check.timer` が 10 分ごとに Immich、Jellyfin、`media-daily-maintenance.timer`、各ファイルシステムを監視します。ヘルスチェックは同じ障害を繰り返し通知せず、初回障害、障害内容の変化、復旧の各タイミングで 1 回だけ Discord へ通知します。通知状態は `/mnt/data/config/media-health-check/state/last-result` に保存します。
 
 通知に含める主な内容:
 
