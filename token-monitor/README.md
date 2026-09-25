@@ -47,8 +47,11 @@ sudo ./scripts/ops/install-token-monitor.sh
 
 The installer validates required files, backs up an existing production copy,
 creates the persistent directories, builds the pinned image, enables
-`token-monitor.service`, installs the integrated daily-maintenance timer,
-configures Tailscale Serve, and runs health checks.
+`token-monitor.service`, configures Tailscale Serve, and runs health checks.
+It deploys the integrated daily maintenance through
+`scripts/ops/install-media-daily-maintenance-systemd.sh`, which installs every
+script the workflow calls and enables the timer only after
+`media-daily-maintenance.sh --preflight` passes.
 
 ## Client URLs
 

@@ -21,9 +21,7 @@ required=(
     "${REPO_ROOT}/token-monitor/compose.yaml"
     "${REPO_ROOT}/token-monitor/scripts/update.sh"
     "${REPO_ROOT}/token-monitor/systemd/token-monitor.service"
-    "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh"
-    "${REPO_ROOT}/systemd/media-daily-maintenance.service"
-    "${REPO_ROOT}/systemd/media-daily-maintenance.timer"
+    "${REPO_ROOT}/scripts/ops/install-media-daily-maintenance-systemd.sh"
     "$SOURCE_COMMON_ENV"
 )
 for file in "${required[@]}"; do
@@ -37,10 +35,6 @@ install -d -m 0750 -o mediaserver -g mediaserver "$BACKUP_DIR"
 if [[ -d "$PROD_TOKEN_ROOT" ]]; then
     cp -a "$PROD_TOKEN_ROOT" "$BACKUP_DIR/token-monitor"
 fi
-if [[ -f "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh" ]]; then
-    install -d -m 0750 -o mediaserver -g mediaserver "$BACKUP_DIR/scripts/ops"
-    cp -a "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh" "$BACKUP_DIR/scripts/ops/"
-fi
 for file in token-monitor-common.env token-monitor-private.env token-monitor-work.env \
     token-monitor-agent-private.env token-monitor-deploy.env; do
     if [[ -f "${PROD_CONFIG_ROOT}/${file}" ]]; then
@@ -52,17 +46,6 @@ install -d -m 0755 -o root -g root "$PROD_TOKEN_ROOT"
 cp -a "${REPO_ROOT}/token-monitor/." "$PROD_TOKEN_ROOT/"
 chown -R root:root "$PROD_TOKEN_ROOT"
 find "$PROD_TOKEN_ROOT/scripts" -type f -name '*.sh' -exec chmod 0755 {} +
-install -m 0755 -D "${REPO_ROOT}/scripts/ops/media-daily-maintenance.sh" \
-    "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh"
-install -m 0644 -D "${REPO_ROOT}/config/env/media-daily-maintenance.env.example" \
-    "${PROD_ROOT}/config/env/media-daily-maintenance.env.example"
-
-if [[ ! -f "${PROD_CONFIG_ROOT}/media-daily-maintenance.env" ]]; then
-    install -m 0640 -o mediaserver -g mediaserver \
-        "${REPO_ROOT}/config/env/media-daily-maintenance.env.example" \
-        "${PROD_CONFIG_ROOT}/media-daily-maintenance.env"
-fi
-
 install -d -m 0750 -o mediaserver -g mediaserver "$PROD_CONFIG_ROOT"
 install -m 0640 -o mediaserver -g mediaserver "$SOURCE_COMMON_ENV" \
     "${PROD_CONFIG_ROOT}/token-monitor-common.env"
@@ -92,18 +75,9 @@ install -m 0644 "${REPO_ROOT}/token-monitor/systemd/token-monitor-update.service
     /etc/systemd/system/token-monitor-update.service
 install -m 0644 "${REPO_ROOT}/token-monitor/systemd/token-monitor-update.timer" \
     /etc/systemd/system/token-monitor-update.timer
-install -m 0644 "${REPO_ROOT}/systemd/media-daily-maintenance.service" \
-    /etc/systemd/system/media-daily-maintenance.service
-install -m 0644 "${REPO_ROOT}/systemd/media-daily-maintenance.timer" \
-    /etc/systemd/system/media-daily-maintenance.timer
 
 systemctl daemon-reload
 systemctl disable --now token-monitor-update.timer >/dev/null 2>&1 || true
-systemctl disable --now \
-    media-backup.timer \
-    media-app-update.timer \
-    rclone-media-sync.timer \
-    apt-daily-upgrade.timer >/dev/null 2>&1 || true
 
 set -a
 # shellcheck disable=SC1090
@@ -113,7 +87,10 @@ set +a
 "${PROD_TOKEN_ROOT}/scripts/build-image.sh" "$TOKEN_MONITOR_VERSION"
 systemctl enable token-monitor.service
 systemctl restart token-monitor.service
-systemctl enable --now media-daily-maintenance.timer
+
+# Deploys every daily-maintenance dependency and enables its timer only after
+# the preflight passes, so the Token Monitor update is actually scheduled.
+PROD_ROOT="$PROD_ROOT" "${REPO_ROOT}/scripts/ops/install-media-daily-maintenance-systemd.sh"
 
 tailscale serve --yes --bg --https=17321 http://127.0.0.1:17321
 tailscale serve --yes --bg --https=17322 http://127.0.0.1:17322

@@ -10,19 +10,23 @@ NOTIFICATION_ENV="${NOTIFICATION_ENV:-${REPO_ROOT}/config/env/notification.env}"
 
 DRY_RUN=false
 CHECK_ONLY=false
+PREFLIGHT_ONLY=false
 CURRENT_STEP="initializing"
 START_EPOCH=$(date +%s)
 SUMMARY_DIR=""
 
 usage() {
     cat <<'USAGE'
-Usage: media-daily-maintenance.sh [--dry-run] [--check-only]
+Usage: media-daily-maintenance.sh [--dry-run] [--check-only] [--preflight]
 
 Runs the daily media-server maintenance workflow with one Discord summary.
+Each step runs independently; failures are collected and reported together.
 
 Options:
   --dry-run     Run safe dry-run/check modes where available.
   --check-only  Check versions and pending OS updates without running mutating steps.
+  --preflight   Verify that every enabled step can start, then exit without
+                running steps or sending a notification.
 USAGE
 }
 
@@ -34,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --check-only)
             CHECK_ONLY=true
+            shift
+            ;;
+        --preflight)
+            PREFLIGHT_ONLY=true
             shift
             ;;
         -h|--help)
@@ -88,9 +96,10 @@ MEDIA_APP_UPDATE_STATUS="skipped"
 TOKEN_MONITOR_UPDATE_STATUS="skipped"
 RCLONE_SYNC_STATUS="skipped"
 MEDIA_OS_UPDATE_STATUS="skipped"
+MEDIA_BACKUP_FAILED=false
 DAILY_RESULT="succeeded"
-FAILED_STEP="none"
-FAILED_MESSAGE="none"
+FAILED_STEPS=()
+FAILED_MESSAGES=()
 REBOOT_ACTION="not_required"
 
 mkdir -p "$LOG_DIR"
@@ -164,13 +173,66 @@ mark_failed() {
     local step="$1"
     local message="$2"
     DAILY_RESULT="failed"
-    FAILED_STEP="$step"
-    FAILED_MESSAGE="$message"
+    FAILED_STEPS+=("$step")
+    FAILED_MESSAGES+=("${step}: ${message}")
+    log "ERROR: ${step}: ${message}"
+}
+
+missing_files() {
+    local file
+    for file in "$@"; do
+        [[ -f "$file" ]] || printf '%s\n' "$file"
+    done
+}
+
+token_monitor_required_files() {
+    local token_root
+    token_root=$(cd "$(dirname "$TOKEN_MONITOR_UPDATE_SCRIPT")/.." 2>/dev/null && pwd) || token_root="$(dirname "$TOKEN_MONITOR_UPDATE_SCRIPT")/.."
+    printf '%s\n' \
+        "$TOKEN_MONITOR_UPDATE_SCRIPT" \
+        "${token_root}/scripts/backup-data.sh" \
+        "${token_root}/scripts/build-image.sh" \
+        "${token_root}/scripts/healthcheck.sh" \
+        "${token_root}/compose.yaml" \
+        "${token_root}/Dockerfile" \
+        "${PROD_ROOT}/config/env/token-monitor-deploy.env" \
+        "${PROD_ROOT}/config/env/token-monitor-common.env"
+}
+
+# Prints the files a step needs that are missing. Empty output means the step can start.
+step_missing_files() {
+    case "$1" in
+        media-backup) missing_files "$MEDIA_BACKUP_SCRIPT" ;;
+        media-app-update) missing_files "$MEDIA_APP_UPDATE_SCRIPT" ;;
+        token-monitor-update)
+            local files=()
+            mapfile -t files < <(token_monitor_required_files)
+            missing_files "${files[@]}"
+            ;;
+        rclone-media-sync) missing_files "$RCLONE_MEDIA_SYNC_SCRIPT" ;;
+        os-update) missing_files "$MEDIA_OS_UPDATE_SCRIPT" ;;
+    esac
+}
+
+# Returns non-zero and records a failure when a step's files are missing.
+require_step_files() {
+    local step_id="$1"
+    local step_name="$2"
+    local missing=()
+    mapfile -t missing < <(step_missing_files "$step_id")
+    (( ${#missing[@]} == 0 )) && return 0
+    mark_failed "$step_name" "missing file: $(join_items ', ' "${missing[@]}")"
+    return 1
 }
 
 run_media_backup() {
     [[ "$RUN_MEDIA_BACKUP" == "true" ]] || return 0
     CURRENT_STEP="media backup"
+    if ! require_step_files media-backup "$CURRENT_STEP"; then
+        MEDIA_BACKUP_STATUS="failed"
+        MEDIA_BACKUP_FAILED=true
+        return 1
+    fi
     local summary="${SUMMARY_DIR}/media-backup.env"
     local args=()
     if [[ "$DRY_RUN" == "true" || "$CHECK_ONLY" == "true" ]]; then
@@ -178,6 +240,7 @@ run_media_backup() {
     fi
 
     log "media backup start"
+    MEDIA_BACKUP_STATUS=""
     if run_as_child_user env SUPPRESS_DISCORD=true SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_BACKUP_SCRIPT" "${args[@]}"; then
         source_summary "$summary"
         MEDIA_BACKUP_STATUS="${MEDIA_BACKUP_STATUS:-succeeded}"
@@ -185,6 +248,7 @@ run_media_backup() {
     else
         source_summary "$summary"
         MEDIA_BACKUP_STATUS="${MEDIA_BACKUP_STATUS:-failed}"
+        MEDIA_BACKUP_FAILED=true
         mark_failed "media backup" "${MEDIA_BACKUP_MESSAGE:-media backup failed}"
         return 1
     fi
@@ -192,7 +256,18 @@ run_media_backup() {
 
 run_media_app_update() {
     [[ "$RUN_MEDIA_APP_UPDATE" == "true" ]] || return 0
+    # The app update skips its own backup check because this workflow just ran
+    # media backup, so it must not proceed when that backup failed.
+    if [[ "$MEDIA_BACKUP_FAILED" == "true" ]]; then
+        MEDIA_APP_UPDATE_STATUS="skipped_backup_failed"
+        log "media backup failed; skipping media app update"
+        return 0
+    fi
     CURRENT_STEP="media app update"
+    if ! require_step_files media-app-update "$CURRENT_STEP"; then
+        MEDIA_APP_UPDATE_STATUS="failed"
+        return 1
+    fi
     local summary="${SUMMARY_DIR}/media-app-update.env"
     local args=(--skip-backup-check)
     if [[ "$CHECK_ONLY" == "true" ]]; then
@@ -202,6 +277,7 @@ run_media_app_update() {
     fi
 
     log "media app update start"
+    MEDIA_APP_UPDATE_STATUS=""
     if run_as_child_user env SUPPRESS_DISCORD=true SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_APP_UPDATE_SCRIPT" "${args[@]}"; then
         source_summary "$summary"
         MEDIA_APP_UPDATE_STATUS="${MEDIA_APP_UPDATE_STATUS:-succeeded}"
@@ -217,6 +293,10 @@ run_media_app_update() {
 run_token_monitor_update() {
     [[ "$RUN_TOKEN_MONITOR_UPDATE" == "true" ]] || return 0
     CURRENT_STEP="Token Monitor update"
+    if ! require_step_files token-monitor-update "$CURRENT_STEP"; then
+        TOKEN_MONITOR_UPDATE_STATUS="failed"
+        return 1
+    fi
     local summary="${SUMMARY_DIR}/token-monitor-update.env"
     local args=()
     if [[ "$CHECK_ONLY" == "true" ]]; then
@@ -226,6 +306,7 @@ run_token_monitor_update() {
     fi
 
     log "Token Monitor update start"
+    TOKEN_MONITOR_UPDATE_STATUS=""
     if run_as_child_user env SUMMARY_FILE="$summary" /usr/bin/bash "$TOKEN_MONITOR_UPDATE_SCRIPT" "${args[@]}"; then
         source_summary "$summary"
         TOKEN_MONITOR_UPDATE_STATUS="${TOKEN_MONITOR_UPDATE_STATUS:-succeeded}"
@@ -247,6 +328,10 @@ run_rclone_sync() {
     fi
 
     CURRENT_STEP="rclone media sync"
+    if ! require_step_files rclone-media-sync "$CURRENT_STEP"; then
+        RCLONE_SYNC_STATUS="failed"
+        return 1
+    fi
     local summary="${SUMMARY_DIR}/rclone-media-sync.env"
     local args=()
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -257,6 +342,7 @@ run_rclone_sync() {
     fi
 
     log "rclone media sync start"
+    RCLONE_SYNC_STATUS=""
     if run_as_child_user env SUPPRESS_DISCORD=true SUMMARY_FILE="$summary" /usr/bin/bash "$RCLONE_MEDIA_SYNC_SCRIPT" "${args[@]}"; then
         source_summary "$summary"
         RCLONE_SYNC_STATUS="${RCLONE_SYNC_STATUS:-succeeded}"
@@ -272,6 +358,10 @@ run_rclone_sync() {
 run_os_update() {
     [[ "$RUN_OS_UPDATE" == "true" ]] || return 0
     CURRENT_STEP="os update"
+    if ! require_step_files os-update "$CURRENT_STEP"; then
+        MEDIA_OS_UPDATE_STATUS="failed"
+        return 1
+    fi
     local summary="${SUMMARY_DIR}/media-os-update.env"
     local args=()
     if [[ "$CHECK_ONLY" == "true" ]]; then
@@ -281,6 +371,7 @@ run_os_update() {
     fi
 
     log "OS update start"
+    MEDIA_OS_UPDATE_STATUS=""
     if env SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_OS_UPDATE_SCRIPT" "${args[@]}"; then
         source_summary "$summary"
         MEDIA_OS_UPDATE_STATUS="${MEDIA_OS_UPDATE_STATUS:-succeeded}"
@@ -332,8 +423,11 @@ build_notification_body() {
         printf 'duration: `%s`\n' "$duration"
         printf 'result: `%s`\n' "$DAILY_RESULT"
         if [[ "$DAILY_RESULT" == "failed" ]]; then
-            printf 'failed step: `%s`\n' "$FAILED_STEP"
-            printf 'message: %s\n' "$FAILED_MESSAGE"
+            printf 'failed steps: `%s`\n' "$(join_items ', ' "${FAILED_STEPS[@]}")"
+            local failure
+            for failure in "${FAILED_MESSAGES[@]}"; do
+                printf -- '- %s\n' "$failure"
+            done
         fi
         printf '\nsteps:\n'
         printf -- '- media backup: `%s`\n' "$(status_word "$MEDIA_BACKUP_STATUS")"
@@ -449,6 +543,10 @@ on_exit() {
         mark_failed "$CURRENT_STEP" "unexpected failure"
     fi
 
+    if [[ "$PREFLIGHT_ONLY" == "true" ]]; then
+        exit "$exit_code"
+    fi
+
     schedule_reboot_if_needed
     notify_discord
 
@@ -471,16 +569,52 @@ assert_prerequisites() {
     CURRENT_STEP="preflight"
     command -v flock >/dev/null || { log "ERROR: flock is not installed"; exit 1; }
     command -v jq >/dev/null || { log "ERROR: jq is not installed"; exit 1; }
-    [[ -f "$MEDIA_BACKUP_SCRIPT" ]] || { log "ERROR: missing script: $MEDIA_BACKUP_SCRIPT"; exit 1; }
-    [[ -f "$MEDIA_APP_UPDATE_SCRIPT" ]] || { log "ERROR: missing script: $MEDIA_APP_UPDATE_SCRIPT"; exit 1; }
-    if [[ "$RUN_TOKEN_MONITOR_UPDATE" == "true" ]]; then
-        [[ -f "$TOKEN_MONITOR_UPDATE_SCRIPT" ]] || { log "ERROR: missing script: $TOKEN_MONITOR_UPDATE_SCRIPT"; exit 1; }
+}
+
+run_preflight() {
+    assert_prerequisites
+
+    local failed=false step_id enabled missing=()
+    for step_id in media-backup media-app-update token-monitor-update rclone-media-sync os-update; do
+        case "$step_id" in
+            media-backup) enabled="$RUN_MEDIA_BACKUP" ;;
+            media-app-update) enabled="$RUN_MEDIA_APP_UPDATE" ;;
+            token-monitor-update) enabled="$RUN_TOKEN_MONITOR_UPDATE" ;;
+            rclone-media-sync) enabled="$RUN_RCLONE_SYNC" ;;
+            os-update) enabled="$RUN_OS_UPDATE" ;;
+        esac
+        if [[ "$enabled" != "true" ]]; then
+            log "preflight: ${step_id}: disabled"
+            continue
+        fi
+        mapfile -t missing < <(step_missing_files "$step_id")
+        if (( ${#missing[@]} == 0 )); then
+            log "preflight: ${step_id}: ok"
+        else
+            failed=true
+            log "ERROR: preflight: ${step_id}: missing file: $(join_items ', ' "${missing[@]}")"
+        fi
+    done
+
+    if [[ "$failed" == "true" ]]; then
+        DAILY_RESULT="failed"
+        exit 1
     fi
-    [[ -f "$RCLONE_MEDIA_SYNC_SCRIPT" ]] || { log "ERROR: missing script: $RCLONE_MEDIA_SYNC_SCRIPT"; exit 1; }
-    [[ -f "$MEDIA_OS_UPDATE_SCRIPT" ]] || { log "ERROR: missing script: $MEDIA_OS_UPDATE_SCRIPT"; exit 1; }
+    log "preflight passed"
+}
+
+run_step() {
+    local step="$1"
+    # A failed step is already recorded by mark_failed; keep running the rest.
+    "$step" || log "continuing after failed step: ${CURRENT_STEP}"
 }
 
 main() {
+    if [[ "$PREFLIGHT_ONLY" == "true" ]]; then
+        run_preflight
+        exit 0
+    fi
+
     exec 9>"$LOCK_FILE"
     if ! flock -n 9; then
         log "ERROR: another daily maintenance is already running"
@@ -496,12 +630,16 @@ main() {
 
     assert_prerequisites
 
-    run_media_backup
-    run_media_app_update
-    run_token_monitor_update
-    run_rclone_sync
-    run_os_update
+    run_step run_media_backup
+    run_step run_media_app_update
+    run_step run_token_monitor_update
+    run_step run_rclone_sync
+    run_step run_os_update
 
+    if [[ "$DAILY_RESULT" == "failed" ]]; then
+        log "=== media daily maintenance completed with failures: $(join_items ', ' "${FAILED_STEPS[@]}") ==="
+        exit 1
+    fi
     log "=== media daily maintenance completed ==="
 }
 

@@ -675,10 +675,13 @@ systemd unit:
 1. 全体 lock を取得する
 2. メディアバックアップを実行する
 3. Immich/Jellyfin を同一 major 内で更新する
-4. rclone でクラウドストレージからメディアを取り込み、バックアップ確認済み動画をクラウド側から削除する
-5. apt / snap による OS・パッケージ更新を実行する
-6. `/var/run/reboot-required` があれば、日次処理完了後に自動再起動を予約する
-7. Discord へ日次結果を 1 本だけ通知する
+4. Token Monitor を最新の stable release に更新する
+5. rclone でクラウドストレージからメディアを取り込み、バックアップ確認済み動画をクラウド側から削除する
+6. apt / snap による OS・パッケージ更新を実行する
+7. `/var/run/reboot-required` があれば、日次処理完了後に自動再起動を予約する
+8. Discord へ日次結果を 1 本だけ通知する
+
+各ステップは独立して実行します。あるステップが失敗しても残りのステップは続行し、失敗したステップはすべて Discord 通知の `failed steps` にまとめて報告します。ステップに必要なファイルが見つからない場合も、そのステップだけを失敗扱いにします。例外として、Immich/Jellyfin 更新は直前のバックアップを前提にしているため、メディアバックアップが失敗した日はスキップします。1 つでも失敗したステップがある日は自動再起動を予約せず、service は失敗として終了します。
 
 OS や Docker daemon、Tailscale、kernel は更新時に daemon restart や再起動を伴う可能性があるため、OS 更新は最後に行います。これにより、バックアップ・アプリ更新・同期を終えてから OS 更新と再起動で締める運用にします。
 
@@ -690,11 +693,16 @@ OS や Docker daemon、Tailscale、kernel は更新時に daemon restart や再�
 ./scripts/ops/install-media-daily-maintenance-systemd.sh
 ```
 
-この導入スクリプトは以下を行います。
+この導入スクリプトは sudo で自分自身を再実行し、以下を行います。`install-token-monitor.sh` からも同じスクリプトが呼ばれるため、日次メンテナンスの配置処理はこのスクリプトに一本化しています。
 
+- 既存の本番ファイルを `/home/mediaserver/ManageMediaServer/.deploy-backups/daily-maintenance-*` にバックアップする
+- 日次メンテナンスが呼ぶ全スクリプト(`media-backup.sh`、`media-app-update.sh`、`rclone-media-sync.sh`、`media-os-update.sh`、`media-daily-maintenance.sh`)と env example、systemd unit を配置する
+- `media-daily-maintenance.sh --preflight` で、有効な全ステップに必要なファイルがそろっているか確認する。失敗した場合は timer を切り替えずにエラー終了する
 - `media-daily-maintenance.timer` を enable / start する
 - `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer`、`apt-daily-upgrade.timer` を disable / stop する
 - 個別 service と script は削除せず、手動実行用として残す
+
+Token Monitor 関連ファイル(`token-monitor/` 配下と env)は `install-token-monitor.sh` が配置します。`RUN_TOKEN_MONITOR_UPDATE=true` のまま Token Monitor が未導入だと、preflight は失敗します。
 
 確認:
 
@@ -708,6 +716,7 @@ sudo tail -100 /mnt/data/config/media-daily-maintenance/logs/media-daily-mainten
 手動確認:
 
 ```bash
+sudo /home/mediaserver/ManageMediaServer/scripts/ops/media-daily-maintenance.sh --preflight
 sudo ./scripts/ops/media-daily-maintenance.sh --check-only
 sudo ./scripts/ops/media-daily-maintenance.sh --dry-run
 ```
