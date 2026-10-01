@@ -78,6 +78,7 @@ CHILD_USER="${CHILD_USER:-mediaserver}"
 RUN_MEDIA_BACKUP="${RUN_MEDIA_BACKUP:-true}"
 RUN_MEDIA_APP_UPDATE="${RUN_MEDIA_APP_UPDATE:-true}"
 RUN_TOKEN_MONITOR_UPDATE="${RUN_TOKEN_MONITOR_UPDATE:-true}"
+RUN_ANALYTICS_UPDATE="${RUN_ANALYTICS_UPDATE:-false}"
 RUN_RCLONE_SYNC="${RUN_RCLONE_SYNC:-true}"
 RUN_OS_UPDATE="${RUN_OS_UPDATE:-true}"
 RCLONE_SYNC_NO_DELETE="${RCLONE_SYNC_NO_DELETE:-false}"
@@ -94,6 +95,7 @@ MEDIA_OS_UPDATE_SCRIPT="${MEDIA_OS_UPDATE_SCRIPT:-${PROD_ROOT}/scripts/ops/media
 MEDIA_BACKUP_STATUS="skipped"
 MEDIA_APP_UPDATE_STATUS="skipped"
 TOKEN_MONITOR_UPDATE_STATUS="skipped"
+ANALYTICS_UPDATE_STATUS="skipped"
 RCLONE_SYNC_STATUS="skipped"
 MEDIA_OS_UPDATE_STATUS="skipped"
 MEDIA_BACKUP_FAILED=false
@@ -209,6 +211,9 @@ step_missing_files() {
             mapfile -t files < <(token_monitor_required_files)
             missing_files "${files[@]}"
             ;;
+        analytics-update)
+            missing_files "${PROD_ROOT}/token-monitor-analytics/scripts/update.sh" /etc/token-monitor-analytics/deploy.env
+            ;;
         rclone-media-sync) missing_files "$RCLONE_MEDIA_SYNC_SCRIPT" ;;
         os-update) missing_files "$MEDIA_OS_UPDATE_SCRIPT" ;;
     esac
@@ -315,6 +320,33 @@ run_token_monitor_update() {
         source_summary "$summary"
         TOKEN_MONITOR_UPDATE_STATUS="${TOKEN_MONITOR_UPDATE_STATUS:-failed}"
         mark_failed "Token Monitor update" "Token Monitor update failed"
+        return 1
+    fi
+}
+
+run_analytics_update() {
+    [[ "$RUN_ANALYTICS_UPDATE" == "true" ]] || return 0
+    CURRENT_STEP="Analytics update"
+    if ! require_step_files analytics-update "$CURRENT_STEP"; then
+        ANALYTICS_UPDATE_STATUS=failed
+        return 1
+    fi
+    local summary
+    summary=$(mktemp /run/token-monitor-analytics-summary.XXXXXX)
+    local args=()
+    if [[ "$CHECK_ONLY" == "true" ]]; then args+=(--check-only)
+    elif [[ "$DRY_RUN" == "true" ]]; then args+=(--dry-run); fi
+    # The maintenance service runs as root; only this system deployment step
+    # needs root instead of the media child user.
+    if env SUMMARY_FILE="$summary" /usr/bin/bash "${PROD_ROOT}/token-monitor-analytics/scripts/update.sh" "${args[@]}"; then
+        source_summary "$summary"
+        rm -f "$summary"
+        log "Analytics update completed: ${ANALYTICS_UPDATE_STATUS}"
+    else
+        source_summary "$summary"
+        rm -f "$summary"
+        ANALYTICS_UPDATE_STATUS=failed
+        mark_failed "Analytics update" "Analytics update failed"
         return 1
     fi
 }
@@ -433,6 +465,7 @@ build_notification_body() {
         printf -- '- media backup: `%s`\n' "$(status_word "$MEDIA_BACKUP_STATUS")"
         printf -- '- app update: `%s`\n' "$(status_word "$MEDIA_APP_UPDATE_STATUS")"
         printf -- '- Token Monitor update: `%s`\n' "$(status_word "$TOKEN_MONITOR_UPDATE_STATUS")"
+        printf -- '- Analytics update: `%s`\n' "$(status_word "$ANALYTICS_UPDATE_STATUS")"
         printf -- '- rclone sync: `%s`\n' "$(status_word "$RCLONE_SYNC_STATUS")"
         printf -- '- os update: `%s`\n' "$(status_word "$MEDIA_OS_UPDATE_STATUS")"
         printf -- '- reboot: `%s`\n' "$REBOOT_ACTION"
@@ -575,11 +608,12 @@ run_preflight() {
     assert_prerequisites
 
     local failed=false step_id enabled missing=()
-    for step_id in media-backup media-app-update token-monitor-update rclone-media-sync os-update; do
+    for step_id in media-backup media-app-update token-monitor-update analytics-update rclone-media-sync os-update; do
         case "$step_id" in
             media-backup) enabled="$RUN_MEDIA_BACKUP" ;;
             media-app-update) enabled="$RUN_MEDIA_APP_UPDATE" ;;
             token-monitor-update) enabled="$RUN_TOKEN_MONITOR_UPDATE" ;;
+            analytics-update) enabled="$RUN_ANALYTICS_UPDATE" ;;
             rclone-media-sync) enabled="$RUN_RCLONE_SYNC" ;;
             os-update) enabled="$RUN_OS_UPDATE" ;;
         esac
@@ -633,6 +667,7 @@ main() {
     run_step run_media_backup
     run_step run_media_app_update
     run_step run_token_monitor_update
+    run_step run_analytics_update
     run_step run_rclone_sync
     run_step run_os_update
 

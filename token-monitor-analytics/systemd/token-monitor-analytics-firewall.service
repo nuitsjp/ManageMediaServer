@@ -1,0 +1,13 @@
+[Unit]
+Description=Restrict Analytics HTTP to home LAN and Tailscale
+After=network-online.target tailscaled.service
+Before=token-monitor-analytics-http.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/mediaserver/ManageMediaServer/token-monitor-analytics/scripts/firewall.sh apply
+ExecStop=/home/mediaserver/ManageMediaServer/token-monitor-analytics/scripts/firewall.sh remove
+
+[Install]
+WantedBy=multi-user.target
