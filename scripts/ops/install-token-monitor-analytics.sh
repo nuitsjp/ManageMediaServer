@@ -11,11 +11,12 @@ CHECKSUM=$(realpath "${3:?Checksum file required}")
 [[ -f "$ARCHIVE" && -f "$CHECKSUM" ]]
 mountpoint -q /mnt/backup || { echo 'ERROR: /mnt/backup is not mounted' >&2; exit 1; }
 getent passwd mediaserver >/dev/null
-for file in scripts/update.sh scripts/validate-package.py scripts/firewall.sh scripts/healthcheck.sh \
+for file in scripts/update.sh scripts/validate-package.py scripts/firewall.sh scripts/healthcheck.sh scripts/manual-update.sh \
     systemd/token-monitor-analytics.service systemd/token-monitor-analytics-http.service \
     systemd/token-monitor-analytics-firewall.service; do
     [[ -f "$REPO_ROOT/token-monitor-analytics/$file" ]] || { echo "Missing: $file" >&2; exit 1; }
 done
+[[ -f "$REPO_ROOT/scripts/ops/enable-token-monitor-analytics-manual-update.sh" ]]
 expected=$(awk 'NR == 1 {print $1}' "$CHECKSUM")
 [[ "$expected" =~ ^[0-9a-f]{64}$ && $(sha256sum "$ARCHIVE" | cut -d ' ' -f 1) == "$expected" ]] \
     || { echo 'ERROR: checksum mismatch' >&2; exit 1; }
@@ -187,4 +188,5 @@ lines = [line for line in text.splitlines() if not line.startswith('RUN_ANALYTIC
 path.write_text('\n'.join(lines + ['RUN_ANALYTICS_UPDATE=true']) + '\n')
 PY
 systemctl --no-pager --full status token-monitor-analytics.service token-monitor-analytics-http.service
-echo 'Analytics installed. Manual updates: sudo /home/mediaserver/ManageMediaServer/token-monitor-analytics/scripts/update.sh --version vX.Y.Z'
+"$REPO_ROOT/scripts/ops/enable-token-monitor-analytics-manual-update.sh" ubuntu
+echo 'Analytics installed. Manual updates: sudo -n /usr/local/sbin/token-monitor-analytics-update --version vX.Y.Z'
