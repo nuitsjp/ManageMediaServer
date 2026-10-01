@@ -21,6 +21,8 @@ done
 [[ $EUID == 0 ]] || { echo 'Run this script with sudo.' >&2; exit 1; }
 # Only the root-owned deployment configuration is sourced.
 source /etc/token-monitor-analytics/deploy.env
+: "${APP_ROOT:?}" "${DATA_ROOT:?}" "${CONFIG_ROOT:?}" "${RELEASE_REPOSITORY:?}"
+BACKUP_ROOT=${BACKUP_ROOT:?}
 exec 9>/run/lock/token-monitor-analytics.lock
 flock -n 9 || { echo 'Another Analytics update is running.' >&2; exit 1; }
 CURRENT_VERSION=""

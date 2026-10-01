@@ -19,12 +19,20 @@ done
 expected=$(awk 'NR == 1 {print $1}' "$CHECKSUM")
 [[ "$expected" =~ ^[0-9a-f]{64}$ && $(sha256sum "$ARCHIVE" | cut -d ' ' -f 1) == "$expected" ]] \
     || { echo 'ERROR: checksum mismatch' >&2; exit 1; }
+VERIFY_DIR=$(mktemp -d)
+trap 'rm -rf "$VERIFY_DIR"' EXIT
+python3 "$REPO_ROOT/token-monitor-analytics/scripts/validate-package.py" "$ARCHIVE" "$VERIFY_DIR/app" "$VERSION"
+rm -rf "$VERIFY_DIR"
+trap - EXIT
 LAN_IP=$(ip -4 -o addr show dev enp1s0 | awk '{print $4}' | cut -d/ -f1)
 TAILSCALE_IP=$(tailscale ip -4)
 [[ "$LAN_IP" == 192.168.0.23 && "$TAILSCALE_IP" == 100.69.11.74 ]] \
     || { echo 'ERROR: host addresses changed; review network configuration' >&2; exit 1; }
 if ! systemctl is-active --quiet token-monitor-analytics-http.service; then
     [[ -z $(ss -H -ltn 'sport = :3000') ]] || { echo 'ERROR: TCP 3000 is already in use' >&2; exit 1; }
+fi
+if ! systemctl is-active --quiet token-monitor-analytics.service; then
+    [[ -z $(ss -H -ltn 'sport = :13000') ]] || { echo 'ERROR: internal TCP 13000 is already in use' >&2; exit 1; }
 fi
 
 BACKUP=/mnt/backup/token-monitor-analytics/install-$(date -u +%Y%m%dT%H%M%S)
