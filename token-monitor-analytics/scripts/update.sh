@@ -123,13 +123,15 @@ CREATED_RELEASE="$NEW_RELEASE"
 cp -a "$TEMP/app/." "$NEW_RELEASE/"
 chown -R root:root "$NEW_RELEASE"
 chmod -R go-w "$NEW_RELEASE"
+BACKUP_TOOL="$OLD_RELEASE"
+[[ -f "$BACKUP_TOOL/MultiTokenMonitor.dll" ]] || BACKUP_TOOL="$NEW_RELEASE"
 
 # Check a cloned database before stopping production. The candidate has no public port.
 install -d -m 0750 -o mediaserver -g mediaserver "$TEMP/candidate"
 chmod 0750 "$TEMP"
 chown root:mediaserver "$TEMP"
 if [[ -f "$DATA_ROOT/app.sqlite" ]]; then
-    runuser -u mediaserver -- env DB_PATH="$DATA_ROOT/app.sqlite" dotnet "$OLD_RELEASE/MultiTokenMonitor.dll" db:backup "$TEMP/candidate/app.sqlite"
+    runuser -u mediaserver -- env DB_PATH="$DATA_ROOT/app.sqlite" dotnet "$BACKUP_TOOL/MultiTokenMonitor.dll" db:backup "$TEMP/candidate/app.sqlite"
 fi
 runuser -u mediaserver -- env HOST=127.0.0.1 PORT=0 DB_PATH="$TEMP/candidate/app.sqlite" \
     HUB_CONFIG_PATH="$DATA_ROOT/hubs.local.json" dotnet "$NEW_RELEASE/MultiTokenMonitor.dll" > "$TEMP/candidate/output" 2>&1 &
@@ -150,8 +152,8 @@ install -d -m 0750 -o mediaserver -g mediaserver "$BACKUP"
 STOPPED=true
 systemctl stop token-monitor-analytics.service
 if [[ -f "$DATA_ROOT/app.sqlite" ]]; then
-    runuser -u mediaserver -- env DB_PATH="$DATA_ROOT/app.sqlite" dotnet "$OLD_RELEASE/MultiTokenMonitor.dll" db:backup "$BACKUP/app.sqlite"
-    runuser -u mediaserver -- dotnet "$OLD_RELEASE/MultiTokenMonitor.dll" db:check "$BACKUP/app.sqlite"
+    runuser -u mediaserver -- env DB_PATH="$DATA_ROOT/app.sqlite" dotnet "$BACKUP_TOOL/MultiTokenMonitor.dll" db:backup "$BACKUP/app.sqlite"
+    runuser -u mediaserver -- dotnet "$BACKUP_TOOL/MultiTokenMonitor.dll" db:check "$BACKUP/app.sqlite"
 fi
 cp -a "$CONFIG_ROOT" "$BACKUP/config"
 cp -a "$DATA_ROOT/hubs.local.json" "$BACKUP/hubs.local.json"
