@@ -124,7 +124,9 @@ install -d -m 0755 "$NEW_RELEASE"
 CREATED_RELEASE="$NEW_RELEASE"
 cp -a "$TEMP/app/." "$NEW_RELEASE/"
 chown -R root:root "$NEW_RELEASE"
-chmod -R go-w "$NEW_RELEASE"
+# tar's data filter creates directories using our restrictive umask. The
+# distribution contains no secrets and must be readable by the service user.
+chmod -R a+rX,go-w "$NEW_RELEASE"
 BACKUP_TOOL="$OLD_RELEASE"
 [[ -f "$BACKUP_TOOL/MultiTokenMonitor.dll" ]] || BACKUP_TOOL="$NEW_RELEASE"
 
@@ -135,6 +137,7 @@ chown root:mediaserver "$TEMP"
 if [[ -f "$DATA_ROOT/app.sqlite" ]]; then
     runuser -u mediaserver -- env DB_PATH="$DATA_ROOT/app.sqlite" dotnet "$BACKUP_TOOL/MultiTokenMonitor.dll" db:backup "$TEMP/candidate/app.sqlite"
 fi
+: > "$TEMP/candidate/output"
 runuser -u mediaserver -- env HOST=127.0.0.1 PORT=0 DB_PATH="$TEMP/candidate/app.sqlite" \
     HUB_CONFIG_PATH="$DATA_ROOT/hubs.local.json" dotnet "$NEW_RELEASE/MultiTokenMonitor.dll" > "$TEMP/candidate/output" 2>&1 &
 CANDIDATE_PID=$!

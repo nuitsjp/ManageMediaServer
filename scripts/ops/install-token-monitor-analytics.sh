@@ -66,7 +66,7 @@ if [[ $MASKED == true ]]; then
     MASKED=false
 fi
 
-install -d -m 0755 /opt/token-monitor-analytics/releases "$PROD_ROOT/token-monitor-analytics"
+install -d -m 0755 -o root -g root /opt/token-monitor-analytics /opt/token-monitor-analytics/releases "$PROD_ROOT/token-monitor-analytics"
 cp -a "$REPO_ROOT/token-monitor-analytics/." "$PROD_ROOT/token-monitor-analytics/"
 chown -R root:root "$PROD_ROOT/token-monitor-analytics"
 find "$PROD_ROOT/token-monitor-analytics/scripts" -name '*.sh' -exec chmod 0755 {} +
