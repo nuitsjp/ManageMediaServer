@@ -149,6 +149,15 @@ systemctl daemon-reload
 systemctl enable token-monitor-analytics.service token-monitor-analytics-firewall.service token-monitor-analytics-http.service
 systemctl restart token-monitor-analytics-firewall.service
 systemctl restart token-monitor-analytics-http.service
+http_ready=false
+for _ in {1..30}; do
+    if "$PROD_ROOT/token-monitor-analytics/scripts/healthcheck.sh" >/dev/null 2>&1; then
+        http_ready=true
+        break
+    fi
+    sleep 1
+done
+[[ $http_ready == true ]] || { echo 'ERROR: HTTP service did not become ready; inspect journalctl -u token-monitor-analytics-http' >&2; exit 1; }
 "$PROD_ROOT/token-monitor-analytics/scripts/healthcheck.sh"
 for address in "$LAN_IP" "$TAILSCALE_IP"; do
     curl -fsS --max-time 10 "http://$address:3000/api/overview" | jq -e 'type == "object"' >/dev/null
