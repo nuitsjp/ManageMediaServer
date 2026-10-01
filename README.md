@@ -19,6 +19,22 @@
 
 ## 提供サービス
 
+Token Monitor Analytics は、複数Hubの利用状況を集約する.NETアプリです。Dockerを使わず、版ごとの配布物を `/opt/token-monitor-analytics/releases/` へ置き、`current` リンクで使用版を選びます。systemdの `token-monitor-analytics.service` がアプリをループバックのTCP 13000で起動し、`token-monitor-analytics-http.service` がnginxでLAN・TailscaleのTCP 3000へHTTP配信します。
+
+- 閲覧先: `http://192.168.0.23:3000/` または `http://100.69.11.74:3000/`
+- Hub設定・SQLite: `/mnt/data/token-monitor-analytics/`。Hub設定はGit管理せず、既存Hubの認証情報から初回導入時に作成します。
+- 更新前バックアップ: `/mnt/backup/token-monitor-analytics/`
+- 到達元制限: `token-monitor-analytics-firewall.service` がホストのINPUTでLAN・Tailscale・ループバックのみを許可します。
+- 集約画面は私用・業務用の両Hubを表示します。画面に認証は設けず、この到達元制限を使用します。
+
+手動更新も日次更新も `token-monitor-analytics/scripts/update.sh` を使います。通常の手動更新は `sudo -n /usr/local/sbin/token-monitor-analytics-update --version vX.Y.Z` です。初回導入時に `ubuntu` ユーザーへこのコマンドだけのNOPASSWD権限を設定するため、パスワード入力は不要です。手動実行用の更新スクリプトと検証ヘルパーはroot所有の `/usr/local/libexec/token-monitor-analytics/` に配置し、呼び出し元の環境変数を引き継ぎません。既存ホストへの設定や更新スクリプト自体の差し替えは、管理者が `scripts/ops/enable-token-monitor-analytics-manual-update.sh` を実行します。
+
+公開済み正式リリースのLinux配布物とSHA-256を取得し、DBのコピーで起動確認してから、停止・バックアップ・切り替え・起動確認を行います。失敗時は旧版と更新前DBを復元します。版を省略した日次更新は同じmajor内、0.xでは同じminor内だけを対象にします。
+
+CIから取得した配布物を手動配置する場合は、手動更新コマンドに `--version vX.Y.Z --archive <tar.gzのパス> --sha256-file <チェックサムのパス>` を渡します。`--check-only` または `--dry-run` ではサービスやDBを変更しません。ホスト上でビルドは行いません。
+
+初回導入は `scripts/ops/install-token-monitor-analytics.sh` に版・配布物・チェックサムを渡します。ランタイムとnginxの導入、既存設定の退避、サービスとファイアウォールの登録、同期確認、日次更新と監視への組み込みを行います。新しい更新timerは作りません。状態・ログは `systemctl status token-monitor-analytics token-monitor-analytics-http` と `journalctl -u token-monitor-analytics` で確認します。
+
 | サービス | URL / 役割 | 用途 |
 | --- | --- | --- |
 | Immich | `http://<LAN IP>:2283` / `http://<Tailscale IP>:2283` | 写真・短尺動画の管理、外部ライブラリ参照 |

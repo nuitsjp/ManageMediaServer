@@ -372,6 +372,15 @@ main() {
 
     check_http "Immich" "$IMMICH_HEALTH_URL"
     check_http "Jellyfin" "$JELLYFIN_HEALTH_URL"
+    if [[ -f /etc/systemd/system/token-monitor-analytics.service ]]; then
+        check_http "Token Monitor Analytics" http://127.0.0.1:3000/api/overview
+        if systemctl is-active --quiet token-monitor-analytics.service \
+            && systemctl is-active --quiet token-monitor-analytics-http.service; then
+            record_ok "Analytics services are active"
+        else
+            record_failure "Analytics service or HTTP service is inactive"
+        fi
+    fi
     check_compose "Immich" "$IMMICH_COMPOSE_DIR"
     check_compose "Jellyfin" "$JELLYFIN_COMPOSE_DIR"
     check_timer "$MAINTENANCE_TIMER"

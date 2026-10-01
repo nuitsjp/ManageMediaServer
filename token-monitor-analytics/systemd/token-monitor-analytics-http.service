@@ -1,0 +1,22 @@
+[Unit]
+Description=HTTP access to Token Monitor Analytics on LAN and Tailscale
+After=network-online.target tailscaled.service token-monitor-analytics.service token-monitor-analytics-firewall.service
+Requires=token-monitor-analytics-firewall.service
+Wants=network-online.target tailscaled.service token-monitor-analytics.service
+
+[Service]
+User=mediaserver
+Group=mediaserver
+RuntimeDirectory=token-monitor-analytics-http
+ExecStartPre=/usr/sbin/nginx -t -c /etc/token-monitor-analytics/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/token-monitor-analytics/nginx.conf -g "daemon off;"
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/token-monitor-analytics-http
+
+[Install]
+WantedBy=multi-user.target

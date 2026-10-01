@@ -1,0 +1,24 @@
+[Unit]
+Description=Token Monitor Analytics
+After=network-online.target token-monitor.service
+Wants=network-online.target
+RequiresMountsFor=/mnt/data
+
+[Service]
+User=mediaserver
+Group=mediaserver
+WorkingDirectory=/opt/token-monitor-analytics/current
+EnvironmentFile=/etc/token-monitor-analytics/app.env
+ExecStart=/usr/bin/dotnet /opt/token-monitor-analytics/current/MultiTokenMonitor.dll
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/mnt/data/token-monitor-analytics
+
+[Install]
+WantedBy=multi-user.target
