@@ -76,6 +76,7 @@ services:
       HOME: /home/collector
       TOKEN_MONITOR_HUB_URL: http://hub-private:17321
       TOKEN_MONITOR_SHARED_DIR: /var/lib/token-monitor
+      TOKSCALE_CONFIG_DIR: /var/lib/token-monitor/tokscale
     env_file:
       - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-common.env
       - ${TOKEN_MONITOR_CONFIG_ROOT}/token-monitor-agent-private.env
@@ -85,6 +86,7 @@ services:
       - ${TOKEN_MONITOR_DATA_ROOT}/agent-private/state:/var/lib/token-monitor
     networks:
       - private-agent
+      - agent-egress
     depends_on:
       hub-private:
         condition: service_healthy
@@ -94,5 +96,7 @@ networks:
     driver: bridge
   private-agent:
     internal: true
+  agent-egress:
+    driver: bridge
   work:
     driver: bridge

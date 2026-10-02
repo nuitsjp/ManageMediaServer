@@ -7,14 +7,16 @@ Node hubs and one headless agent.
 | --- | --- | --- |
 | `hub-private` | `192.168.0.23:17321`, `127.0.0.1:17321` | Private devices over the home LAN or Tailscale |
 | `hub-work` | `127.0.0.1:17322` | Work devices over Tailscale only |
-| `agent-private` | Private internal bridge only | Reads this host's Codex and Claude logs and sends them to `hub-private` |
+| `agent-private` | No published ports | Reads this host's Codex and Claude logs and sends them to `hub-private`; downloads model pricing over an outbound bridge |
 
 Both hubs use the same shared secret, but have separate containers and edge bridge networks,
 data files, logs, and backup directories. The work hub has no LAN-published
 port. The bridge networks must permit Docker's published-port forwarding;
 exposure is restricted by the explicit host bindings instead of Docker's
-`internal` network flag. The private Agent remains on a separate internal-only
-bridge shared with the private Hub. Tailscale Serve terminates HTTPS for both localhost ports.
+`internal` network flag. The private Agent uses an internal bridge shared with
+the private Hub and a separate outbound bridge for model-pricing downloads.
+It publishes no ports and does not join the work Hub's network.
+Tailscale Serve terminates HTTPS for both localhost ports.
 
 ## Files and data
 
@@ -35,6 +37,12 @@ read-only. Provider-limit probing is disabled so provider credentials do not
 need to be mounted into the container. It runs as UID 1000 with the
 `mediaserver` group so its archive can be backed up while remaining separate
 from both Hub stores.
+
+`TOKSCALE_CONFIG_DIR=/var/lib/token-monitor/tokscale` stores pricing and scan
+caches in the agent's writable persistent state volume. This permits cache
+updates while the container root filesystem stays read-only. Pricing downloads
+require outbound Internet access; a missing cache with no outbound access can
+leave token totals populated while estimated costs are zero.
 
 ## Install
 
