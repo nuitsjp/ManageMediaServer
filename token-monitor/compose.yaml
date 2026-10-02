@@ -62,6 +62,8 @@ services:
   agent-private:
     image: manage-media/token-monitor:${TOKEN_MONITOR_VERSION}
     container_name: token-monitor-agent-private
+    # Report the host name instead of the random container ID.
+    hostname: home-ubuntu
     command: ["node", "src/agent/agent.js"]
     restart: unless-stopped
     user: "${TOKEN_MONITOR_AGENT_UID}:${TOKEN_MONITOR_AGENT_GID}"
