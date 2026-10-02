@@ -32,6 +32,9 @@ repository:
 /mnt/backup/token-monitor/
 ```
 
+The agent container sets `hostname: home-ubuntu` so the Hub and Analytics show
+the host name rather than Docker's random container ID.
+
 The agent mounts only `/home/ubuntu/.codex` and `/home/ubuntu/.claude`, both
 read-only. Provider-limit probing is disabled so provider credentials do not
 need to be mounted into the container. It runs as UID 1000 with the
