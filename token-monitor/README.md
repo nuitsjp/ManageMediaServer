@@ -119,6 +119,18 @@ Manual rollback keeps hub data and changes only the runtime:
 sudo -u mediaserver ./token-monitor/scripts/rollback.sh v0.60.0
 ```
 
+## Troubleshooting
+
+### Client stays "connecting" / "not uploaded" while the Hub has data
+
+If `/api/health` answers but `/api/stats` and `/api/devices` return 0 bytes to a
+work PC, suspect an MTU black hole on that PC's network path, not a bloated
+Hub store. Check from the server: `curl` the same API on `127.0.0.1:17322`; it
+returns in well under a second. The fix is `TS_DEBUG_MTU=1200` in
+`/etc/default/tailscaled` (see the Tailscale MTU section of the top-level
+README). Tailscale Serve is handled inside `tailscaled`, so lowering the
+`tailscale0` link MTU alone does not fix the 17321/17322 endpoints.
+
 ## Work agent
 
 No work agent is enabled. Sending the same host logs to both hubs would defeat

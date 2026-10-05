@@ -381,6 +381,21 @@ du -sh /mnt/data/* /mnt/backup/* 2>/dev/null
 
 `/mnt/backup` は `/dev/sda1` の ext4 マウントです。
 
+### Tailscale の MTU(職場PC からの大きな応答が止まる問題)
+
+職場ネットワークなど、フルサイズ(MTU 1280)の Tailscale パケットだけを落とす経路があります。この場合、小さな応答(`/api/health` や HTML)は通るのに、大きな応答(Analytics の JS、Hub の `/api/stats`・`/api/devices`)が 0 バイトのまま止まります。Token Monitor クライアントは「接続中…」や「未アップロード」のままになります。Hub 自体は正常で、データも保存されています。
+
+対策として、このサーバーの tailscaled を MTU 1200 で動かしています(`/etc/default/tailscaled`)。
+
+```bash
+TS_DEBUG_MTU=1200
+```
+
+- `ip link set dev tailscale0 mtu 1200` だけでは不十分です。カーネルの TCP(Analytics の TCP 3000)には効きますが、tailscaled 内部で処理する Tailscale Serve(17321/17322/443/8443)には効きません。
+- 変更後は `sudo systemctl restart tailscaled` が必要です。tailnet は数秒切れますが、Serve 設定は保持されます。
+- 再構築時もこの設定を入れ直します。反映確認は `cat /sys/class/net/tailscale0/mtu` が 1200 になることです。
+- 切り分けは、職場PC で `ping -f -l 1252 100.69.11.74`(落ちる)と `ping -f -l 1100 100.69.11.74`(通る)を比べます。落ちる上限が分かれば MTU の問題です。
+
 ### Tailscale 確認
 
 ```bash
