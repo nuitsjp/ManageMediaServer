@@ -4,6 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
+# runuser preserves the caller's directory, which may be inaccessible to the
+# deployment user. Compose inspects that directory even with an absolute -f.
+cd "$REPO_ROOT"
 COMPOSE_FILE="${TOKEN_MONITOR_COMPOSE_FILE:-${REPO_ROOT}/token-monitor/compose.yaml}"
 DEPLOY_ENV="${TOKEN_MONITOR_DEPLOY_ENV:-${REPO_ROOT}/config/env/token-monitor-deploy.env}"
 COMMON_ENV="${TOKEN_MONITOR_COMMON_ENV:-${REPO_ROOT}/config/env/token-monitor-common.env}"

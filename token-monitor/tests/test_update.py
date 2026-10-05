@@ -43,6 +43,7 @@ case "$1 $2" in
     elif [[ "$MOCK_STATE" == stopped ]]; then echo 'sha256:expected false'
     else echo 'sha256:expected true'; fi ;;
   "cp "*) [[ "${FAIL_COPY:-}" != yes ]] ;;
+  "compose "*) [[ "$PWD" == "$EXPECTED_COMPOSE_CWD" ]] ;;
 esac
 ''')
         (self.scripts / "healthcheck.sh").write_text(
@@ -86,6 +87,24 @@ esac
         self.assertIn("cp token-monitor-agent-private:/var/lib/token-monitor/.", calls)
         self.assertIn("start token-monitor-agent-private", calls)
         self.assertTrue((self.root / "backup/latest-backup.txt").exists())
+
+    def test_update_uses_repo_directory_when_called_from_elsewhere(self):
+        (self.root / "deploy.env").write_text("TOKEN_MONITOR_VERSION=v0.64.0\n")
+        self.env["EXPECTED_COMPOSE_CWD"] = str(self.root.parent)
+        for name in ["build-image.sh", "backup-data.sh"]:
+            (self.scripts / name).write_text("#!/bin/bash\nexit 0\n")
+        self.mock("curl", '''
+if [[ "$*" == *api.github.com* ]]; then
+    echo '{"draft":false,"prerelease":false,"tag_name":"v0.66.0"}'
+else
+    echo '{"ok":true,"role":"hub"}'
+fi
+''')
+        result = self.run_script("update.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Token Monitor updated to v0.66.0", result.stdout)
+        calls = (self.root / "calls").read_text()
+        self.assertEqual(calls.count("compose --env-file"), 3)
 
     def test_failed_backup_restarts_agent_without_marking_complete(self):
         (self.root / "data/agent-private/state").mkdir(parents=True)
