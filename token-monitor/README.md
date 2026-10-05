@@ -101,7 +101,19 @@ two update schedules from overlapping.
 An update checks the latest stable GitHub release, backs up each hub store,
 builds one shared image, runs the Hub/Agent/storage test subset, verifies a candidate hub, and then updates
 the work hub, private hub, and private agent. On failure it restores the prior
-image version. Manual rollback keeps hub data and changes only the runtime:
+image version.
+
+The updater compares the running image IDs of all three containers with the
+target image, even when the deployment version already matches the latest
+release. Missing, stopped, or outdated containers trigger reconciliation.
+It checks the image IDs and hub health again after rollout.
+
+Agent backups stop the collector and copy its state through Docker. This lets
+the daily maintenance user back up owner-only cache directories created by the
+collector without changing their permissions. Backup copies belong to the
+maintenance user; both hub stores and the full agent state remain included.
+
+Manual rollback keeps hub data and changes only the runtime:
 
 ```bash
 sudo -u mediaserver ./token-monitor/scripts/rollback.sh v0.60.0

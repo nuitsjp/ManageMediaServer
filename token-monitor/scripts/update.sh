@@ -54,11 +54,14 @@ write_summary() {
 }
 
 cleanup() {
+    local result=$?
+    if (( result != 0 )); then UPDATE_STATUS=failed; fi
     docker rm -f "$CANDIDATE_NAME" >/dev/null 2>&1 || true
     if [[ -n "$CANDIDATE_DATA" && -d "$CANDIDATE_DATA" ]]; then
         rm -rf "$CANDIDATE_DATA"
     fi
     write_summary
+    return "$result"
 }
 trap cleanup EXIT
 
@@ -88,7 +91,21 @@ LATEST_VERSION=$(curl -fsSL --max-time 30 \
 
 log "current=${CURRENT_VERSION} latest=${LATEST_VERSION}"
 
-if [[ "$CURRENT_VERSION" == "$LATEST_VERSION" ]]; then
+runtime_matches() {
+    local version="$1" expected actual name
+    expected=$(docker image inspect -f '{{.Id}}' "manage-media/token-monitor:${version}" 2>/dev/null) || return 1
+    [[ -n "$expected" ]] || return 1
+    for name in token-monitor-hub-work token-monitor-hub-private token-monitor-agent-private; do
+        actual=$(docker inspect -f '{{.Image}} {{.State.Running}}' "$name" 2>/dev/null) || return 1
+        if [[ "$actual" != "$expected true" ]]; then
+            log "runtime mismatch: ${name} does not run the expected ${version} image"
+            return 1
+        fi
+    done
+    "${SCRIPT_DIR}/healthcheck.sh" >/dev/null 2>&1
+}
+
+if [[ "$CURRENT_VERSION" == "$LATEST_VERSION" ]] && runtime_matches "$LATEST_VERSION"; then
     UPDATE_STATUS=succeeded
     UPDATED_VERSION=none
     log "Token Monitor is already current"
@@ -154,7 +171,8 @@ if ! "${compose[@]}" up -d --no-build --wait --wait-timeout 90 hub-work \
     || ! "${SCRIPT_DIR}/healthcheck.sh" \
     || ! "${compose[@]}" up -d --no-build --wait --wait-timeout 90 hub-private \
     || ! "${SCRIPT_DIR}/healthcheck.sh" \
-    || ! "${compose[@]}" up -d --no-build agent-private; then
+    || ! "${compose[@]}" up -d --no-build --wait --wait-timeout 90 agent-private \
+    || ! runtime_matches "$LATEST_VERSION"; then
     rollback
     UPDATE_STATUS=failed
     exit 1

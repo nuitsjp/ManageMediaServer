@@ -41,7 +41,14 @@ copy_if_present "${DATA_ROOT}/private/data/devices.json" "$DEST/private"
 copy_if_present "${DATA_ROOT}/work/data/devices.json" "$DEST/work"
 
 if [[ -d "${DATA_ROOT}/agent-private/state" ]]; then
-    cp -a "${DATA_ROOT}/agent-private/state/." "$DEST/agent-private/"
+    if docker inspect token-monitor-agent-private >/dev/null 2>&1; then
+        # The collector creates owner-only cache directories. Docker reads the
+        # stopped container's volume without requiring the host backup user to
+        # access those directories. Without -a, copies belong to the caller.
+        docker cp token-monitor-agent-private:/var/lib/token-monitor/. "$DEST/agent-private/"
+    else
+        cp -a "${DATA_ROOT}/agent-private/state/." "$DEST/agent-private/"
+    fi
     echo "BACKUP: ${DATA_ROOT}/agent-private/state"
 fi
 
