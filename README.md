@@ -25,6 +25,7 @@ Token Monitor Analytics は、複数Hubの利用状況を集約する.NETアプ�
 - Hub設定・SQLite: `/mnt/data/token-monitor-analytics/`。Hub設定はGit管理せず、既存Hubの認証情報から初回導入時に作成します。
 - 更新前バックアップ: `/mnt/backup/token-monitor-analytics/`
 - 到達元制限: `token-monitor-analytics-firewall.service` がホストのINPUTでLAN・Tailscale・ループバックのみを許可します。
+- Tailscale 経由の Analytics（TCP 3000）は、同サービスが受信・送信の SYN に MSS 1100 を設定します。Tailscale の MTU は IPv6 と Funnel を利用できる 1280 以上に保ちます。
 - 集約画面は私用・業務用の両Hubを表示します。画面に認証は設けず、この到達元制限を使用します。
 
 手動更新も日次更新も `token-monitor-analytics/scripts/update.sh` を使います。通常の手動更新は `sudo -n /usr/local/sbin/token-monitor-analytics-update --version vX.Y.Z` です。初回導入時に `ubuntu` ユーザーへこのコマンドだけのNOPASSWD権限を設定するため、パスワード入力は不要です。手動実行用の更新スクリプトと検証ヘルパーはroot所有の `/usr/local/libexec/token-monitor-analytics/` に配置し、呼び出し元の環境変数を引き継ぎません。既存ホストへの設定や更新スクリプト自体の差し替えは、管理者が `scripts/ops/enable-token-monitor-analytics-manual-update.sh` を実行します。
