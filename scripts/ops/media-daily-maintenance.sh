@@ -74,6 +74,7 @@ LOG_DIR="${LOG_DIR:-/mnt/data/config/media-daily-maintenance/logs}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/media-daily-maintenance.log}"
 LOCK_FILE="${LOCK_FILE:-${LOG_DIR}/media-daily-maintenance.lock}"
 CHILD_USER="${CHILD_USER:-mediaserver}"
+LAST_SUCCESS_FILE="${LAST_SUCCESS_FILE:-/var/lib/media-daily-maintenance/last-success}"
 
 RUN_MEDIA_BACKUP="${RUN_MEDIA_BACKUP:-true}"
 RUN_MEDIA_APP_UPDATE="${RUN_MEDIA_APP_UPDATE:-true}"
@@ -165,9 +166,9 @@ source_summary() {
 
 run_as_child_user() {
     if [[ "${EUID}" -eq 0 && -n "$CHILD_USER" && "$CHILD_USER" != "root" ]] && id "$CHILD_USER" >/dev/null 2>&1; then
-        runuser -u "$CHILD_USER" -- "$@"
+        runuser -u "$CHILD_USER" -- env -u LOG_DIR -u LOG_FILE -u LOCK_FILE "$@"
     else
-        "$@"
+        env -u LOG_DIR -u LOG_FILE -u LOCK_FILE "$@"
     fi
 }
 
@@ -578,6 +579,16 @@ on_exit() {
 
     if [[ "$PREFLIGHT_ONLY" == "true" ]]; then
         exit "$exit_code"
+    fi
+
+    if [[ $exit_code -eq 0 && "$DAILY_RESULT" == "succeeded" && "$CHECK_ONLY" == "false" && "$DRY_RUN" == "false" ]]; then
+        local success_dir success_tmp
+        success_dir=$(dirname "$LAST_SUCCESS_FILE")
+        mkdir -p "$success_dir"
+        success_tmp=$(mktemp "${success_dir}/.last-success.XXXXXX")
+        date +%s > "$success_tmp"
+        chmod 0644 "$success_tmp"
+        mv "$success_tmp" "$LAST_SUCCESS_FILE"
     fi
 
     schedule_reboot_if_needed

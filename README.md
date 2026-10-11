@@ -826,6 +826,10 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 日次バッチの結果通知は `media-daily-maintenance.sh` に集約します。個別バッチは日次配下では通知を抑止し、実行結果だけを親スクリプトへ渡します。通知は成功・失敗・warning・再起動予約のいずれでも 1 日 1 本です。
 
+日次処理から起動する子処理には、親の `LOG_DIR`・`LOG_FILE`・`LOCK_FILE` を引き継ぎません。各処理の設定ファイルまたは既定の保存先を使用します。アプリのイメージ取得は並列数1で実行し、失敗時は既定で30秒・60秒・90秒待って最大4回試行します。`PULL_RETRIES` と `PULL_RETRY_SLEEP_SECONDS` で変更できます。
+
+日次処理が通常実行で成功したときだけ `/var/lib/media-daily-maintenance/last-success` に成功時刻を記録します。ヘルスチェックは日次サービスの失敗、48時間を超える成功記録の滞留・記録の欠落、24時間を超えるOS再起動要求を障害として検知します。確認モード・dry-runは成功記録を更新しません。導入直後は、最初の正常実行まで記録の欠落を検知します。閾値と記録先は各 `.env.example` を参照してください。
+
 これとは別に `media-health-check.timer` が 10 分ごとに Immich、Jellyfin、`media-daily-maintenance.timer`、各ファイルシステムを監視します。ヘルスチェックは同じ障害を繰り返し通知せず、初回障害、障害内容の変化、復旧の各タイミングで 1 回だけ Discord へ通知します。通知状態は `/mnt/data/config/media-health-check/state/last-result` に保存します。
 
 通知に含める主な内容:

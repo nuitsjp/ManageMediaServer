@@ -90,6 +90,9 @@ JELLYFIN_COMPOSE_DIR="${JELLYFIN_COMPOSE_DIR:-${PROD_ROOT}/docker/jellyfin}"
 
 IMMICH_HEALTH_URL="${IMMICH_HEALTH_URL:-http://127.0.0.1:2283}"
 JELLYFIN_HEALTH_URL="${JELLYFIN_HEALTH_URL:-http://127.0.0.1:8096}"
+PULL_RETRIES="${PULL_RETRIES:-4}"
+PULL_RETRY_SLEEP_SECONDS="${PULL_RETRY_SLEEP_SECONDS:-30}"
+
 HEALTH_RETRIES="${HEALTH_RETRIES:-12}"
 HEALTH_RETRY_SLEEP_SECONDS="${HEALTH_RETRY_SLEEP_SECONDS:-10}"
 REQUIRE_MEDIA_BACKUP_SUCCESS="${REQUIRE_MEDIA_BACKUP_SUCCESS:-true}"
@@ -450,7 +453,23 @@ run_compose_update() {
         return 0
     fi
 
-    (cd "$compose_dir" && docker compose -f docker-compose.yml pull)
+    local attempt delay
+    [[ "$PULL_RETRIES" =~ ^[1-9][0-9]*$ && "$PULL_RETRY_SLEEP_SECONDS" =~ ^[0-9]+$ ]] || {
+        log "ERROR: invalid pull retry settings"
+        return 1
+    }
+    for (( attempt=1; attempt<=PULL_RETRIES; attempt++ )); do
+        if (cd "$compose_dir" && docker compose --parallel 1 -f docker-compose.yml pull); then
+            break
+        fi
+        if (( attempt == PULL_RETRIES )); then
+            log "ERROR: ${label} image pull failed after ${attempt} attempts"
+            return 1
+        fi
+        delay=$((PULL_RETRY_SLEEP_SECONDS * attempt))
+        log "WARNING: ${label} image pull failed; retrying in ${delay} seconds"
+        sleep "$delay"
+    done
     (cd "$compose_dir" && docker compose -f docker-compose.yml up -d)
 }
 

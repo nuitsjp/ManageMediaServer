@@ -70,6 +70,12 @@ HTTP_MAX_TIME_SECONDS="${HTTP_MAX_TIME_SECONDS:-10}"
 MAINTENANCE_TIMER="${MAINTENANCE_TIMER:-media-daily-maintenance.timer}"
 REQUIRE_MAINTENANCE_TIMER_ENABLED="${REQUIRE_MAINTENANCE_TIMER_ENABLED:-true}"
 
+MAINTENANCE_SERVICE="${MAINTENANCE_SERVICE:-media-daily-maintenance.service}"
+LAST_SUCCESS_FILE="${LAST_SUCCESS_FILE:-/var/lib/media-daily-maintenance/last-success}"
+MAINTENANCE_MAX_AGE_SECONDS="${MAINTENANCE_MAX_AGE_SECONDS:-172800}"
+REBOOT_REQUIRED_FILE="${REBOOT_REQUIRED_FILE:-/run/reboot-required}"
+REBOOT_MAX_AGE_SECONDS="${REBOOT_MAX_AGE_SECONDS:-86400}"
+
 ROOT_PATH="${ROOT_PATH:-/}"
 DATA_PATH="${DATA_PATH:-/mnt/data}"
 BACKUP_PATH="${BACKUP_PATH:-/mnt/backup}"
@@ -321,6 +327,49 @@ check_timer() {
     fi
 }
 
+check_maintenance_result() {
+    local result active last_success now
+    if [[ ! "$MAINTENANCE_MAX_AGE_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+        record_failure "invalid maintenance age threshold"
+        return
+    fi
+    now=$(date +%s)
+    if ! result=$(systemctl show "$MAINTENANCE_SERVICE" -p Result --value) \
+        || ! active=$(systemctl show "$MAINTENANCE_SERVICE" -p ActiveState --value); then
+        record_failure "cannot read daily maintenance status"
+    elif [[ "$active" == "failed" || ( "$active" != "activating" && "$result" != "success" ) ]]; then
+        record_failure "daily maintenance failed: result=${result:-unknown}"
+    fi
+    last_success=$(cat "$LAST_SUCCESS_FILE" 2>/dev/null || true)
+    if [[ ! "$last_success" =~ ^[0-9]+$ ]]; then
+        record_failure "daily maintenance has no recorded successful run"
+    elif (( last_success > now || now - last_success > MAINTENANCE_MAX_AGE_SECONDS )); then
+        record_failure "daily maintenance last success is stale"
+    else
+        record_ok "daily maintenance last success is recent"
+    fi
+}
+
+check_pending_reboot() {
+    local requested now
+    if [[ ! "$REBOOT_MAX_AGE_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+        record_failure "invalid reboot age threshold"
+        return
+    fi
+    if [[ ! -f "$REBOOT_REQUIRED_FILE" ]]; then
+        record_ok "OS reboot is not required"
+        return
+    fi
+    now=$(date +%s)
+    if ! requested=$(stat -c %Y "$REBOOT_REQUIRED_FILE"); then
+        record_failure "cannot read OS reboot request timestamp"
+    elif (( now - requested > REBOOT_MAX_AGE_SECONDS )); then
+        record_failure "OS reboot request is overdue"
+    else
+        record_ok "OS reboot is required within grace period"
+    fi
+}
+
 available_kib_for_path() {
     df -Pk "$1" | awk 'NR == 2 {print $4}'
 }
@@ -384,6 +433,8 @@ main() {
     check_compose "Immich" "$IMMICH_COMPOSE_DIR"
     check_compose "Jellyfin" "$JELLYFIN_COMPOSE_DIR"
     check_timer "$MAINTENANCE_TIMER"
+    check_maintenance_result
+    check_pending_reboot
 
     if [[ "$REQUIRE_BACKUP_MOUNT" == "true" ]]; then
         if mountpoint -q "$BACKUP_PATH"; then
