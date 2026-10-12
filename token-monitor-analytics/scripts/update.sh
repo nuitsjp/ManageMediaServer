@@ -23,7 +23,9 @@ done
 source /etc/token-monitor-analytics/deploy.env
 : "${APP_ROOT:?}" "${DATA_ROOT:?}" "${CONFIG_ROOT:?}" "${RELEASE_REPOSITORY:?}"
 BACKUP_ROOT=${BACKUP_ROOT:?}
-exec 9>/run/lock/token-monitor-analytics.lock
+[[ ! -L /run/token-monitor-analytics-update ]] || { echo 'Unsafe Analytics lock directory' >&2; exit 1; }
+install -d -m 0700 -o root -g root /run/token-monitor-analytics-update
+exec 9>/run/token-monitor-analytics-update/update.lock
 flock -n 9 || { echo 'Another Analytics update is running.' >&2; exit 1; }
 CURRENT_VERSION=""
 OLD_RELEASE=$(readlink -f "$APP_ROOT/current" || true)
@@ -58,8 +60,8 @@ finish() {
     fi
     [[ -z "$TEMP" ]] || rm -rf "$TEMP"
     if [[ -n ${SUMMARY_FILE:-} ]]; then
-        printf 'ANALYTICS_UPDATE_STATUS=%q\nANALYTICS_CURRENT_VERSION=%q\nANALYTICS_TARGET_VERSION=%q\n' \
-            "$STATUS" "$CURRENT_VERSION" "$VERSION" > "$SUMMARY_FILE"
+        jq -n --arg status "$STATUS" --arg current "$CURRENT_VERSION" --arg target "$VERSION" \
+            '{ANALYTICS_UPDATE_STATUS: $status, ANALYTICS_CURRENT_VERSION: $current, ANALYTICS_TARGET_VERSION: $target}' > "$SUMMARY_FILE"
     fi
     exit "$result"
 }

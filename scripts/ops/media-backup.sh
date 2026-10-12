@@ -153,13 +153,13 @@ write_summary() {
     targets=$(join_items ', ' "${COPIED_TARGETS[@]}")
     [[ -n "$targets" ]] || targets="none"
 
-    {
-        printf 'MEDIA_BACKUP_STATUS=%q\n' "$status"
-        printf 'MEDIA_BACKUP_MESSAGE=%q\n' "$message"
-        printf 'MEDIA_BACKUP_TARGETS=%q\n' "$targets"
-        printf 'MEDIA_BACKUP_DRY_RUN=%q\n' "$DRY_RUN"
-        printf 'MEDIA_BACKUP_LOG_FILE=%q\n' "$LOG_FILE"
-    } > "$SUMMARY_FILE"
+    jq -n \
+        --arg MEDIA_BACKUP_STATUS "$status" \
+        --arg MEDIA_BACKUP_MESSAGE "$message" \
+        --arg MEDIA_BACKUP_TARGETS "$targets" \
+        --arg MEDIA_BACKUP_DRY_RUN "$DRY_RUN" \
+        --arg MEDIA_BACKUP_LOG_FILE "$LOG_FILE" \
+        '{MEDIA_BACKUP_STATUS: $MEDIA_BACKUP_STATUS, MEDIA_BACKUP_MESSAGE: $MEDIA_BACKUP_MESSAGE, MEDIA_BACKUP_TARGETS: $MEDIA_BACKUP_TARGETS, MEDIA_BACKUP_DRY_RUN: $MEDIA_BACKUP_DRY_RUN, MEDIA_BACKUP_LOG_FILE: $MEDIA_BACKUP_LOG_FILE}' > "$SUMMARY_FILE"
 }
 
 on_exit() {

@@ -192,16 +192,16 @@ write_summary() {
     [[ -n "$major_updates" ]] || major_updates="none"
     [[ -n "$latest_versions" ]] || latest_versions="unknown"
 
-    {
-        printf 'MEDIA_APP_UPDATE_STATUS=%q\n' "$status"
-        printf 'MEDIA_APP_UPDATE_MESSAGE=%q\n' "$message"
-        printf 'MEDIA_APP_UPDATED_CONTAINERS=%q\n' "$updated"
-        printf 'MEDIA_APP_MAJOR_UPDATES=%q\n' "$major_updates"
-        printf 'MEDIA_APP_LATEST_VERSIONS=%q\n' "$latest_versions"
-        printf 'MEDIA_APP_DRY_RUN=%q\n' "$DRY_RUN"
-        printf 'MEDIA_APP_CHECK_ONLY=%q\n' "$CHECK_ONLY"
-        printf 'MEDIA_APP_LOG_FILE=%q\n' "$LOG_FILE"
-    } > "$SUMMARY_FILE"
+    jq -n \
+        --arg MEDIA_APP_UPDATE_STATUS "$status" \
+        --arg MEDIA_APP_UPDATE_MESSAGE "$message" \
+        --arg MEDIA_APP_UPDATED_CONTAINERS "$updated" \
+        --arg MEDIA_APP_MAJOR_UPDATES "$major_updates" \
+        --arg MEDIA_APP_LATEST_VERSIONS "$latest_versions" \
+        --arg MEDIA_APP_DRY_RUN "$DRY_RUN" \
+        --arg MEDIA_APP_CHECK_ONLY "$CHECK_ONLY" \
+        --arg MEDIA_APP_LOG_FILE "$LOG_FILE" \
+        '{MEDIA_APP_UPDATE_STATUS: $MEDIA_APP_UPDATE_STATUS, MEDIA_APP_UPDATE_MESSAGE: $MEDIA_APP_UPDATE_MESSAGE, MEDIA_APP_UPDATED_CONTAINERS: $MEDIA_APP_UPDATED_CONTAINERS, MEDIA_APP_MAJOR_UPDATES: $MEDIA_APP_MAJOR_UPDATES, MEDIA_APP_LATEST_VERSIONS: $MEDIA_APP_LATEST_VERSIONS, MEDIA_APP_DRY_RUN: $MEDIA_APP_DRY_RUN, MEDIA_APP_CHECK_ONLY: $MEDIA_APP_CHECK_ONLY, MEDIA_APP_LOG_FILE: $MEDIA_APP_LOG_FILE}' > "$SUMMARY_FILE"
 }
 
 on_exit() {

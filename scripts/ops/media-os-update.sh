@@ -1,11 +1,16 @@
 #!/bin/bash
 
 set -euo pipefail
+umask 027
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 
-MEDIA_OS_UPDATE_ENV="${MEDIA_OS_UPDATE_ENV:-${REPO_ROOT}/config/env/media-os-update.env}"
+if [[ $EUID -eq 0 ]]; then
+    MEDIA_OS_UPDATE_ENV="${MEDIA_OS_UPDATE_ENV:-/etc/manage-media-maintenance/media-os-update.env}"
+else
+    MEDIA_OS_UPDATE_ENV="${MEDIA_OS_UPDATE_ENV:-${REPO_ROOT}/config/env/media-os-update.env}"
+fi
 
 DRY_RUN=false
 CHECK_ONLY=false
@@ -46,9 +51,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+assert_root_owned_path() {
+    local path="$1"
+    [[ "$path" == /* ]] || { echo 'Root configuration requires an absolute path' >&2; return 1; }
+    while [[ "$path" != / ]]; do
+        if [[ -L "$path" || $(stat -c %u -- "$path") != 0 || -n $(find "$path" -maxdepth 0 -perm /022 -print) ]]; then
+            echo "Unsafe root configuration path: $path" >&2
+            return 1
+        fi
+        path=$(dirname -- "$path")
+    done
+}
+
 load_env_file() {
     local file="$1"
     if [[ -f "$file" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            assert_root_owned_path "$file" || exit 1
+        fi
         set -a
         # shellcheck disable=SC1090
         source "$file"
@@ -58,9 +78,9 @@ load_env_file() {
 
 load_env_file "$MEDIA_OS_UPDATE_ENV"
 
-LOG_DIR="${LOG_DIR:-/mnt/data/config/media-os-update/logs}"
+LOG_DIR="${LOG_DIR:-/var/log/manage-media-maintenance/os}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/media-os-update.log}"
-LOCK_FILE="${LOCK_FILE:-${LOG_DIR}/media-os-update.lock}"
+LOCK_FILE="${LOCK_FILE:-/run/manage-media-maintenance/os.lock}"
 
 ROOT_MIN_FREE_KIB="${ROOT_MIN_FREE_KIB:-1048576}"
 DATA_MIN_FREE_KIB="${DATA_MIN_FREE_KIB:-1048576}"
@@ -83,6 +103,11 @@ REBOOT_REQUIRED="no"
 REBOOT_REQUIRED_PACKAGES="none"
 
 mkdir -p "$LOG_DIR"
+if [[ $EUID -eq 0 ]]; then
+    [[ ! -L /run/manage-media-maintenance ]] || { echo 'Unsafe runtime directory' >&2; exit 1; }
+    install -d -m 0755 -o root -g root /run/manage-media-maintenance
+    assert_root_owned_path /run/manage-media-maintenance || exit 1
+fi
 
 log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$1" | tee -a "$LOG_FILE"
@@ -189,20 +214,20 @@ write_summary() {
 
     local status="$1"
     local message="$2"
-    {
-        printf 'MEDIA_OS_UPDATE_STATUS=%q\n' "$status"
-        printf 'MEDIA_OS_UPDATE_MESSAGE=%q\n' "$message"
-        printf 'MEDIA_OS_APT_UPGRADED_PACKAGES=%q\n' "$APT_UPGRADED_PACKAGES"
-        printf 'MEDIA_OS_APT_UPGRADED_COUNT=%q\n' "$APT_UPGRADED_COUNT"
-        printf 'MEDIA_OS_SNAP_REFRESHED_PACKAGES=%q\n' "$SNAP_REFRESHED_PACKAGES"
-        printf 'MEDIA_OS_SNAP_REFRESHED_COUNT=%q\n' "$SNAP_REFRESHED_COUNT"
-        printf 'MEDIA_OS_AUTOREMOVE_STATUS=%q\n' "$AUTOREMOVE_STATUS"
-        printf 'MEDIA_OS_REBOOT_REQUIRED=%q\n' "$REBOOT_REQUIRED"
-        printf 'MEDIA_OS_REBOOT_REQUIRED_PACKAGES=%q\n' "$REBOOT_REQUIRED_PACKAGES"
-        printf 'MEDIA_OS_DRY_RUN=%q\n' "$DRY_RUN"
-        printf 'MEDIA_OS_CHECK_ONLY=%q\n' "$CHECK_ONLY"
-        printf 'MEDIA_OS_LOG_FILE=%q\n' "$LOG_FILE"
-    } > "$SUMMARY_FILE"
+    jq -n \
+        --arg MEDIA_OS_UPDATE_STATUS "$status" \
+        --arg MEDIA_OS_UPDATE_MESSAGE "$message" \
+        --arg MEDIA_OS_APT_UPGRADED_PACKAGES "$APT_UPGRADED_PACKAGES" \
+        --arg MEDIA_OS_APT_UPGRADED_COUNT "$APT_UPGRADED_COUNT" \
+        --arg MEDIA_OS_SNAP_REFRESHED_PACKAGES "$SNAP_REFRESHED_PACKAGES" \
+        --arg MEDIA_OS_SNAP_REFRESHED_COUNT "$SNAP_REFRESHED_COUNT" \
+        --arg MEDIA_OS_AUTOREMOVE_STATUS "$AUTOREMOVE_STATUS" \
+        --arg MEDIA_OS_REBOOT_REQUIRED "$REBOOT_REQUIRED" \
+        --arg MEDIA_OS_REBOOT_REQUIRED_PACKAGES "$REBOOT_REQUIRED_PACKAGES" \
+        --arg MEDIA_OS_DRY_RUN "$DRY_RUN" \
+        --arg MEDIA_OS_CHECK_ONLY "$CHECK_ONLY" \
+        --arg MEDIA_OS_LOG_FILE "$LOG_FILE" \
+        '{MEDIA_OS_UPDATE_STATUS: $MEDIA_OS_UPDATE_STATUS, MEDIA_OS_UPDATE_MESSAGE: $MEDIA_OS_UPDATE_MESSAGE, MEDIA_OS_APT_UPGRADED_PACKAGES: $MEDIA_OS_APT_UPGRADED_PACKAGES, MEDIA_OS_APT_UPGRADED_COUNT: $MEDIA_OS_APT_UPGRADED_COUNT, MEDIA_OS_SNAP_REFRESHED_PACKAGES: $MEDIA_OS_SNAP_REFRESHED_PACKAGES, MEDIA_OS_SNAP_REFRESHED_COUNT: $MEDIA_OS_SNAP_REFRESHED_COUNT, MEDIA_OS_AUTOREMOVE_STATUS: $MEDIA_OS_AUTOREMOVE_STATUS, MEDIA_OS_REBOOT_REQUIRED: $MEDIA_OS_REBOOT_REQUIRED, MEDIA_OS_REBOOT_REQUIRED_PACKAGES: $MEDIA_OS_REBOOT_REQUIRED_PACKAGES, MEDIA_OS_DRY_RUN: $MEDIA_OS_DRY_RUN, MEDIA_OS_CHECK_ONLY: $MEDIA_OS_CHECK_ONLY, MEDIA_OS_LOG_FILE: $MEDIA_OS_LOG_FILE}' > "$SUMMARY_FILE"
 }
 
 on_exit() {

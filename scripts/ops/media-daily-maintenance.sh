@@ -1,12 +1,18 @@
 #!/bin/bash
 
 set -euo pipefail
+umask 027
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 
-MEDIA_DAILY_ENV="${MEDIA_DAILY_ENV:-${REPO_ROOT}/config/env/media-daily-maintenance.env}"
-NOTIFICATION_ENV="${NOTIFICATION_ENV:-${REPO_ROOT}/config/env/notification.env}"
+if [[ $EUID -eq 0 ]]; then
+    MEDIA_DAILY_ENV="${MEDIA_DAILY_ENV:-/etc/manage-media-maintenance/media-daily-maintenance.env}"
+    NOTIFICATION_ENV="${NOTIFICATION_ENV:-/etc/manage-media-maintenance/notification.env}"
+else
+    MEDIA_DAILY_ENV="${MEDIA_DAILY_ENV:-${REPO_ROOT}/config/env/media-daily-maintenance.env}"
+    NOTIFICATION_ENV="${NOTIFICATION_ENV:-${REPO_ROOT}/config/env/notification.env}"
+fi
 
 DRY_RUN=false
 CHECK_ONLY=false
@@ -56,9 +62,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+assert_root_owned_path() {
+    local path="$1"
+    [[ "$path" == /* ]] || { echo 'Root configuration requires an absolute path' >&2; return 1; }
+    while [[ "$path" != / ]]; do
+        if [[ -L "$path" || $(stat -c %u -- "$path") != 0 || -n $(find "$path" -maxdepth 0 -perm /022 -print) ]]; then
+            echo "Unsafe root configuration path: $path" >&2
+            return 1
+        fi
+        path=$(dirname -- "$path")
+    done
+}
+
 load_env_file() {
     local file="$1"
     if [[ -f "$file" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            assert_root_owned_path "$file" || exit 1
+        fi
         set -a
         # shellcheck disable=SC1090
         source "$file"
@@ -70,9 +91,9 @@ load_env_file "$MEDIA_DAILY_ENV"
 load_env_file "$NOTIFICATION_ENV"
 
 PROD_ROOT="${PROD_ROOT:-/home/mediaserver/ManageMediaServer}"
-LOG_DIR="${LOG_DIR:-/mnt/data/config/media-daily-maintenance/logs}"
+LOG_DIR="${LOG_DIR:-/var/log/manage-media-maintenance/daily}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/media-daily-maintenance.log}"
-LOCK_FILE="${LOCK_FILE:-${LOG_DIR}/media-daily-maintenance.lock}"
+LOCK_FILE="${LOCK_FILE:-/run/manage-media-maintenance/daily.lock}"
 CHILD_USER="${CHILD_USER:-mediaserver}"
 LAST_SUCCESS_FILE="${LAST_SUCCESS_FILE:-/var/lib/media-daily-maintenance/last-success}"
 
@@ -91,7 +112,11 @@ MEDIA_BACKUP_SCRIPT="${MEDIA_BACKUP_SCRIPT:-${PROD_ROOT}/scripts/ops/media-backu
 MEDIA_APP_UPDATE_SCRIPT="${MEDIA_APP_UPDATE_SCRIPT:-${PROD_ROOT}/scripts/ops/media-app-update.sh}"
 TOKEN_MONITOR_UPDATE_SCRIPT="${TOKEN_MONITOR_UPDATE_SCRIPT:-${PROD_ROOT}/token-monitor/scripts/update.sh}"
 RCLONE_MEDIA_SYNC_SCRIPT="${RCLONE_MEDIA_SYNC_SCRIPT:-${PROD_ROOT}/scripts/ops/rclone-media-sync.sh}"
-MEDIA_OS_UPDATE_SCRIPT="${MEDIA_OS_UPDATE_SCRIPT:-${PROD_ROOT}/scripts/ops/media-os-update.sh}"
+if [[ $EUID -eq 0 ]]; then
+    MEDIA_OS_UPDATE_SCRIPT="${MEDIA_OS_UPDATE_SCRIPT:-/usr/local/libexec/manage-media-maintenance/media-os-update.sh}"
+else
+    MEDIA_OS_UPDATE_SCRIPT="${MEDIA_OS_UPDATE_SCRIPT:-${PROD_ROOT}/scripts/ops/media-os-update.sh}"
+fi
 
 MEDIA_BACKUP_STATUS="skipped"
 MEDIA_APP_UPDATE_STATUS="skipped"
@@ -106,6 +131,11 @@ FAILED_MESSAGES=()
 REBOOT_ACTION="not_required"
 
 mkdir -p "$LOG_DIR"
+if [[ $EUID -eq 0 ]]; then
+    [[ ! -L /run/manage-media-maintenance ]] || { echo 'Unsafe runtime directory' >&2; exit 1; }
+    install -d -m 0755 -o root -g root /run/manage-media-maintenance
+    assert_root_owned_path /run/manage-media-maintenance || exit 1
+fi
 
 log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$1" | tee -a "$LOG_FILE"
@@ -156,11 +186,47 @@ summary_value() {
     printf '%s' "${!name:-$default}"
 }
 
-source_summary() {
-    local file="$1"
-    if [[ -f "$file" ]]; then
-        # shellcheck disable=SC1090
-        source "$file"
+initialize_summary_dir() {
+    SUMMARY_DIR=$(mktemp -d /tmp/media-daily-maintenance.XXXXXX) || return 1
+    if [[ $EUID -eq 0 && "$CHILD_USER" != root ]]; then
+        local child_group
+        child_group=$(id -gn "$CHILD_USER") || return 1
+        chown "root:$child_group" "$SUMMARY_DIR" || return 1
+        chmod 0710 "$SUMMARY_DIR" || return 1
+        install -d -m 0700 -o "$CHILD_USER" -g "$child_group" "$SUMMARY_DIR/child" || return 1
+    else
+        chmod 0700 "$SUMMARY_DIR" || return 1
+        mkdir -m 0700 "$SUMMARY_DIR/child" || return 1
+    fi
+    mkdir -m 0700 "$SUMMARY_DIR/root"
+}
+
+read_step_summary() {
+    local file="$1" step="$2" status_name="$3"
+    local validated name value
+    if ! validated=$(mktemp "$SUMMARY_DIR/.validated.XXXXXX"); then
+        printf -v "$status_name" '%s' failed
+        [[ "$step" != media-backup ]] || MEDIA_BACKUP_FAILED=true
+        mark_failed "$CURRENT_STEP" 'cannot create result validation file'
+        return 1
+    fi
+    if ! python3 "$SCRIPT_DIR/read-maintenance-summary.py" "$step" "$file" > "$validated"; then
+        rm -f -- "$validated"
+        printf -v "$status_name" '%s' failed
+        [[ "$step" != media-backup ]] || MEDIA_BACKUP_FAILED=true
+        mark_failed "$CURRENT_STEP" 'invalid or missing result file'
+        return 1
+    fi
+    # Names are restricted to this step's explicit allowlist by the parser.
+    # printf assigns literal data; it never executes shell syntax in values.
+    while IFS= read -r -d '' name && IFS= read -r -d '' value; do
+        printf -v "$name" '%s' "$value"
+    done < "$validated"
+    rm -f -- "$validated"
+    if [[ ${!status_name} == failed ]]; then
+        [[ "$step" != media-backup ]] || MEDIA_BACKUP_FAILED=true
+        mark_failed "$CURRENT_STEP" 'step reported failure'
+        return 1
     fi
 }
 
@@ -213,7 +279,7 @@ step_missing_files() {
             missing_files "${files[@]}"
             ;;
         analytics-update)
-            missing_files "${PROD_ROOT}/token-monitor-analytics/scripts/update.sh" /etc/token-monitor-analytics/deploy.env
+            missing_files /usr/local/libexec/token-monitor-analytics/update.sh /etc/token-monitor-analytics/deploy.env
             ;;
         rclone-media-sync) missing_files "$RCLONE_MEDIA_SYNC_SCRIPT" ;;
         os-update) missing_files "$MEDIA_OS_UPDATE_SCRIPT" ;;
@@ -239,7 +305,7 @@ run_media_backup() {
         MEDIA_BACKUP_FAILED=true
         return 1
     fi
-    local summary="${SUMMARY_DIR}/media-backup.env"
+    local summary="${SUMMARY_DIR}/child/media-backup.json"
     local args=()
     if [[ "$DRY_RUN" == "true" || "$CHECK_ONLY" == "true" ]]; then
         args+=(--dry-run)
@@ -248,11 +314,11 @@ run_media_backup() {
     log "media backup start"
     MEDIA_BACKUP_STATUS=""
     if run_as_child_user env SUPPRESS_DISCORD=true SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_BACKUP_SCRIPT" "${args[@]}"; then
-        source_summary "$summary"
+        read_step_summary "$summary" media-backup MEDIA_BACKUP_STATUS || return 1
         MEDIA_BACKUP_STATUS="${MEDIA_BACKUP_STATUS:-succeeded}"
         log "media backup completed: ${MEDIA_BACKUP_STATUS}"
     else
-        source_summary "$summary"
+        read_step_summary "$summary" media-backup MEDIA_BACKUP_STATUS || return 1
         MEDIA_BACKUP_STATUS="${MEDIA_BACKUP_STATUS:-failed}"
         MEDIA_BACKUP_FAILED=true
         mark_failed "media backup" "${MEDIA_BACKUP_MESSAGE:-media backup failed}"
@@ -274,7 +340,7 @@ run_media_app_update() {
         MEDIA_APP_UPDATE_STATUS="failed"
         return 1
     fi
-    local summary="${SUMMARY_DIR}/media-app-update.env"
+    local summary="${SUMMARY_DIR}/child/media-app-update.json"
     local args=(--skip-backup-check)
     if [[ "$CHECK_ONLY" == "true" ]]; then
         args=(--check-only)
@@ -285,11 +351,11 @@ run_media_app_update() {
     log "media app update start"
     MEDIA_APP_UPDATE_STATUS=""
     if run_as_child_user env SUPPRESS_DISCORD=true SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_APP_UPDATE_SCRIPT" "${args[@]}"; then
-        source_summary "$summary"
+        read_step_summary "$summary" media-app-update MEDIA_APP_UPDATE_STATUS || return 1
         MEDIA_APP_UPDATE_STATUS="${MEDIA_APP_UPDATE_STATUS:-succeeded}"
         log "media app update completed: ${MEDIA_APP_UPDATE_STATUS}"
     else
-        source_summary "$summary"
+        read_step_summary "$summary" media-app-update MEDIA_APP_UPDATE_STATUS || return 1
         MEDIA_APP_UPDATE_STATUS="${MEDIA_APP_UPDATE_STATUS:-failed}"
         mark_failed "media app update" "${MEDIA_APP_UPDATE_MESSAGE:-media app update failed}"
         return 1
@@ -303,7 +369,7 @@ run_token_monitor_update() {
         TOKEN_MONITOR_UPDATE_STATUS="failed"
         return 1
     fi
-    local summary="${SUMMARY_DIR}/token-monitor-update.env"
+    local summary="${SUMMARY_DIR}/child/token-monitor-update.json"
     local args=()
     if [[ "$CHECK_ONLY" == "true" ]]; then
         args+=(--check-only)
@@ -314,11 +380,11 @@ run_token_monitor_update() {
     log "Token Monitor update start"
     TOKEN_MONITOR_UPDATE_STATUS=""
     if run_as_child_user env SUMMARY_FILE="$summary" /usr/bin/bash "$TOKEN_MONITOR_UPDATE_SCRIPT" "${args[@]}"; then
-        source_summary "$summary"
+        read_step_summary "$summary" token-monitor-update TOKEN_MONITOR_UPDATE_STATUS || return 1
         TOKEN_MONITOR_UPDATE_STATUS="${TOKEN_MONITOR_UPDATE_STATUS:-succeeded}"
         log "Token Monitor update completed: ${TOKEN_MONITOR_UPDATE_STATUS}"
     else
-        source_summary "$summary"
+        read_step_summary "$summary" token-monitor-update TOKEN_MONITOR_UPDATE_STATUS || return 1
         TOKEN_MONITOR_UPDATE_STATUS="${TOKEN_MONITOR_UPDATE_STATUS:-failed}"
         mark_failed "Token Monitor update" "Token Monitor update failed"
         return 1
@@ -332,20 +398,17 @@ run_analytics_update() {
         ANALYTICS_UPDATE_STATUS=failed
         return 1
     fi
-    local summary
-    summary=$(mktemp /run/token-monitor-analytics-summary.XXXXXX)
+    local summary="${SUMMARY_DIR}/root/analytics-update.json"
     local args=()
     if [[ "$CHECK_ONLY" == "true" ]]; then args+=(--check-only)
     elif [[ "$DRY_RUN" == "true" ]]; then args+=(--dry-run); fi
     # The maintenance service runs as root; only this system deployment step
     # needs root instead of the media child user.
-    if env SUMMARY_FILE="$summary" /usr/bin/bash "${PROD_ROOT}/token-monitor-analytics/scripts/update.sh" "${args[@]}"; then
-        source_summary "$summary"
-        rm -f "$summary"
+    if env SUMMARY_FILE="$summary" /usr/bin/bash /usr/local/libexec/token-monitor-analytics/update.sh "${args[@]}"; then
+        read_step_summary "$summary" analytics-update ANALYTICS_UPDATE_STATUS || return 1
         log "Analytics update completed: ${ANALYTICS_UPDATE_STATUS}"
     else
-        source_summary "$summary"
-        rm -f "$summary"
+        read_step_summary "$summary" analytics-update ANALYTICS_UPDATE_STATUS || return 1
         ANALYTICS_UPDATE_STATUS=failed
         mark_failed "Analytics update" "Analytics update failed"
         return 1
@@ -365,7 +428,7 @@ run_rclone_sync() {
         RCLONE_SYNC_STATUS="failed"
         return 1
     fi
-    local summary="${SUMMARY_DIR}/rclone-media-sync.env"
+    local summary="${SUMMARY_DIR}/child/rclone-media-sync.json"
     local args=()
     if [[ "$DRY_RUN" == "true" ]]; then
         args+=(--dry-run)
@@ -377,11 +440,11 @@ run_rclone_sync() {
     log "rclone media sync start"
     RCLONE_SYNC_STATUS=""
     if run_as_child_user env SUPPRESS_DISCORD=true SUMMARY_FILE="$summary" /usr/bin/bash "$RCLONE_MEDIA_SYNC_SCRIPT" "${args[@]}"; then
-        source_summary "$summary"
+        read_step_summary "$summary" rclone-media-sync RCLONE_SYNC_STATUS || return 1
         RCLONE_SYNC_STATUS="${RCLONE_SYNC_STATUS:-succeeded}"
         log "rclone media sync completed: ${RCLONE_SYNC_STATUS}"
     else
-        source_summary "$summary"
+        read_step_summary "$summary" rclone-media-sync RCLONE_SYNC_STATUS || return 1
         RCLONE_SYNC_STATUS="${RCLONE_SYNC_STATUS:-failed}"
         mark_failed "rclone media sync" "${RCLONE_SYNC_MESSAGE:-rclone media sync failed}"
         return 1
@@ -395,7 +458,7 @@ run_os_update() {
         MEDIA_OS_UPDATE_STATUS="failed"
         return 1
     fi
-    local summary="${SUMMARY_DIR}/media-os-update.env"
+    local summary="${SUMMARY_DIR}/root/media-os-update.json"
     local args=()
     if [[ "$CHECK_ONLY" == "true" ]]; then
         args+=(--check-only)
@@ -405,12 +468,12 @@ run_os_update() {
 
     log "OS update start"
     MEDIA_OS_UPDATE_STATUS=""
-    if env SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_OS_UPDATE_SCRIPT" "${args[@]}"; then
-        source_summary "$summary"
+    if env -u LOG_DIR -u LOG_FILE -u LOCK_FILE SUMMARY_FILE="$summary" /usr/bin/bash "$MEDIA_OS_UPDATE_SCRIPT" "${args[@]}"; then
+        read_step_summary "$summary" os-update MEDIA_OS_UPDATE_STATUS || return 1
         MEDIA_OS_UPDATE_STATUS="${MEDIA_OS_UPDATE_STATUS:-succeeded}"
         log "OS update completed: ${MEDIA_OS_UPDATE_STATUS}"
     else
-        source_summary "$summary"
+        read_step_summary "$summary" os-update MEDIA_OS_UPDATE_STATUS || return 1
         MEDIA_OS_UPDATE_STATUS="${MEDIA_OS_UPDATE_STATUS:-failed}"
         mark_failed "os update" "${MEDIA_OS_UPDATE_MESSAGE:-OS update failed}"
         return 1
@@ -613,6 +676,13 @@ assert_prerequisites() {
     CURRENT_STEP="preflight"
     command -v flock >/dev/null || { log "ERROR: flock is not installed"; exit 1; }
     command -v jq >/dev/null || { log "ERROR: jq is not installed"; exit 1; }
+    command -v python3 >/dev/null || { log "ERROR: python3 is not installed"; exit 1; }
+    [[ -f "$SCRIPT_DIR/read-maintenance-summary.py" ]] || { log "ERROR: result parser is missing"; exit 1; }
+    if [[ $EUID -eq 0 ]]; then
+        assert_root_owned_path "$SCRIPT_DIR/read-maintenance-summary.py" || exit 1
+        [[ "$RUN_OS_UPDATE" != true ]] || assert_root_owned_path "$MEDIA_OS_UPDATE_SCRIPT" || exit 1
+        [[ "$RUN_ANALYTICS_UPDATE" != true ]] || assert_root_owned_path /usr/local/libexec/token-monitor-analytics/update.sh || exit 1
+    fi
 }
 
 run_preflight() {
@@ -666,8 +736,7 @@ main() {
         exit 1
     fi
 
-    SUMMARY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/media-daily-maintenance.XXXXXX")
-    chmod 0777 "$SUMMARY_DIR"
+    initialize_summary_dir || exit 1
 
     log "=== media daily maintenance start ==="
     log "DRY_RUN=${DRY_RUN}"

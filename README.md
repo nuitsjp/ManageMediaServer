@@ -32,7 +32,7 @@ Token Monitor Analytics は、複数Hubの利用状況を集約する.NETアプ�
 
 公開済み正式リリースのLinux配布物とSHA-256を取得し、DBのコピーで起動確認してから、停止・バックアップ・切り替え・起動確認を行います。失敗時は旧版と更新前DBを復元します。版を省略した日次更新は同じmajor内、0.xでは同じminor内だけを対象にします。
 
-CIから取得した配布物を手動配置する場合は、手動更新コマンドに `--version vX.Y.Z --archive <tar.gzのパス> --sha256-file <チェックサムのパス>` を渡します。`--check-only` または `--dry-run` ではサービスやDBを変更しません。ホスト上でビルドは行いません。
+パスワード不要の手動更新は、公開済み正式リリースだけを対象とし、`--version`、`--check-only`、`--dry-run`、`--help` を受け付けます。ローカル配布物の `--archive` と `--sha256-file` は拒否します。CIの配布物を手動配置する場合は、管理者が通常のsudo認証で `/usr/local/libexec/token-monitor-analytics/update.sh --version vX.Y.Z --archive <tar.gzのパス> --sha256-file <チェックサムのパス>` を実行します。チェックサムは配布元の信頼性を保証しないため、取得元を確認した配布物だけを使用します。`--check-only` または `--dry-run` ではサービスやDBを変更しません。ホスト上でビルドは行いません。
 
 初回導入は `scripts/ops/install-token-monitor-analytics.sh` に版・配布物・チェックサムを渡します。ランタイムとnginxの導入、既存設定の退避、サービスとファイアウォールの登録、同期確認、日次更新と監視への組み込みを行います。新しい更新timerは作りません。状態・ログは `systemctl status token-monitor-analytics token-monitor-analytics-http` と `journalctl -u token-monitor-analytics` で確認します。
 
@@ -681,7 +681,9 @@ OnCalendar=*-*-* 04:00:00 Asia/Tokyo
 
 日次運用は `media-daily-maintenance.timer` を唯一の定期実行入口にします。個別の `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer` は通常運用では無効化し、各 service / script は手動実行または日次メンテナンスから呼ばれる部品として残します。
 
-`media-daily-maintenance.service` は root で `/home/mediaserver/ManageMediaServer/scripts/ops/media-daily-maintenance.sh` を呼びます。メディア処理は `mediaserver` ユーザーで実行し、OS 更新だけ root で実行します。
+`media-daily-maintenance.service` は root 所有の `/usr/local/libexec/manage-media-maintenance/media-daily-maintenance.sh` を呼びます。OS 更新と結果読み取りヘルパーも同じ保護されたディレクトリに配置します。メディア処理は `mediaserver` ユーザーで実行し、OS 更新と Analytics の配布物更新は root で実行します。Analytics 更新は root 所有の `/usr/local/libexec/token-monitor-analytics/update.sh` を使用します。
+
+root が読む設定は `/etc/manage-media-maintenance/` の `media-daily-maintenance.env`、`media-os-update.env`、`notification.env` です。初回に従来の本番envから値を移行し、以降はこのコピーをsudoで編集します。root専用設定を更新する際は、ホームディレクトリ内のenvを編集しても反映されません。設定ファイルとその親ディレクトリが root 所有で、他ユーザーに書き換えられないことを実行前に検証します。日次・OS処理のログは `/var/log/manage-media-maintenance/daily/` と `/var/log/manage-media-maintenance/os/`、lock は `/run/manage-media-maintenance/` に置きます。
 
 systemd unit:
 
@@ -704,7 +706,9 @@ systemd unit:
 
 OS や Docker daemon、Tailscale、kernel は更新時に daemon restart や再起動を伴う可能性があるため、OS 更新は最後に行います。これにより、バックアップ・アプリ更新・同期を終えてから OS 更新と再起動で締める運用にします。
 
-日次メンテナンス配下では、個別スクリプトの Discord 通知は `SUPPRESS_DISCORD=true` で抑止します。各スクリプトは `SUMMARY_FILE` に実行結果を書き出し、親スクリプトが 1 本の Discord 通知に集約します。
+日次メンテナンス配下では、個別スクリプトの Discord 通知は `SUPPRESS_DISCORD=true` で抑止します。各スクリプトは `SUMMARY_FILE` にJSONの実行結果を書き出し、親スクリプトが 1 本の Discord 通知に集約します。親は結果をコマンドとして実行せず、ステップごとの許可項目・値・サイズを検証して読み取ります。欠落・不正・失敗の結果はそのステップの失敗として扱い、バックアップの結果が不正な場合もアプリ更新をスキップします。
+
+一時結果の親ディレクトリは root 所有で子ユーザーの書き込みを禁止し、子処理の結果と root 処理の結果を別ディレクトリに保存します。結果ファイルはシンボリックリンクやFIFOを受け付けません。
 
 日次メンテナンスの導入:
 
@@ -716,6 +720,7 @@ OS や Docker daemon、Tailscale、kernel は更新時に daemon restart や再�
 
 - 既存の本番ファイルを `/home/mediaserver/ManageMediaServer/.deploy-backups/daily-maintenance-*` にバックアップする
 - 日次メンテナンスが呼ぶ全スクリプト(`media-backup.sh`、`media-app-update.sh`、`rclone-media-sync.sh`、`media-os-update.sh`、`media-daily-maintenance.sh`)と env example、systemd unit を配置する
+- `install-media-maintenance-security.sh` で、root用スクリプトと設定の保護、全JSON結果出力の同時配置、Analytics更新コマンドの引数制限を反映する。変更前のファイルは `/mnt/backup/media-maintenance-security.*` に退避し、検証失敗時は復元する
 - `media-daily-maintenance.sh --preflight` で、有効な全ステップに必要なファイルがそろっているか確認する。失敗した場合は timer を切り替えずにエラー終了する
 - `media-daily-maintenance.timer` を enable / start する
 - `media-backup.timer`、`media-app-update.timer`、`rclone-media-sync.timer`、`apt-daily-upgrade.timer` を disable / stop する
@@ -729,15 +734,15 @@ Token Monitor 関連ファイル(`token-monitor/` 配下と env)は `install-tok
 systemctl status media-daily-maintenance.timer --no-pager
 systemctl list-timers media-daily-maintenance.timer --no-pager
 journalctl -u media-daily-maintenance.service -n 100 --no-pager
-sudo tail -100 /mnt/data/config/media-daily-maintenance/logs/media-daily-maintenance.log
+sudo tail -100 /var/log/manage-media-maintenance/daily/media-daily-maintenance.log
 ```
 
 手動確認:
 
 ```bash
-sudo /home/mediaserver/ManageMediaServer/scripts/ops/media-daily-maintenance.sh --preflight
-sudo ./scripts/ops/media-daily-maintenance.sh --check-only
-sudo ./scripts/ops/media-daily-maintenance.sh --dry-run
+sudo /usr/local/libexec/manage-media-maintenance/media-daily-maintenance.sh --preflight
+sudo /usr/local/libexec/manage-media-maintenance/media-daily-maintenance.sh --check-only
+sudo /usr/local/libexec/manage-media-maintenance/media-daily-maintenance.sh --dry-run
 ```
 
 停止する場合:
@@ -884,11 +889,11 @@ storage:
 - `/mnt/backup`: `1.8T free / 44% used`
 
 logs:
-- daily: `/mnt/data/config/media-daily-maintenance/logs/media-daily-maintenance.log`
+- daily: `/var/log/manage-media-maintenance/daily/media-daily-maintenance.log`
 - backup: `/mnt/data/config/media-backup/logs/media-backup.log`
 - app update: `/mnt/data/config/media-app-update/logs/media-app-update.log`
 - sync: `/mnt/data/config/rclone/logs/media-sync.log`
-- os update: `/mnt/data/config/media-os-update/logs/media-os-update.log`
+- os update: `/var/log/manage-media-maintenance/os/media-os-update.log`
 ```
 
 `skipped videos` が 0 でない場合、または Immich/Jellyfin の major 更新を検知した場合は、日次通知のタイトルを `completed with warnings` にします。再起動が必要で自動再起動を予約した場合は、タイトルを `completed; reboot scheduled` にします。

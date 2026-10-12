@@ -13,6 +13,7 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 PROD_ROOT="${PROD_ROOT:-/home/mediaserver/ManageMediaServer}"
+[[ "$PROD_ROOT" == /home/mediaserver/ManageMediaServer ]] || { echo 'Review the protected deployment paths before changing PROD_ROOT' >&2; exit 1; }
 BACKUP_DIR="${PROD_ROOT}/.deploy-backups/daily-maintenance-$(date '+%Y%m%d-%H%M%S')"
 
 SCRIPTS=(
@@ -37,6 +38,9 @@ UNITS=(
     media-daily-maintenance.service
     media-daily-maintenance.timer
 )
+[[ -f "${REPO_ROOT}/scripts/ops/install-media-maintenance-security.sh" ]]
+[[ -f "${REPO_ROOT}/scripts/ops/read-maintenance-summary.py" ]]
+[[ -f "${REPO_ROOT}/scripts/ops/prepare-maintenance-config.py" ]]
 
 for file in "${SCRIPTS[@]}" "${ENV_EXAMPLES[@]}"; do
     [[ -f "${REPO_ROOT}/${file}" ]] || { echo "ERROR: missing ${REPO_ROOT}/${file}" >&2; exit 1; }
@@ -58,10 +62,6 @@ for unit in "${UNITS[@]}"; do
 done
 echo "Previous daily maintenance files were backed up under: ${BACKUP_DIR}"
 
-for file in "${SCRIPTS[@]}"; do
-    install -m 0755 -D "${REPO_ROOT}/${file}" "${PROD_ROOT}/${file}"
-    echo "DEPLOY: ${PROD_ROOT}/${file}"
-done
 for file in "${ENV_EXAMPLES[@]}"; do
     install -m 0644 -D "${REPO_ROOT}/${file}" "${PROD_ROOT}/${file}"
 done
@@ -73,25 +73,11 @@ for name in "${DEFAULT_ENVS[@]}"; do
         echo "CREATE: ${PROD_ROOT}/config/env/${name}"
     fi
 done
-for unit in "${UNITS[@]}"; do
-    install -m 0644 "${REPO_ROOT}/systemd/${unit}" "/etc/systemd/system/${unit}"
-done
+# The security installer backs up and installs all runtime scripts and the
+# service together. Place only the timer first so a fresh host can be checked.
+install -m 0644 "${REPO_ROOT}/systemd/media-daily-maintenance.timer" /etc/systemd/system/media-daily-maintenance.timer
+"${REPO_ROOT}/scripts/ops/install-media-maintenance-security.sh"
 systemctl daemon-reload
-
-# Load the same environment the service uses so the preflight checks the
-# production configuration.
-if ! (
-    set -a
-    for env_file in media-daily-maintenance.env media-os-update.env notification.env; do
-        # shellcheck disable=SC1090
-        [[ -f "${PROD_ROOT}/config/env/${env_file}" ]] && source "${PROD_ROOT}/config/env/${env_file}"
-    done
-    set +a
-    /usr/bin/bash "${PROD_ROOT}/scripts/ops/media-daily-maintenance.sh" --preflight
-); then
-    echo "ERROR: daily maintenance preflight failed; the timer was not enabled" >&2
-    exit 1
-fi
 
 systemctl disable --now media-backup.timer media-app-update.timer rclone-media-sync.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
 systemctl enable --now media-daily-maintenance.timer

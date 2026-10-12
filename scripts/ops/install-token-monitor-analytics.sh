@@ -182,11 +182,16 @@ for name in media-daily-maintenance.sh media-health-check.sh; do
 done
 python3 - <<'PY'
 from pathlib import Path
-path = Path('/home/mediaserver/ManageMediaServer/config/env/media-daily-maintenance.env')
-text = path.read_text() if path.exists() else ''
-lines = [line for line in text.splitlines() if not line.startswith('RUN_ANALYTICS_UPDATE=')]
-path.write_text('\n'.join(lines + ['RUN_ANALYTICS_UPDATE=true']) + '\n')
+paths = [Path('/home/mediaserver/ManageMediaServer/config/env/media-daily-maintenance.env')]
+protected = Path('/etc/manage-media-maintenance/media-daily-maintenance.env')
+if protected.exists():
+    paths.append(protected)
+for path in paths:
+    text = path.read_text() if path.exists() else ''
+    lines = [line for line in text.splitlines() if not line.startswith('RUN_ANALYTICS_UPDATE=')]
+    path.write_text('\n'.join(lines + ['RUN_ANALYTICS_UPDATE=true']) + '\n')
 PY
 systemctl --no-pager --full status token-monitor-analytics.service token-monitor-analytics-http.service
 "$REPO_ROOT/scripts/ops/enable-token-monitor-analytics-manual-update.sh" ubuntu
+"$REPO_ROOT/scripts/ops/install-media-maintenance-security.sh"
 echo 'Analytics installed. Manual updates: sudo -n /usr/local/sbin/token-monitor-analytics-update --version vX.Y.Z'
