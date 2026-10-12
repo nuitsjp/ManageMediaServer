@@ -113,6 +113,12 @@ Jellyfin のデータ配置:
 - その他ライブラリ候補: `/mnt/data/jellyfin/movies`, `/mnt/data/jellyfin/tv`
 - Compose: `/home/mediaserver/ManageMediaServer/docker/jellyfin/docker-compose.yml`
 
+Jellyfin は `jellyfin/jellyfin:12` を使い、日次更新も12系を許可します。10.11系から12.2への移行は `scripts/ops/upgrade-jellyfin.sh` が担当します。公式イメージの12.2をdigestで指定して取得し、停止前に旧イメージを保存、停止後に `/config` 全体とキャッシュ・Compose・日次更新設定を `/mnt/backup/jellyfin-upgrade.*` へ退避します。
+
+移行は通信を遮断したコピー環境で検証し、ライブラリ全走査・DB整合性・既存アカウント・メディア・視聴状態の保持を確認したコピーを本番へ切り替えます。走査には起動時のタスクを一時的に追加し、完了後は元のスケジュールに戻します。公式プラグイン配信URLも12系のURLへ変更し、認証・視聴状態を含むDBは実行ユーザーだけが読み書きできる権限にします。Jellyfinはこの確認中、一時停止します。
+
+失敗時は、移行後のデータを退避し、旧イメージと更新前の全設定・DBを復元します。新しいDBを古いイメージで開くことはしません。バックアップには旧イメージの圧縮アーカイブと、保護された診断ログも残します。[公式の移行案内](https://github.com/jellyfin/jellyfin/releases/tag/v12.0)と[バックアップ・復元手順](https://jellyfin.org/docs/general/administration/backup-and-restore/)を参照してください。
+
 Windows サーバーから動画を投入する場合は、Linux 側の Jellyfin ライブラリディレクトリを Samba 共有として公開し、Windows 側から追加コピーします。
 
 想定する共有:
@@ -771,7 +777,7 @@ Immich/Jellyfin のセキュリティアップデートを人手で追い続け�
 | サービス | 自動更新タグ | 自動適用範囲 | major 更新時 |
 | --- | --- | --- | --- |
 | Immich | `IMMICH_VERSION=v3` | `v3.x.x` | 通知のみ |
-| Jellyfin | `jellyfin/jellyfin:10` | `10.x.x` | 通知のみ |
+| Jellyfin | `jellyfin/jellyfin:12` | `12.x` | 通知のみ |
 
 現行の `media-backup.timer` は写真・動画ファイルの保全が目的であり、Immich PostgreSQL、Jellyfin 設定、サムネイル、キャッシュの完全復元は保証しません。そのため、日次自動更新は「メディアファイルを失わないこと」を最優先にし、アプリの完全ロールバックは前提にしません。Immich は downgrade が安全とは限らないため、更新失敗時は旧タグへ戻すよりも、ログ確認、必要に応じた公式手順での forward fix、最終的にはメディア再取り込みを復旧方針とします。
 
