@@ -430,6 +430,18 @@ main() {
             record_failure "Analytics service or HTTP service is inactive"
         fi
     fi
+    if [[ -f /etc/systemd/system/token-monitor-public.service ]]; then
+        if systemctl is-active --quiet token-monitor-public.service; then
+            record_ok "public Hub proxy service is active"
+        else
+            record_failure "public Hub proxy service is inactive"
+        fi
+        if python3 -B "$PROD_ROOT/token-monitor/public/check.py"; then
+            record_ok "public Hub transport and authentication checks passed"
+        else
+            record_failure "public Hub transport or authentication check failed"
+        fi
+    fi
     check_compose "Immich" "$IMMICH_COMPOSE_DIR"
     check_compose "Jellyfin" "$JELLYFIN_COMPOSE_DIR"
     check_timer "$MAINTENANCE_TIMER"

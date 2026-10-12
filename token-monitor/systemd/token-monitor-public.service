@@ -1,0 +1,42 @@
+[Unit]
+Description=Protect the public Token Monitor work Hub behind Tailscale Funnel
+Wants=network-online.target tailscaled.service token-monitor.service
+After=network-online.target tailscaled.service token-monitor.service
+
+[Service]
+User=token-monitor-public
+Group=token-monitor-public
+ExecStartPre=/usr/sbin/nginx -t -c /etc/token-monitor-public/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/token-monitor-public/nginx.conf -g "daemon off;"
+Restart=on-failure
+RestartSec=5
+UMask=0027
+RuntimeDirectory=token-monitor-public
+RuntimeDirectoryMode=0700
+LogsDirectory=token-monitor-public
+LogsDirectoryMode=0750
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+ProtectProc=invisible
+InaccessiblePaths=-/run/docker.sock -/run/containerd /mnt/data /mnt/backup
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=256M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

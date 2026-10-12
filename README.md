@@ -48,6 +48,8 @@ CIから取得した配布物を手動配置する場合は、手動更新コマ
 | Tailscale | `100.x.x.x` または MagicDNS 名 | 家庭外からのアクセス経路 |
 | Discord 通知 | 設定ファイル: `config/env/notification.env` | 日次メンテナンス結果を 1 日 1 本に集約して通知 |
 
+業務用 Token Monitor Hub の公開先は `https://home-ubuntu.tail1bf795.ts.net/` です。TCP 443 の Funnel が `127.0.0.1:17422` の専用 nginx へ転送し、認証・通信制限を通して `127.0.0.1:17322` の Hub へ到達します。既存のシークレットを使用し、私用 Hub と Analytics は公開対象にしません。設定・検証・監視・シークレット更新手順は [Token Monitor の運用文書](token-monitor/README.md#public-funnel-protection) を参照してください。
+
 ## 日常的な利用方法
 
 ### Immich
@@ -151,7 +153,7 @@ find /mnt/data/jellyfin -maxdepth 1 -type d -printf '%M %u:%g %p\n'
 
 ### アクセス範囲
 
-家庭内 LAN は内部ネットワークとして扱い、家庭内の端末からはサーバーの LAN IP へ直接アクセスします。家庭外からは Tailscale のプライベートネットワーク経由でアクセスします。ルーターのポート開放、ポートフォワーディング、インターネットへの直接公開は行いません。
+Immich・Jellyfin・Samba・Analytics は家庭内 LAN または Tailscale のプライベートネットワークから利用します。業務用 Token Monitor Hub は、Tailscale を使えない端末向けに TCP 443 の Funnel で意図的に公開します。公開経路には専用プロキシで認証と通信制限を設定します。ルーターでのポート開放は行いません。
 
 利用者向けの標準アクセス先:
 
@@ -199,7 +201,7 @@ HTTPS が必要な場合は Tailscale Serve を使い、Tailscale ネットワ�
 ```bash
 tailscale serve status
 tailscale funnel status
-sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
+sudo tailscale serve --bg --https=9443 http://127.0.0.1:2283
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
 tailscale serve status
 tailscale funnel status
@@ -208,16 +210,16 @@ tailscale funnel status
 この場合のアクセス例:
 
 ```text
-Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Immich:  https://home-ubuntu.tail1bf795.ts.net:9443/
 Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
 ```
 
-Funnel はインターネット公開用なので、通常運用では使いません。`tailscale funnel status` に同じ endpoint が表示されても、`(tailnet only)` と表示されている場合は Funnel によるインターネット公開ではありません。
+TCP 443 の Funnel は業務用 Hub の公開に使用します。Immich の HTTPS を追加する場合は、tailnet 限定の TCP 9443 を使います。`tailscale funnel status` に同じ endpoint が表示されても、`(tailnet only)` と表示されている場合は Funnel によるインターネット公開ではありません。
 
 HTTPS endpoint の確認:
 
 ```bash
-curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net/
+curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net:9443/
 curl -I --max-time 15 https://home-ubuntu.tail1bf795.ts.net:8443/
 ```
 
@@ -226,7 +228,7 @@ Immich は `/` に対して `404` を返す場合がありますが、HTTPS で�
 停止・ロールバック:
 
 ```bash
-sudo tailscale serve --https=443 off
+sudo tailscale serve --https=9443 off
 sudo tailscale serve --https=8443 off
 tailscale serve status
 tailscale funnel status
@@ -284,7 +286,7 @@ sudo tail -100 /mnt/data/config/rclone/logs/media-sync.log
 
 - `rclone copy` で追加コピーする
 - バックアップ先からの自動削除は行わない
-- 世代管理、暗号化リポジトリ、PostgreSQL dump は行わない
+- このバッチ自体では世代管理、暗号化、PostgreSQL dump を実行しない。Immich 本体が日次作成する `upload/backups` の DB dump は、アップロード領域とともに別ディスクへコピーされる
 - Immich/Jellyfin の設定、操作履歴、DB の完全復元は目的にしない
 - 復旧時は、メディアファイルを Immich/Jellyfin または別アプリケーションへ再取り込みできることを重視する
 
@@ -586,7 +588,7 @@ ExecStop=/usr/bin/docker compose -f /home/mediaserver/ManageMediaServer/docker/j
 HTTPS を使う場合は、Tailscale 接続中の端末から以下へアクセスします。
 
 ```text
-Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Immich:  https://home-ubuntu.tail1bf795.ts.net:9443/
 Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
 ```
 
@@ -976,12 +978,12 @@ DB_DATABASE_NAME=immich
 
 ### Tailscale Serve
 
-HTTPS が必要な場合は、Tailscale Serve で `home-ubuntu.tail1bf795.ts.net` に HTTPS endpoint を作ります。`443/tcp` は Immich、`8443/tcp` は Jellyfin へ転送します。
+TCP 443 は公開用の業務 Hub が使用します。Jellyfin は tailnet 限定の TCP 8443 です。Immich の HTTPS が必要な場合は TCP 9443 を追加します。以下の Immich 設定は追加設定例で、現在の標準アクセスは TCP 2283 です。
 
 ```bash
 tailscale serve status
 tailscale funnel status
-sudo tailscale serve --bg --https=443 http://127.0.0.1:2283
+sudo tailscale serve --bg --https=9443 http://127.0.0.1:2283
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:8096
 tailscale serve status
 tailscale funnel status
@@ -992,14 +994,14 @@ tailscale funnel status
 期待する URL:
 
 ```text
-Immich:  https://home-ubuntu.tail1bf795.ts.net/
+Immich:  https://home-ubuntu.tail1bf795.ts.net:9443/
 Jellyfin: https://home-ubuntu.tail1bf795.ts.net:8443/
 ```
 
 停止する場合:
 
 ```bash
-sudo tailscale serve --https=443 off
+sudo tailscale serve --https=9443 off
 sudo tailscale serve --https=8443 off
 tailscale serve status
 tailscale funnel status
