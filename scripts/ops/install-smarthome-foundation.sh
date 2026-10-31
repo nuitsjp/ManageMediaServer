@@ -194,20 +194,34 @@ docker compose -f "$COMPOSE" run --rm --no-deps --entrypoint python3 homeassista
 STAGE=start
 systemctl daemon-reload
 systemctl enable --now smarthome-firewall.service
+VERIFY_SINCE=$(date -u '+%Y-%m-%d %H:%M:%S.%6N UTC')
 systemctl enable --now homeassistant.service
 STAGE=verify
 ready=false
 for ((attempt=0; attempt<90; attempt++)); do
     if curl --fail --silent --max-time 5 http://127.0.0.1:8123/ -o /dev/null \
-        && [[ $(docker inspect -f '{{.State.Health.Status}}' homeassistant) == healthy ]] \
-        && docker exec -i homeassistant python3 - < "$REPO_ROOT/scripts/ops/check-smarthome-bluetooth.py" \
-            > "$BACKUP/bluetooth-container.json" 2>&1; then
+        && [[ $(docker inspect -f '{{.State.Health.Status}}' homeassistant) == healthy ]]; then
         ready=true
         break
     fi
     sleep 5
 done
 [[ $ready == true ]] || fail 'HA did not respond within the startup window.'
+bluetooth_ready=false
+for ((attempt=0; attempt<3; attempt++)); do
+    if docker exec -i homeassistant python3 - < "$REPO_ROOT/scripts/ops/check-smarthome-bluetooth.py" \
+        > "$BACKUP/bluetooth-container.json" 2>&1; then
+        bluetooth_ready=true
+        break
+    fi
+    sleep 5
+done
+[[ $bluetooth_ready == true ]] || fail 'HA live Bluetooth reception verification failed.'
+sleep 10
+journalctl -k --since "$VERIFY_SINCE" --no-pager -o cat > "$BACKUP/apparmor-audit.txt"
+if grep -q 'apparmor="DENIED".*label="manage-smarthome-homeassistant"' "$BACKUP/apparmor-audit.txt"; then
+    fail 'AppArmor still denies HA operations. See apparmor-audit.txt in the backup directory.'
+fi
 for name in homeassistant smarthome-firewall smarthome-apparmor bluetooth; do
     systemctl is-active --quiet "$name" || fail "Required service is not active: $name"
 done

@@ -42,6 +42,14 @@ profile manage-smarthome-homeassistant flags=(attach_disconnected,mediate_delete
     member={Hello,AddMatch,RemoveMatch,GetNameOwner,NameHasOwner,GetConnectionUnixUser,GetConnectionUnixProcessID,ListNames}
     peer=(name=org.freedesktop.DBus),
   dbus receive bus=system peer=(name=org.freedesktop.DBus),
-  # GATT/adapter calls, signals and callbacks. Other system services stay denied.
-  dbus (send,receive) bus=system peer=(name=org.bluez),
+  # GATT/adapter calls. Other system services stay denied.
+  dbus send bus=system peer=(name=org.bluez),
+  # Broadcast signals are mediated with BlueZ's unique bus name (:1.*),
+  # not its well-known org.bluez name. Scope receive by label/path/interface.
+  dbus receive bus=system path=/org/bluez{,/**}
+    interface=org.freedesktop.DBus.Properties member=PropertiesChanged
+    peer=(label=unconfined),
+  dbus receive bus=system path=/
+    interface=org.freedesktop.DBus.ObjectManager member={InterfacesAdded,InterfacesRemoved}
+    peer=(label=unconfined),
 }

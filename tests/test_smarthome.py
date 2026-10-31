@@ -247,25 +247,39 @@ spec.loader.exec_module(PROBE)
 
 
 class BluetoothProbeTests(unittest.IsolatedAsyncioTestCase):
-    async def run_probe(self, adapters, denied=None):
+    async def run_probe(self, adapters, denied=None, event=None):
         calls = []
 
         class Bus:
+            def add_message_handler(self, handler):
+                self.handler = handler
+
+            def remove_message_handler(self, handler):
+                self.handler = None
+
             async def call(self, message):
                 calls.append(message.member)
                 if message.member == denied:
                     return SimpleNamespace(message_type='error', error_name='org.freedesktop.DBus.Error.AccessDenied')
+                if message.member == 'GetManagedObjects' and event is not None:
+                    self.handler(event)
                 return SimpleNamespace(message_type='return', body=[adapters])
 
-        return await PROBE.check_bluez(Bus(), SimpleNamespace, 'error'), calls
+        return await PROBE.check_bluez(Bus(), SimpleNamespace, 'error', 'signal', signal_timeout=0.02), calls
+
+    def device_event(self):
+        return SimpleNamespace(message_type='signal', interface='org.freedesktop.DBus.Properties',
+                               member='PropertiesChanged', path='/org/bluez/hci0/dev_TEST',
+                               body=['org.bluez.Device1', {'RSSI': -70}, []])
 
     def adapter(self, powered=True, scanning=True):
         return {'/org/bluez/hci0': {'org.bluez.Adapter1': {
             'Powered': SimpleNamespace(value=powered), 'Discovering': SimpleNamespace(value=scanning)}}}
 
     async def test_active_scan_requires_successful_bus_subscription_and_bluez_access(self):
-        report, calls = await self.run_probe(self.adapter())
-        self.assertEqual(report, {'status': 'ok', 'adapters': 1, 'powered': 1, 'scanning': 1})
+        report, calls = await self.run_probe(self.adapter(), event=self.device_event())
+        self.assertEqual(report, {'status': 'ok', 'adapters': 1, 'powered': 1, 'scanning': 1,
+                                 'received_device_signals': 1})
         self.assertEqual(calls, ['AddMatch', 'GetManagedObjects'])
         self.assertNotIn('hci0', json.dumps(report))
 
@@ -279,6 +293,22 @@ class BluetoothProbeTests(unittest.IsolatedAsyncioTestCase):
                                 (self.adapter(scanning=False), 'AdapterNotScanning')):
             with self.subTest(error=error), self.assertRaisesRegex(PROBE.ProbeError, error):
                 await self.run_probe(adapters)
+
+    async def test_scanning_without_received_device_signals_is_not_success(self):
+        events = [None, SimpleNamespace(message_type='signal', interface='org.freedesktop.DBus.Properties',
+                                       member='PropertiesChanged', path='/org/bluez/hci0',
+                                       body=['org.bluez.Adapter1', {'Discovering': True}, []])]
+        for event in events:
+            with self.subTest(event=event), self.assertRaisesRegex(PROBE.ProbeError, 'NoLiveDeviceSignals'):
+                await self.run_probe(self.adapter(), event=event)
+
+    async def test_device_added_signal_proves_reception_without_exposing_device_path(self):
+        event = SimpleNamespace(message_type='signal', interface='org.freedesktop.DBus.ObjectManager',
+                                member='InterfacesAdded', path='/',
+                                body=['/org/bluez/hci0/dev_TEST', {'org.bluez.Device1': {}}])
+        report, _ = await self.run_probe(self.adapter(), event=event)
+        self.assertEqual(report['received_device_signals'], 1)
+        self.assertNotIn('dev_TEST', json.dumps(report))
 
 
 class BluetoothRepairRollbackTests(unittest.TestCase):

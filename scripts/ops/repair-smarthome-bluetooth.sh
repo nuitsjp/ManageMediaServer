@@ -101,21 +101,36 @@ install -m 0644 -o root -g root "$REPO_ROOT/config/apparmor/homeassistant" "$AA_
 STAGE=start
 systemctl daemon-reload
 systemctl enable --now smarthome-apparmor.service
+VERIFY_SINCE=$(date -u '+%Y-%m-%d %H:%M:%S.%6N UTC')
 systemctl start homeassistant
 STAGE=verify
 ready=false
 for ((attempt=0; attempt<60; attempt++)); do
     if curl --fail --silent --max-time 5 http://127.0.0.1:8123/ -o /dev/null \
-        && [[ $(docker inspect -f '{{.State.Health.Status}}' homeassistant) == healthy ]] \
-        && docker exec -i homeassistant python3 - < "$CHECKER" > "$BACKUP/bluetooth-container.json" 2>&1; then
+        && [[ $(docker inspect -f '{{.State.Health.Status}}' homeassistant) == healthy ]]; then
         ready=true
         break
     fi
     sleep 5
 done
+[[ $ready == true ]] || fail 'HA HTTP/health verification failed.'
+bluetooth_ready=false
+for ((attempt=0; attempt<3; attempt++)); do
+    if docker exec -i homeassistant python3 - < "$CHECKER" > "$BACKUP/bluetooth-container.json" 2>&1; then
+        bluetooth_ready=true
+        break
+    fi
+    sleep 5
+done
 cat "$BACKUP/bluetooth-container.json" 2>/dev/null || true
-[[ $ready == true ]] || fail 'HA HTTP/health/Bluetooth verification failed.'
+[[ $bluetooth_ready == true ]] || fail 'HA live Bluetooth reception verification failed.'
 [[ $(docker inspect -f '{{.AppArmorProfile}}' homeassistant) == "$PROFILE" ]] || fail 'Wrong AppArmor profile.'
+# 実際の受信に成功しても、別の通知が拒否されていないか確認する。
+sleep 10
+journalctl -k --since "$VERIFY_SINCE" --no-pager -o cat > "$BACKUP/apparmor-audit.txt"
+if grep -q "apparmor=\"DENIED\".*label=\"$PROFILE\"" "$BACKUP/apparmor-audit.txt"; then
+    fail 'AppArmor still denies HA operations. See apparmor-audit.txt in the backup directory.'
+fi
 for unit in homeassistant smarthome-firewall smarthome-apparmor bluetooth; do
     systemctl is-active --quiet "$unit" || fail "Service stopped: $unit"
 done
