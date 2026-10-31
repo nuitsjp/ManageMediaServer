@@ -312,6 +312,32 @@ class BluetoothProbeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BluetoothRepairRollbackTests(unittest.TestCase):
+    def test_active_oneshot_loader_is_executed_again_after_profile_changes(self):
+        source = (OPS / 'repair-smarthome-bluetooth.sh').read_text()
+        function = re.search(r'^load_apparmor_profile\(\) \{\n.*?^\}', source, re.M | re.S)[0]
+        for was_active in ('true', 'false'):
+            with self.subTest(was_active=was_active):
+                # Model systemd's oneshot state: starting an active unit does not reload it.
+                code = f'''
+set -euo pipefail
+ACTIVE={was_active}
+LOADED=old
+systemctl() {{
+    case "$1" in
+        enable) ;;
+        start) if [[ $ACTIVE == false ]]; then LOADED=new; ACTIVE=true; fi ;;
+        restart) LOADED=new; ACTIVE=true ;;
+        is-active) [[ $ACTIVE == true ]] ;;
+        *) return 2 ;;
+    esac
+}}
+{function}
+load_apparmor_profile
+[[ $LOADED == new && $ACTIVE == true ]]
+'''
+                result = subprocess.run(['bash', '-c', code], capture_output=True, text=True, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_repair_restores_previous_files_but_keeps_policy_when_ha_cannot_stop(self):
         for stop_failed in (False, True):
             with self.subTest(stop_failed=stop_failed), tempfile.TemporaryDirectory() as directory:

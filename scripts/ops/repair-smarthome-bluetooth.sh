@@ -12,6 +12,13 @@ COMPOSE=$PROD_ROOT/docker/homeassistant/docker-compose.yml
 AA_FILE=/etc/apparmor.d/manage-smarthome-homeassistant
 CHECKER=$REPO_ROOT/scripts/ops/check-smarthome-bluetooth.py
 PROFILE=manage-smarthome-homeassistant
+load_apparmor_profile() {
+    # RemainAfterExit の oneshot は enable --now では再実行されない。
+    # profile ファイル更新後は、起動済みの場合も必ず parser を再実行する。
+    systemctl enable smarthome-apparmor.service
+    systemctl restart smarthome-apparmor.service
+    systemctl is-active --quiet smarthome-apparmor.service
+}
 fail() { echo "ERROR: $*" >&2; exit 1; }
 for command in docker apparmor_parser python3 curl git flock systemctl logger; do
     command -v "$command" >/dev/null || fail "Missing command: $command"
@@ -98,9 +105,11 @@ STAGE=deploy
 PROD_ROOT="$PROD_ROOT" BACKUP_PARENT="$BACKUP/managed-files" \
     /usr/bin/bash "$REPO_ROOT/scripts/ops/deploy-managed-files.sh" --smarthome-only
 install -m 0644 -o root -g root "$REPO_ROOT/config/apparmor/homeassistant" "$AA_FILE"
-STAGE=start
+STAGE=apparmor-load
 systemctl daemon-reload
-systemctl enable --now smarthome-apparmor.service
+load_apparmor_profile
+logger -t manage-smarthome 'Home Assistant AppArmor profile reloaded before HA startup.'
+STAGE=start
 VERIFY_SINCE=$(date -u '+%Y-%m-%d %H:%M:%S.%6N UTC')
 systemctl start homeassistant
 STAGE=verify
@@ -120,9 +129,12 @@ for ((attempt=0; attempt<3; attempt++)); do
         bluetooth_ready=true
         break
     fi
+    # Probe は認証情報や機器の識別情報を出力しない。失敗も journal から確認可能にする。
+    logger -t manage-smarthome "Bluetooth probe attempt=$((attempt+1)): $(head -c 1024 "$BACKUP/bluetooth-container.json")"
     sleep 5
 done
 cat "$BACKUP/bluetooth-container.json" 2>/dev/null || true
+logger -t manage-smarthome "Bluetooth live probe: $(head -c 1024 "$BACKUP/bluetooth-container.json")"
 [[ $bluetooth_ready == true ]] || fail 'HA live Bluetooth reception verification failed.'
 [[ $(docker inspect -f '{{.AppArmorProfile}}' homeassistant) == "$PROFILE" ]] || fail 'Wrong AppArmor profile.'
 # 実際の受信に成功しても、別の通知が拒否されていないか確認する。
