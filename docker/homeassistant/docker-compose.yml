@@ -16,6 +16,8 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    security_opt:
+      - apparmor=manage-smarthome-homeassistant
     volumes:
       - /mnt/data/smarthome/homeassistant:/config
       - /etc/localtime:/etc/localtime:ro

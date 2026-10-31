@@ -14,18 +14,21 @@ BACKUP_ROOT=/mnt/backup/smarthome
 ROOT_CONFIG=/etc/manage-smarthome
 ROOT_SCRIPTS=/usr/local/libexec/manage-smarthome
 COMPOSE=$PROD_ROOT/docker/homeassistant/docker-compose.yml
+AA_FILE=/etc/apparmor.d/manage-smarthome-homeassistant
 LAN_IFACE=enp1s0
 LAN_CIDR=192.168.0.0/24
 STAGE=preflight
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
-for command in docker python3 iptables ip6tables curl runuser flock git apt-get; do
+for command in docker python3 iptables ip6tables curl runuser flock git apt-get apparmor_parser; do
     command -v "$command" >/dev/null || fail "Missing command: $command"
 done
 for source in scripts/ops/deploy-managed-files.sh scripts/ops/apply-smarthome-firewall.sh \
     scripts/ops/smarthome-preflight.sh docker/homeassistant/docker-compose.yml \
+    scripts/ops/check-smarthome-bluetooth.py scripts/ops/repair-smarthome-bluetooth.sh \
+    config/apparmor/homeassistant config/apparmor/LICENSE.moby \
     config/homeassistant/configuration.yaml.example config/env/smarthome-firewall.env.example \
-    systemd/homeassistant.service systemd/smarthome-firewall.service docs/スマートホーム基盤.md; do
+    systemd/homeassistant.service systemd/smarthome-firewall.service systemd/smarthome-apparmor.service docs/スマートホーム基盤.md; do
     [[ -f $REPO_ROOT/$source ]] || fail "Missing source: $source"
     git -c safe.directory="$REPO_ROOT" -C "$REPO_ROOT" ls-files --error-unmatch "$source" >/dev/null
 done
@@ -42,9 +45,11 @@ for path in "$PROD_ROOT" /mnt /mnt/data /mnt/backup "$DATA_ROOT" "$BACKUP_ROOT" 
     [[ ! -e $path || -d $path ]] || fail "Not a directory: $path"
 done
 [[ ! -e $DATA_ROOT ]] || fail "$DATA_ROOT already exists. This installer is for a fresh installation."
-for unit in homeassistant.service smarthome-firewall.service; do
+for unit in homeassistant.service smarthome-firewall.service smarthome-apparmor.service; do
     [[ $(systemctl show "$unit" -p LoadState --value) == not-found ]] || fail "Unit already exists: $unit"
 done
+[[ ! -e $AA_FILE && ! -L $AA_FILE ]] || fail 'Home Assistant AppArmor profile already exists.'
+apparmor_parser -Q -K "$REPO_ROOT/config/apparmor/homeassistant"
 [[ -z $(docker ps -a --filter name='^/homeassistant$' -q) ]] || fail 'homeassistant container already exists.'
 [[ -z $(ss -H -ltn 'sport = :8123') ]] || fail 'TCP 8123 is already in use.'
 for tool in iptables ip6tables; do
@@ -74,12 +79,16 @@ install -d -m 0700 "$BACKUP/files"
 cp -a "$0" "$BACKUP/installer.sh"
 "$REPO_ROOT/scripts/ops/smarthome-preflight.sh" > "$BACKUP/preflight-before.txt" 2>&1
 dpkg-query -W -f='${Package} ${Version}\n' > "$BACKUP/packages-before.txt"
-UNITS=(homeassistant.service smarthome-firewall.service)
-TARGETS=("$ROOT_SCRIPTS/apply-smarthome-firewall.sh" "$ROOT_CONFIG/firewall.env")
+UNITS=(homeassistant.service smarthome-firewall.service smarthome-apparmor.service)
+TARGETS=("$ROOT_SCRIPTS/apply-smarthome-firewall.sh" "$ROOT_CONFIG/firewall.env" "$AA_FILE")
 for file in docker/homeassistant/docker-compose.yml config/homeassistant/configuration.yaml.example \
     config/env/smarthome-firewall.env.example docs/スマートホーム基盤.md \
     scripts/ops/install-smarthome-foundation.sh scripts/ops/smarthome-preflight.sh \
     scripts/ops/apply-smarthome-firewall.sh systemd/homeassistant.service systemd/smarthome-firewall.service; do
+    TARGETS+=("$PROD_ROOT/$file")
+done
+for file in scripts/ops/check-smarthome-bluetooth.py scripts/ops/repair-smarthome-bluetooth.sh \
+    config/apparmor/homeassistant config/apparmor/LICENSE.moby systemd/smarthome-apparmor.service; do
     TARGETS+=("$PROD_ROOT/$file")
 done
 for unit in "${UNITS[@]}"; do TARGETS+=("/etc/systemd/system/$unit"); done
@@ -110,9 +119,17 @@ finish() {
     trap - EXIT
     if (( result != 0 )) && [[ $CHANGED == true ]]; then
         echo "Installation failed in $STAGE; rolling back smart home services." >&2
-        rollback_command systemctl disable --now homeassistant.service smarthome-firewall.service
+        rollback_command systemctl disable --now homeassistant.service smarthome-firewall.service smarthome-apparmor.service
         rollback_command docker compose -f "$REPO_ROOT/docker/homeassistant/docker-compose.yml" down --remove-orphans
         rollback_command /usr/bin/bash "$REPO_ROOT/scripts/ops/apply-smarthome-firewall.sh" remove
+        if [[ -f ${AA_FILE:-/nonexistent} ]] && grep -q '^manage-smarthome-homeassistant ' /sys/kernel/security/apparmor/profiles; then
+            if remaining=$(docker ps -q --filter name='^/homeassistant$') && [[ -z $remaining ]]; then
+                rollback_command apparmor_parser -R "$AA_FILE"
+            else
+                ROLLBACK_FAILED=true
+                echo 'Cannot confirm HA is stopped; leaving the AppArmor profile loaded.' >&2
+            fi
+        fi
         for file in "${TARGETS[@]}"; do
             if [[ -f $BACKUP/files$file ]]; then rollback_command cp -a "$BACKUP/files$file" "$file";
             else rollback_command rm -f -- "$file"; fi
@@ -137,6 +154,7 @@ finish() {
     fi
     printf 'stage=%s\nexit_status=%s\nrollback_failed=%s\nbackup=%s\n' \
         "$STAGE" "$result" "$ROLLBACK_FAILED" "$BACKUP" | tee "$BACKUP/result.txt"
+    logger -t manage-smarthome "install stage=$STAGE exit_status=$result rollback_failed=$ROLLBACK_FAILED backup=$BACKUP"
     exit "$result"
 }
 trap finish EXIT
@@ -152,6 +170,7 @@ install -d -m 0700 -o root -g root "$DATA_ROOT" "$DATA_DIR" "$ROOT_CONFIG"
 install -d -m 0755 -o root -g root "$ROOT_SCRIPTS"
 install -m 0755 -o root -g root "$REPO_ROOT/scripts/ops/apply-smarthome-firewall.sh" "$ROOT_SCRIPTS/"
 install -m 0600 -o root -g root "$REPO_ROOT/config/env/smarthome-firewall.env.example" "$ROOT_CONFIG/firewall.env"
+install -m 0644 -o root -g root "$REPO_ROOT/config/apparmor/homeassistant" "$AA_FILE"
 install -m 0600 -o root -g root "$REPO_ROOT/config/homeassistant/configuration.yaml.example" "$DATA_DIR/configuration.yaml"
 printf '[]\n' > "$DATA_DIR/automations.yaml"
 printf '{}\n' > "$DATA_DIR/scripts.yaml"
@@ -168,6 +187,7 @@ timeout 20 bluetoothctl show > "$BACKUP/bluetooth.txt"
 grep -q 'Controller ' "$BACKUP/bluetooth.txt" || fail 'BlueZ cannot see a Bluetooth controller.'
 grep -q 'Powered: yes' "$BACKUP/bluetooth.txt" || fail 'The Bluetooth controller is not powered.'
 STAGE=config-check
+systemctl enable --now smarthome-apparmor.service
 # 独立コンテナで設定検証。運用コンテナを二重起動しない。
 docker compose -f "$COMPOSE" run --rm --no-deps --entrypoint python3 homeassistant \
     -m homeassistant --script check_config --config /config > "$BACKUP/config-check.txt" 2>&1
@@ -179,14 +199,16 @@ STAGE=verify
 ready=false
 for ((attempt=0; attempt<90; attempt++)); do
     if curl --fail --silent --max-time 5 http://127.0.0.1:8123/ -o /dev/null \
-        && [[ $(docker inspect -f '{{.State.Health.Status}}' homeassistant) == healthy ]]; then
+        && [[ $(docker inspect -f '{{.State.Health.Status}}' homeassistant) == healthy ]] \
+        && docker exec -i homeassistant python3 - < "$REPO_ROOT/scripts/ops/check-smarthome-bluetooth.py" \
+            > "$BACKUP/bluetooth-container.json" 2>&1; then
         ready=true
         break
     fi
     sleep 5
 done
 [[ $ready == true ]] || fail 'HA did not respond within the startup window.'
-for name in homeassistant smarthome-firewall bluetooth; do
+for name in homeassistant smarthome-firewall smarthome-apparmor bluetooth; do
     systemctl is-active --quiet "$name" || fail "Required service is not active: $name"
 done
 LAN_IFACE="$LAN_IFACE" LAN_CIDR="$LAN_CIDR" \

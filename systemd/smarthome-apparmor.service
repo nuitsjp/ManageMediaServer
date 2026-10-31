@@ -1,0 +1,14 @@
+[Unit]
+Description=Load the Home Assistant Bluetooth AppArmor profile
+Requires=apparmor.service
+After=apparmor.service
+Before=homeassistant.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/apparmor_parser -r -W /etc/apparmor.d/manage-smarthome-homeassistant
+# 使用中のプロファイルは停止時に解除しない。
+
+[Install]
+WantedBy=multi-user.target

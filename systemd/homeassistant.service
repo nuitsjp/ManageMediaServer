@@ -1,9 +1,9 @@
 [Unit]
 Description=Home Assistant smart home foundation
 Wants=network-online.target bluetooth.service
-Requires=docker.service smarthome-firewall.service
+Requires=docker.service smarthome-firewall.service smarthome-apparmor.service
 PartOf=docker.service
-After=network-online.target docker.service bluetooth.service smarthome-firewall.service
+After=network-online.target docker.service bluetooth.service smarthome-firewall.service smarthome-apparmor.service
 RequiresMountsFor=/mnt/data
 
 [Service]

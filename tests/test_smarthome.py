@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import importlib.util
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 OPS = ROOT / 'scripts/ops'
@@ -121,12 +123,14 @@ class DeploymentTests(unittest.TestCase):
         self.prod = self.directory / 'production'
         self.systemd = self.directory / 'systemd'
         self.repo.mkdir()
-        for source in ('docker/homeassistant', 'config/homeassistant'):
+        for source in ('docker/homeassistant', 'config/homeassistant', 'config/apparmor'):
             shutil.copytree(ROOT / source, self.repo / source)
         for source in ('config/env/smarthome-firewall.env.example', 'docs/スマートホーム基盤.md',
                        'scripts/ops/deploy-managed-files.sh', 'scripts/ops/install-smarthome-foundation.sh',
                        'scripts/ops/smarthome-preflight.sh', 'scripts/ops/apply-smarthome-firewall.sh',
-                       'systemd/homeassistant.service', 'systemd/smarthome-firewall.service'):
+                       'scripts/ops/check-smarthome-bluetooth.py', 'scripts/ops/repair-smarthome-bluetooth.sh',
+                       'systemd/homeassistant.service', 'systemd/smarthome-firewall.service',
+                       'systemd/smarthome-apparmor.service'):
             target = self.repo / source
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / source, target)
@@ -215,6 +219,7 @@ CHANGED=true
 BLUEZ_WAS_ACTIVE=false
 BLUEZ_WAS_ENABLED=false
 systemctl() {{ printf '%s\\n' "$*" >> {shlex.quote(str(root / 'systemctl.log'))}; }}
+logger() {{ :; }}
 docker() {{
     {'if [[ $1 == compose || $1 == ps ]]; then return 1; fi' if docker_failure else ':'}
     return 0
@@ -232,6 +237,92 @@ false
                 self.assertEqual((preserved / 'secret').read_text(), 'pairing information')
                 calls = (root / 'systemctl.log').read_text()
                 self.assertIn('disable --now homeassistant.service smarthome-firewall.service', calls)
+                self.assertNotIn('immich', calls)
+                self.assertNotIn('jellyfin', calls)
+
+
+spec = importlib.util.spec_from_file_location('bluetooth_probe', OPS / 'check-smarthome-bluetooth.py')
+PROBE = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(PROBE)
+
+
+class BluetoothProbeTests(unittest.IsolatedAsyncioTestCase):
+    async def run_probe(self, adapters, denied=None):
+        calls = []
+
+        class Bus:
+            async def call(self, message):
+                calls.append(message.member)
+                if message.member == denied:
+                    return SimpleNamespace(message_type='error', error_name='org.freedesktop.DBus.Error.AccessDenied')
+                return SimpleNamespace(message_type='return', body=[adapters])
+
+        return await PROBE.check_bluez(Bus(), SimpleNamespace, 'error'), calls
+
+    def adapter(self, powered=True, scanning=True):
+        return {'/org/bluez/hci0': {'org.bluez.Adapter1': {
+            'Powered': SimpleNamespace(value=powered), 'Discovering': SimpleNamespace(value=scanning)}}}
+
+    async def test_active_scan_requires_successful_bus_subscription_and_bluez_access(self):
+        report, calls = await self.run_probe(self.adapter())
+        self.assertEqual(report, {'status': 'ok', 'adapters': 1, 'powered': 1, 'scanning': 1})
+        self.assertEqual(calls, ['AddMatch', 'GetManagedObjects'])
+        self.assertNotIn('hci0', json.dumps(report))
+
+    async def test_dbus_denial_is_not_mistaken_for_a_working_bluetooth_adapter(self):
+        for member in ('AddMatch', 'GetManagedObjects'):
+            with self.subTest(member=member), self.assertRaisesRegex(PROBE.ProbeError, 'AccessDenied'):
+                await self.run_probe(self.adapter(), denied=member)
+
+    async def test_missing_unpowered_or_idle_adapter_is_not_ready(self):
+        for adapters, error in (({}, 'NoBlueZAdapter'), (self.adapter(False), 'AdapterNotPowered'),
+                                (self.adapter(scanning=False), 'AdapterNotScanning')):
+            with self.subTest(error=error), self.assertRaisesRegex(PROBE.ProbeError, error):
+                await self.run_probe(adapters)
+
+
+class BluetoothRepairRollbackTests(unittest.TestCase):
+    def test_repair_restores_previous_files_but_keeps_policy_when_ha_cannot_stop(self):
+        for stop_failed in (False, True):
+            with self.subTest(stop_failed=stop_failed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                backup = root / 'backup'
+                policy = root / 'policy'
+                policy.write_text('new policy')
+                saved = backup / 'files' / str(policy).lstrip('/')
+                saved.parent.mkdir(parents=True)
+                saved.write_text('old policy')
+                new_unit = root / 'new.service'
+                new_unit.write_text('new')
+                source = (OPS / 'repair-smarthome-bluetooth.sh').read_text()
+                function = re.search(r'^finish\(\) \{\n.*?^\}', source, re.M | re.S)[0]
+                code = f'''
+set -euo pipefail
+{function}
+BACKUP={shlex.quote(str(backup))}
+AA_FILE={shlex.quote(str(policy))}
+TARGETS=({shlex.quote(str(policy))} {shlex.quote(str(new_unit))})
+STAGE=verify
+CHANGED=true
+AA_WAS_ENABLED=false
+systemctl() {{
+    echo "$*" >> {shlex.quote(str(root / 'systemctl.log'))}
+    {'if [[ $1 == stop && $2 == homeassistant ]]; then return 1; fi' if stop_failed else ':'}
+    return 0
+}}
+apparmor_parser() {{ :; }}
+logger() {{ :; }}
+trap finish EXIT
+false
+'''
+                result = subprocess.run(['bash', '-c', code], capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                report = (backup / 'result.txt').read_text()
+                self.assertIn(f'rollback_failed={str(stop_failed).lower()}', report)
+                self.assertEqual(policy.read_text(), 'new policy' if stop_failed else 'old policy')
+                self.assertEqual(new_unit.exists(), stop_failed)
+                calls = (root / 'systemctl.log').read_text()
+                self.assertEqual('start homeassistant' in calls, not stop_failed)
                 self.assertNotIn('immich', calls)
                 self.assertNotIn('jellyfin', calls)
 

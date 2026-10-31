@@ -201,11 +201,16 @@ if [[ "$SMARTHOME_ONLY" == true ]]; then
         docker/homeassistant/docker-compose.yml \
         config/homeassistant/configuration.yaml.example \
         config/env/smarthome-firewall.env.example \
+        config/apparmor/homeassistant \
+        config/apparmor/LICENSE.moby \
         docs/スマートホーム基盤.md \
         scripts/ops/install-smarthome-foundation.sh \
         scripts/ops/smarthome-preflight.sh \
         scripts/ops/apply-smarthome-firewall.sh \
+        scripts/ops/check-smarthome-bluetooth.py \
+        scripts/ops/repair-smarthome-bluetooth.sh \
         systemd/homeassistant.service \
+        systemd/smarthome-apparmor.service \
         systemd/smarthome-firewall.service; do
         # 明示リストと Git 管理対象の両方に一致するファイルだけを反映。
         git -c safe.directory="$REPO_ROOT" -C "$REPO_ROOT" ls-files --error-unmatch "$source" >/dev/null
@@ -213,7 +218,7 @@ if [[ "$SMARTHOME_ONLY" == true ]]; then
         [[ $source != *.sh ]] || mode=0755
         managed_files+=("$source|${PROD_ROOT}/$source|$mode")
     done
-    for name in homeassistant.service smarthome-firewall.service; do
+    for name in homeassistant.service smarthome-firewall.service smarthome-apparmor.service; do
         managed_files+=("systemd/$name|${SYSTEMD_ROOT}/$name|0644")
     done
 fi
