@@ -1,0 +1,24 @@
+[Unit]
+Description=Home Assistant smart home foundation
+Wants=network-online.target bluetooth.service
+Requires=docker.service smarthome-firewall.service
+PartOf=docker.service
+After=network-online.target docker.service bluetooth.service smarthome-firewall.service
+RequiresMountsFor=/mnt/data
+
+[Service]
+Type=exec
+User=mediaserver
+Group=mediaserver
+SupplementaryGroups=docker
+WorkingDirectory=/home/mediaserver/ManageMediaServer/docker/homeassistant
+ExecStartPre=/usr/bin/docker compose config --quiet
+ExecStart=/usr/bin/docker compose up --no-build --pull never --abort-on-container-exit
+ExecStop=/usr/bin/docker compose stop
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

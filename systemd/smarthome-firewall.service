@@ -1,0 +1,16 @@
+[Unit]
+Description=Restrict Home Assistant access to the home LAN
+Wants=network-online.target
+Before=homeassistant.service
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=/etc/manage-smarthome/firewall.env
+ExecStart=/usr/bin/bash /usr/local/libexec/manage-smarthome/apply-smarthome-firewall.sh apply
+# 停止時も制限を保持する。削除は HA 停止後に明示して実行する。
+
+[Install]
+WantedBy=multi-user.target

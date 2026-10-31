@@ -434,4 +434,7 @@ FodyWeavers.xsd
 # Immich runtime environment file. Compose and examples are tracked.
 docker/immich/.env
 
+# Home Assistant の管理元には初期値だけを置く。実行時 YAML は /mnt/data に保存する。
+config/homeassistant/*.yaml
+
 # End of https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode

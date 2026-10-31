@@ -1,0 +1,32 @@
+# 初回のみ /mnt/data/smarthome/homeassistant/configuration.yaml に配置する。
+# 実行時設定・.storage・認証・DB は Git 管理しない。
+homeassistant:
+  name: Home
+  time_zone: Asia/Tokyo
+  unit_system: metric
+  country: JP
+  currency: JPY
+
+# 必要な機能を明示する。HomeKit と MQTT は後続段階で追加する。
+config:
+frontend:
+history:
+logbook:
+mobile_app:
+system_health:
+backup:
+bluetooth:
+zeroconf:
+
+http:
+  server_port: 8123
+  ip_ban_enabled: true
+  login_attempts_threshold: 5
+
+recorder:
+  purge_keep_days: 30
+  auto_purge: true
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
