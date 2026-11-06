@@ -33,13 +33,18 @@ appVersion=147、swBuildID=`0122052017`。Endpoint 1、profile `0x0104`、device
 | --- | --- | --- | --- |
 | 初回読出し | 27.08℃ (`940a`) | 42.99% (`cb10`) | 3.0V / 100% |
 | 続く自動レポート | 27.20℃ (`a00a`) | 43.67% (`0f11`) | 3.0V / 100% |
+| 保存ログ内の最終レポート | 26.99℃ (`8b0a`) | 43.00% (`cc10`) | 3.0V / 100% |
 
 自動レポートの温度受信は `2026-11-06T23:04:22.681678+00:00`、
 湿度は `2026-11-06T23:04:22.751141+00:00`。同時測定とは扱わない。
-上表は利用者が共有した受信ログの値で、記録終了直前の温度は journal で26.99℃も確認した。
+最終レポートは温度 `2026-11-06T23:06:04.981839+00:00`、湿度 `2026-11-06T23:06:05.156745+00:00`。
 観測したイベントの event/job drop はともに0。本体表示との照合と10台以上の実機試験は未確認。
 元の証跡は `/mnt/data/smarthome/nanoc6/diagnostics/usb-probe-ReBLstxg/`。
-旧解析器はこの組み合わせを未対応として `complete=false` にしたため、修正した解析器で保存済みイベントを再解析できる。
+旧解析器はこの組み合わせを未対応として `complete=false` にした。
+修正後の解析器で元のイベントを再解析し、`complete_devices=1`、`complete=true`、欠落0、終了値0を確認。
+再解析結果は `/mnt/data/smarthome/nanoc6/diagnostics/redecoded-MEmLyEbm/report.json`、
+再解析前のレポートと使用した解析器・スクリプトは `/mnt/backup/smarthome/nanoc6/redecode-jUZnoRrg/`。
+元のイベントとレポートは変更せず、再解析前後でイベントのSHA-256が一致した。
 
 Arduino CLI 1.5.1、Arduino-ESP32 3.3.6（同梱 ESP Zigbee SDK）、ESP32-C6 generic board、
 USB CDC、4MB、Zigbee ZCZR partition/mode でビルドした。
