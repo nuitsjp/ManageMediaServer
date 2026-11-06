@@ -11,12 +11,13 @@ import sys
 import termios
 import time
 
-# Verified converter behavior in zigbee-herdsman-converters/src/devices/tuya.ts.
+# Verified converter behavior in zigbee-herdsman-converters/src/devices/{tuya,sonoff}.ts.
 # Never infer a scale from a value that merely looks plausible.
 HUMIDITY_DIVISORS = {
     ('TS0201', '_TZ3000_bguser20'): 100,
     ('TS0201', '_TZ3000_xr3htd96'): 100,
     ('TS0201', '_TZ3000_itnrsufe'): 10,
+    ('TH01', 'Zbeacon'): 100,
 }
 
 
@@ -81,7 +82,8 @@ class Evidence:
                         encoded = int.from_bytes(raw, 'little', signed=True)
                         if encoded != -32768:
                             value, name, unit, scale = encoded / 100, 'temperature', '°C', 100
-                            verified = device['model'] == 'TS0201'
+                            verified = (device['model'] == 'TS0201'
+                                        or (device['model'], device['manufacturer']) == ('TH01', 'Zbeacon'))
                     elif key == '0405:0000' and attr['type'] == 0x21 and len(raw) == 2:
                         encoded = int.from_bytes(raw, 'little')
                         scale = HUMIDITY_DIVISORS.get((device['model'], device['manufacturer']))
@@ -104,6 +106,33 @@ class Evidence:
             complete += int(found)
         return {'schema': 1, 'complete_devices': complete, 'event_drops': self.event_drops,
                 'job_drops': self.job_drops, 'devices': list(result.values())}
+
+
+def report_exit_status(report, expected_devices):
+    if report['complete_devices'] < expected_devices:
+        print('Incomplete: raw evidence was saved; do not treat unverified values as a successful reading.', file=sys.stderr)
+        return 2
+    if report['event_drops'] or report['job_drops']:
+        print('Queue overflow detected; evidence is incomplete.', file=sys.stderr)
+        return 3
+    return 0
+
+
+def decode_events(source, output, expected_devices=1):
+    """Reinterpret saved events without opening USB or inventing receive times."""
+    evidence = Evidence()
+    with source.open() as events:
+        for number, line in enumerate(events, 1):
+            event = json.loads(line)
+            if not isinstance(event, dict) or not isinstance(event.get('received_at'), str) or not event['received_at']:
+                raise ValueError(f'Missing original received_at on line {number}')
+            evidence.accept(event, event['received_at'])
+    report = evidence.report()
+    report.update(source_events=str(source.resolve()), replayed_at=utc_now())
+    output.mkdir(mode=0o700, parents=True, exist_ok=True)
+    (output / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+    print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+    return report_exit_status(report, expected_devices)
 
 
 def capture(port, output, duration, expected_devices=1, settle_seconds=30):
@@ -134,7 +163,9 @@ def capture(port, output, duration, expected_devices=1, settle_seconds=30):
                     joined = True
                     print('READY: Joining is open for 180 seconds. Put ONE TH03 into pairing mode now.', flush=True)
                 if not ready and now - start > 60:
-                    raise RuntimeError('CoordinatorNotReady: check serial.log')
+                    raise RuntimeError('CoordinatorNotReady: check serial.log. If USB was connected with the boot '
+                                       'button held, unplug it, wait 5 seconds and reconnect WITHOUT pressing the '
+                                       'button; retry capture without reflashing.')
                 if select.select([fd], [], [], 1)[0]:
                     chunk = os.read(fd, 4096)
                     if not chunk:
@@ -177,18 +208,14 @@ def capture(port, output, duration, expected_devices=1, settle_seconds=30):
             report = evidence.report()
             (output / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
-    if not ready or report['complete_devices'] < expected_devices:
-        print('Incomplete: raw evidence was saved; do not treat unverified values as a successful reading.', file=sys.stderr)
-        return 2
-    if report['event_drops'] or report['job_drops']:
-        print('Queue overflow detected; evidence is incomplete.', file=sys.stderr)
-        return 3
-    return 0
+    return report_exit_status(report, expected_devices) if ready else 2
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port', required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--port')
+    source.add_argument('--events', type=Path, help='Reprocess an existing events.jsonl without USB access')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--duration', type=int, default=300)
     parser.add_argument('--expected-devices', type=int, default=1)
@@ -196,8 +223,10 @@ def main():
     if not 60 <= args.duration <= 3600 or not 1 <= args.expected_devices <= 20:
         parser.error('duration must be 60..3600; expected-devices must be 1..20')
     try:
+        if args.events:
+            return decode_events(args.events, args.output, args.expected_devices)
         return capture(args.port, args.output, args.duration, args.expected_devices)
-    except (OSError, RuntimeError) as error:
+    except (OSError, RuntimeError, ValueError) as error:
         print(f'Capture failed: {error}', file=sys.stderr)
         return 1
 

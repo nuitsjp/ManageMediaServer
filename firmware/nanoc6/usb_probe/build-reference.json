@@ -6,5 +6,6 @@
   "flash_size": 4194304,
   "image_sha256": "ec3772fd19baefe6f2a1532e639f810740dab8dadb86b20e109bea2c35d8991b",
   "source_sha256": "645bc55ea8c8f218a925631b76d497a9461f03461673af7b04f444c4b5c6b927",
-  "hardware_verified": false
+  "hardware_verified": true,
+  "hardware_verification_scope": "One USB-connected Nano C6 with one Zbeacon/TH01 sensor: identity, reads, bind and temperature/humidity/battery reports, 2026-11-06 UTC. Wi-Fi/MQTT and ten sensors remain untested."
 }

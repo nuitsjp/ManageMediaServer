@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import select
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -28,6 +30,70 @@ def identity(ieee, manufacturer='_TZ3000_itnrsufe', model='TS0201'):
 
 
 class ZclEvidenceTests(unittest.TestCase):
+    def test_observed_zbeacon_th01_reads_and_automatic_reports(self):
+        # Raw values observed on the retail TH03; use a synthetic IEEE address.
+        ieee = 'a4c1380000000001'
+        evidence = PROBE.Evidence()
+        for event in identity(ieee, 'Zbeacon', 'TH01'):
+            evidence.accept(event)
+        for cluster, attr, dtype, raw in ((0x0402, 0, 0x29, '940a'),
+                                          (0x0405, 0, 0x21, 'cb10'),
+                                          (1, 32, 0x20, '1e'), (1, 33, 0x20, 'c8')):
+            evidence.accept(attribute(ieee, cluster, attr, dtype, bytes.fromhex(raw)))
+        report = evidence.report()
+        self.assertEqual(report['complete_devices'], 1)
+        metrics = report['devices'][0]['endpoints']['1']['measurements']
+        self.assertEqual(metrics['temperature']['value'], 27.08)
+        self.assertTrue(metrics['temperature']['conversion_verified'])
+        self.assertEqual(metrics['humidity']['value'], 42.99)
+        self.assertEqual(metrics['battery_voltage']['value'], 3.0)
+        self.assertEqual(metrics['battery_reported']['value'], 100)
+        evidence.accept(attribute(ieee, 0x0402, 0, 0x29, bytes.fromhex('a00a'), report=True),
+                        '2026-11-06T23:04:22.681678+00:00')
+        evidence.accept(attribute(ieee, 0x0405, 0, 0x21, bytes.fromhex('0f11'), report=True),
+                        '2026-11-06T23:04:22.751141+00:00')
+        metrics = evidence.report()['devices'][0]['endpoints']['1']['measurements']
+        self.assertEqual(metrics['temperature']['value'], 27.20)
+        self.assertEqual(metrics['humidity']['value'], 43.67)
+        self.assertTrue(metrics['temperature']['report'])
+        self.assertTrue(metrics['humidity']['report'])
+        # The model name alone must not select Zbeacon's humidity conversion.
+        for event in identity(ieee, 'unknown', 'TH01'):
+            evidence.accept(event)
+        self.assertEqual(evidence.report()['complete_devices'], 0)
+        self.assertFalse(evidence.report()['devices'][0]['endpoints']['1']['measurements']['temperature']['conversion_verified'])
+
+    def test_offline_replay_cli_preserves_original_time_and_rejects_missing_time(self):
+        ieee = 'a4c1380000000001'
+        events = identity(ieee, 'Zbeacon', 'TH01') + [
+            attribute(ieee, 0x0402, 0, 0x29, bytes.fromhex('a00a'), report=True),
+            attribute(ieee, 0x0405, 0, 0x21, bytes.fromhex('0f11'), report=True)]
+        for event in events:
+            event['received_at'] = '2026-11-06T23:04:22+00:00'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / 'events.jsonl', root / 'decoded'
+            source.write_text(''.join(json.dumps(event) + '\n' for event in events))
+            command = [sys.executable, str(ROOT / 'scripts/ops/capture-nanoc6-usb.py'),
+                       '--events', str(source), '--output', str(output)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((output / 'report.json').read_text())
+            self.assertEqual(report['complete_devices'], 1)
+            self.assertEqual(report['source_events'], str(source))
+            self.assertEqual(report['devices'][0]['endpoints']['1']['measurements']['humidity']['received_at'],
+                             events[-1]['received_at'])
+            self.assertEqual(len(source.read_text().splitlines()), 4)
+            events[-1]['event_drops'] = 1
+            source.write_text(''.join(json.dumps(event) + '\n' for event in events))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 3)
+            del events[-1]['received_at']
+            source.write_text(''.join(json.dumps(event) + '\n' for event in events))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('Missing original received_at', result.stderr)
+
     def test_ten_sensors_with_identical_short_addresses_never_overwrite_each_other(self):
         evidence = PROBE.Evidence()
         for number in range(10):

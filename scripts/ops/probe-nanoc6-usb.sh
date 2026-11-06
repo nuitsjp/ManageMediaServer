@@ -54,6 +54,7 @@ printf 'backup=%s\noutput=%s\n' "$BACKUP" "$OUTPUT"
 finish() {
     local result=$?
     trap - EXIT
+    if (( result == 0 )) && [[ $STAGE != complete ]]; then result=1; fi
     printf 'stage=%s\nexit_status=%s\nbackup=%s\noutput=%s\n' \
         "$STAGE" "$result" "$BACKUP" "$OUTPUT" | tee "$OUTPUT/result.txt"
     logger -t manage-smarthome "nanoc6-usb stage=$STAGE exit_status=$result backup=$BACKUP output=$OUTPUT"
@@ -79,6 +80,8 @@ PY
     exit "$result"
 }
 trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ $ACTION == --flash ]]; then
     STAGE=verify-build
@@ -125,6 +128,10 @@ state = json.loads(Path(sys.argv[1]).read_text())
 state['original_flash_backup'] = sys.argv[2]
 Path(sys.argv[3]).write_text(json.dumps(state, indent=2)+'\n')
 PY
+    STAGE=normal-boot
+    echo 'Unplug the Nano C6 USB, wait 5 seconds, then reconnect WITHOUT pressing the boot button.'
+    echo 'Native USB reset can leave a manually entered download mode active after flashing.'
+    read -r -p 'Press Enter after reconnecting: ' _ || fail 'Reconnect normally, then rerun with --capture.'
 fi
 STAGE=capture
 for ((attempt=0; attempt<30; attempt++)); do [[ -e $PORT ]] && break; sleep 1; done
