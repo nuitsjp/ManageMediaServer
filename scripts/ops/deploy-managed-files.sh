@@ -208,6 +208,7 @@ if [[ "$SMARTHOME_ONLY" == true ]]; then
         scripts/ops/smarthome-preflight.sh \
         scripts/ops/apply-smarthome-firewall.sh \
         scripts/ops/check-smarthome-bluetooth.py \
+        scripts/ops/prepare-smarthome-runtime.py \
         scripts/ops/repair-smarthome-bluetooth.sh \
         systemd/homeassistant.service \
         systemd/smarthome-apparmor.service \

@@ -26,6 +26,7 @@ done
 for source in scripts/ops/deploy-managed-files.sh scripts/ops/apply-smarthome-firewall.sh \
     scripts/ops/smarthome-preflight.sh docker/homeassistant/docker-compose.yml \
     scripts/ops/check-smarthome-bluetooth.py scripts/ops/repair-smarthome-bluetooth.sh \
+    scripts/ops/prepare-smarthome-runtime.py \
     config/apparmor/homeassistant config/apparmor/LICENSE.moby \
     config/homeassistant/configuration.yaml.example config/env/smarthome-firewall.env.example \
     systemd/homeassistant.service systemd/smarthome-firewall.service systemd/smarthome-apparmor.service docs/スマートホーム基盤.md; do
@@ -88,6 +89,7 @@ for file in docker/homeassistant/docker-compose.yml config/homeassistant/configu
     TARGETS+=("$PROD_ROOT/$file")
 done
 for file in scripts/ops/check-smarthome-bluetooth.py scripts/ops/repair-smarthome-bluetooth.sh \
+    scripts/ops/prepare-smarthome-runtime.py \
     config/apparmor/homeassistant config/apparmor/LICENSE.moby systemd/smarthome-apparmor.service; do
     TARGETS+=("$PROD_ROOT/$file")
 done

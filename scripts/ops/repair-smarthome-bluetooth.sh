@@ -28,14 +28,17 @@ mountpoint -q /mnt/backup || fail '/mnt/backup is not mounted.'
 for unit in homeassistant smarthome-firewall bluetooth; do
     systemctl is-active --quiet "$unit" || fail "Service is not active: $unit"
 done
+RUNTIME_HELPER=$REPO_ROOT/scripts/ops/prepare-smarthome-runtime.py
+[[ -f $RUNTIME_HELPER && ! -L $RUNTIME_HELPER ]] || fail 'Runtime preparation helper is missing or a symlink.'
+python3 "$RUNTIME_HELPER"
 for path in /run/manage-smarthome /run/manage-media-maintenance /mnt/backup/smarthome /etc/apparmor.d; do
     [[ -d $path && ! -L $path && $(stat -c %u "$path") == 0 \
         && -z $(find "$path" -maxdepth 0 -perm /022 -print) ]] || fail "Unprotected directory: $path"
 done
-exec 8>/run/manage-smarthome/install.lock
+exec 8<>/run/manage-smarthome/install.lock
 flock -n 8 || fail 'Another smart home operation is running.'
 [[ ! -L /run/manage-media-maintenance/daily.lock ]] || fail 'Unexpected maintenance lock symlink.'
-exec 9>/run/manage-media-maintenance/daily.lock
+exec 9<>/run/manage-media-maintenance/daily.lock
 flock -n 9 || fail 'Daily maintenance is running; retry after it finishes.'
 (( $(df --output=avail -k /mnt/backup | tail -1) > 1024 * 1024 )) || fail 'Less than 1 GiB free on backup.'
 FILES=(docker/homeassistant/docker-compose.yml config/homeassistant/configuration.yaml.example
@@ -43,6 +46,7 @@ FILES=(docker/homeassistant/docker-compose.yml config/homeassistant/configuratio
     docs/スマートホーム基盤.md scripts/ops/install-smarthome-foundation.sh
     scripts/ops/smarthome-preflight.sh scripts/ops/apply-smarthome-firewall.sh
     scripts/ops/check-smarthome-bluetooth.py scripts/ops/repair-smarthome-bluetooth.sh
+    scripts/ops/prepare-smarthome-runtime.py
     systemd/homeassistant.service systemd/smarthome-firewall.service systemd/smarthome-apparmor.service)
 for source in "${FILES[@]}" scripts/ops/deploy-managed-files.sh; do
     [[ -f $REPO_ROOT/$source && ! -L $REPO_ROOT/$source ]] || fail "Missing or unexpected source: $source"

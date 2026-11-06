@@ -129,6 +129,7 @@ class DeploymentTests(unittest.TestCase):
                        'scripts/ops/deploy-managed-files.sh', 'scripts/ops/install-smarthome-foundation.sh',
                        'scripts/ops/smarthome-preflight.sh', 'scripts/ops/apply-smarthome-firewall.sh',
                        'scripts/ops/check-smarthome-bluetooth.py', 'scripts/ops/repair-smarthome-bluetooth.sh',
+                       'scripts/ops/prepare-smarthome-runtime.py',
                        'systemd/homeassistant.service', 'systemd/smarthome-firewall.service',
                        'systemd/smarthome-apparmor.service'):
             target = self.repo / source
