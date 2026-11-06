@@ -1,0 +1,10 @@
+{
+  "arduino_cli": "1.5.1",
+  "arduino_esp32": "3.3.6",
+  "esptool": "5.1.0",
+  "fqbn": "esp32:esp32:esp32c6:CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=zigbee_zczr,ZigbeeMode=zczr",
+  "flash_size": 4194304,
+  "image_sha256": "ec3772fd19baefe6f2a1532e639f810740dab8dadb86b20e109bea2c35d8991b",
+  "source_sha256": "645bc55ea8c8f218a925631b76d497a9461f03461673af7b04f444c4b5c6b927",
+  "hardware_verified": false
+}
