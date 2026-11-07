@@ -28,5 +28,6 @@
     "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
   ],
   "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
-  "hardware_verified": false
+  "hardware_verified": true,
+  "hardware_verification_scope": "One Nano C6 and one Zbeacon/TH01 sensor: NVS/Zigbee storage preserved, Wi-Fi with verified MQTT/TLS, fresh temperature/humidity delivery and Home Assistant registration, operator-confirmed UI values, 2026-11-07 JST. Ten sensors, battery delivery over MQTT, separate-power placement, reconnect/reboot and 24-hour stability remain unverified."
 }

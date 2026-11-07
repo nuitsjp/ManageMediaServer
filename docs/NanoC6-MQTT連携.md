@@ -6,10 +6,37 @@ USBは書込み・設定・復旧時に使う。現時点で実機は1台のみ�
 
 ## 状態
 
-2026年11月7日 JST：実装とビルド・自動テストを準備。本番配備とWi-Fi実機疎通は実施前。
+2026年11月7日 JST：本番配備と実機1台のWi-Fi／MQTT TLS送信、HAへの登録を確認済み。
+10:43 JSTに使い捨て導入スクリプトが `stage=complete / exit_status=0` で終了した。
+HA上で温湿度を表示できることは利用者が確認し、設定・エンティティ登録も読取りで照合した。
 USB実機で識別済みの販売名Tuya TH03は `Zbeacon / TH01`。
 Wi-Fi／Zigbeeの共存は単一RFを共有するため、容量設定や疑似10台の試験だけでは受信安定性を実証できない。
 常用の判断は実配置で10台以上の試験後とし、要件を満たせなければ無線部を分ける。
+
+### 初回の実機結果
+
+| 確認項目 | 結果 |
+| --- | --- |
+| 診断中の温度・湿度 | 26.81℃・44.16%（2026年11月7日09:50:15 JST受信） |
+| MCUの接続状態 | Wi-Fi・MQTT・時刻同期がすべて正常 |
+| 完了機器数 | 1台 |
+| 保存された診断情報 | event/job/gateway drop、device overflowは0 |
+| HA登録 | 温度・湿度とも登録済み、利用者が画面で値を確認 |
+| サーバー起動設定 | MQTT／MQTT FWはactive・enabled、既存HAもactive |
+| 待受け | 平文は127.0.0.1:1883のみ、TLSは8883＋専用FW |
+
+この値は診断中に保存した実測値であり、現在値を示すものではない。
+telemetryはMCU起動60秒時点、温湿度は約72秒時点の受信。記録されたキュー欠落ゼロは、
+無線での欠測ゼロや長時間安定性を証明するものではない。
+電池・電圧のMQTT実データ、USBをサーバーから外して別電源で設置した状態、
+Wi-Fi／MQTT切断・MCU／サーバー再起動後の復帰、10台以上・24時間観測は未確認。
+
+実機結果は `/mnt/data/smarthome/nanoc6/diagnostics/mqtt-bringup-iE4uIcLZ/mqtt-report.json`。
+全体作業のバックアップは `/mnt/backup/smarthome/mqtt-bringup-EGB9NQ1R/`、
+MQTT導入は `/mnt/backup/smarthome/mqtt-install-g9dmxuiR/`、
+更新前のMCU全量バックアップと読戻し結果は `/mnt/backup/smarthome/nanoc6/gateway-update-DnDMhrHV/`。
+更新時にbootloader・NVS・Zigbee保存領域の一致を確認し、再ペアリングなしで受信できた。
+完了時に使い捨て導入スクリプトを削除した。秘密情報を含む元データ・バックアップはroot専用で保持する。
 
 ## 配置
 
@@ -64,6 +91,8 @@ Wi-Fi／Zigbeeの共存は単一RFを共有するため、容量設定や疑似1
 6. MQTT/TLS接続と、今回新たに受信した1台の温湿度・Discovery・欠落ゼロのtelemetryを確認する。
 7. HAの「設定 → デバイスとサービス → 統合を追加 → MQTT」で、broker=`127.0.0.1`、port=`1883`、
    username=`homeassistant`、手順2のパスワードを設定。このloopback接続のTLSは無効。
+   追加には管理者権限を持つアカウントを使う。ボタンが見つからない場合は同じブラウザーで
+   [MQTT追加画面](http://192.168.0.23:8123/config/integrations/dashboard/add?domain=mqtt)を開く。
 8. 温湿度計の値がHA画面に表示されてからEnter。HA設定とエンティティ登録もファイルの読取りで照合する。
    HAの`.storage`を直接編集しない。実際の画面の値は利用者の確認として記録する。
 9. 成功時は使い捨てスクリプトを削除し、Codex用の秘密情報を除いた結果を一時出力する。
