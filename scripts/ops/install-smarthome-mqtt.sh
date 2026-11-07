@@ -4,6 +4,9 @@ set -euo pipefail
 umask 077
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 [[ $EUID == 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
+REUSE_CREDENTIALS=
+if [[ $# == 2 && $1 == --reuse-credentials ]]; then REUSE_CREDENTIALS=$2;
+elif (( $# != 0 )); then echo 'Usage: install-smarthome-mqtt.sh [--reuse-credentials PRIVATE_BACKUP]' >&2; exit 2; fi
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 PROD=/home/mediaserver/ManageMediaServer
 DATA=/mnt/data/smarthome/mosquitto
@@ -13,6 +16,10 @@ LIB=/usr/local/libexec/manage-smarthome/apply-smarthome-mqtt-firewall.sh
 COMPOSE=$PROD/docker/mosquitto/docker-compose.yml
 IMAGE=eclipse-mosquitto:2.1.2-alpine@sha256:22075095e8790eec5592ff3c213b1974cd51aa458275af2f8b0595af4c385df2
 fail() { echo "ERROR: $*" >&2; exit 1; }
+hash_password_file() {
+    docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=8m,mode=1777 --cap-drop ALL --user 0:0 \
+        -v "$1:/work" --entrypoint mosquitto_passwd "$IMAGE" -U /work/passwords
+}
 for tool in docker openssl python3 iptables ip6tables flock install logger mountpoint; do command -v "$tool" >/dev/null; done
 [[ -f /etc/manage-smarthome/firewall.env && ! -L /etc/manage-smarthome/firewall.env ]] || fail 'Existing smart home firewall configuration is required.'
 for path in /mnt/data/smarthome /mnt/backup/smarthome /etc/manage-smarthome /usr/local/libexec/manage-smarthome; do
@@ -69,11 +76,43 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 STAGE=image-pull
 docker pull --platform linux/amd64 "$IMAGE"
+STAGE=password-tool-check
+PASSWORD_TEST=$(mktemp -d "$BACKUP/password-tool-XXXXXXXX")
+printf 'test:not-a-real-password\n' > "$PASSWORD_TEST/passwords"
+hash_password_file "$PASSWORD_TEST"
+python3 - "$PASSWORD_TEST/passwords" <<'PY'
+from pathlib import Path
+import sys
+data=Path(sys.argv[1]).read_text()
+if not data.startswith('test:$') or 'not-a-real-password' in data:
+    raise SystemExit('Container password conversion self-test failed')
+PY
+rm -r -- "$PASSWORD_TEST"
 STAGE=credentials
 install -d -m 0700 -o root -g root "$PRIVATE" "$DATA"
 install -d -m 0750 -o root -g 1883 "$DATA/config"
 install -d -m 0700 -o 1883 -g 1883 "$DATA/data"
-python3 "$REPO/scripts/ops/smarthome_mqtt.py" init --credentials "$CLIENTS"
+if [[ -n $REUSE_CREDENTIALS ]]; then
+    python3 - "$REPO/scripts/ops" "$REUSE_CREDENTIALS" "$CLIENTS" <<'PY'
+import json,os,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from smarthome_mqtt import private_json
+source=Path(sys.argv[2])
+if not str(source).startswith('/mnt/backup/smarthome/'):
+    raise SystemExit('Use the private smart home installation backup')
+data=private_json(source)
+if data.get('host')!='192.168.0.23' or set(data.get('passwords',{}))!={'homeassistant','nanoc6','smarthome-check'}:
+    raise SystemExit('Unexpected saved MQTT credentials')
+if any(not isinstance(p,str) or len(p)<16 or '\n' in p or '\r' in p for p in data['passwords'].values()):
+    raise SystemExit('Invalid saved MQTT credentials')
+fd=os.open(sys.argv[3],os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+with os.fdopen(fd,'w') as stream:json.dump(data,stream)
+print('Reused the previously chosen MQTT credentials; no password input is needed.')
+PY
+else
+    python3 "$REPO/scripts/ops/smarthome_mqtt.py" init --credentials "$CLIENTS"
+fi
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 -subj '/CN=Manage Smart Home MQTT CA' \
     -keyout "$PRIVATE/ca.key" -out "$DATA/config/ca.crt" > "$BACKUP/ca-generation.log" 2>&1
 openssl req -new -newkey rsa:2048 -nodes -subj '/CN=192.168.0.23' \
@@ -88,8 +127,7 @@ fd=os.open(sys.argv[2],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
 with os.fdopen(fd,'w') as stream:
     for user,password in config['passwords'].items(): stream.write(user+':'+password+'\n')
 PY
-docker run --rm --network none --read-only --cap-drop ALL --user 0:0 \
-    -v "$DATA/config:/work" --entrypoint mosquitto_passwd "$IMAGE" -U /work/passwords
+hash_password_file "$DATA/config"
 install -m 0640 -o root -g 1883 "$REPO/config/mosquitto/mosquitto.conf" "$DATA/config/mosquitto.conf"
 install -m 0640 -o root -g 1883 "$REPO/config/mosquitto/acl" "$DATA/config/acl"
 chown root:1883 "$DATA/config/"{passwords,server.key,server.crt,ca.crt}

@@ -134,6 +134,23 @@ LAN_IFACE=enp1s0
 class DeploymentSafetyTests(unittest.TestCase):
     setUp = foundation_tests.DeploymentTests.setUp
 
+    def test_saved_credentials_are_reused_privately_without_password_input(self):
+        source=(ROOT/'scripts/ops/install-smarthome-mqtt.sh').read_text()
+        helper=source.split('python3 - "$REPO/scripts/ops" "$REUSE_CREDENTIALS" "$CLIENTS" <<\'PY\'\n',1)[1].split('\nPY',1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);saved=root/'saved.json';target=root/'restored.json'
+            config=dict(host='192.168.0.23',passwords={user:'not-real-but-long-enough' for user in ('homeassistant','nanoc6','smarthome-check')})
+            saved.write_text(json.dumps(config));saved.chmod(0o600)
+            code=helper.replace("'/mnt/backup/smarthome/'",repr(str(root)+'/'))
+            result=subprocess.run([sys.executable,'-',str(ROOT/'scripts/ops'),str(saved),str(target)],input=code,text=True,capture_output=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(target.read_text()),config)
+            self.assertEqual(target.stat().st_mode&0o777,0o600)
+            self.assertNotIn('not-real-but-long-enough',result.stdout+result.stderr)
+            target.unlink();saved.chmod(0o644)
+            result=subprocess.run([sys.executable,'-',str(ROOT/'scripts/ops'),str(saved),str(target)],input=code,text=True,capture_output=True)
+            self.assertNotEqual(result.returncode,0);self.assertFalse(target.exists())
+
     def test_mqtt_only_deploy_preserves_ha_media_and_private_settings(self):
         for tree in ('docker/mosquitto','config/mosquitto','firmware/nanoc6/wifi_gateway'):
             shutil.copytree(ROOT/tree,self.repo/tree)
