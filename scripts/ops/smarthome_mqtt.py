@@ -13,6 +13,7 @@ import socket
 import ssl
 import stat
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -228,9 +229,34 @@ def check(config, ca):
     print('MQTT TLS certificate/hostname, authenticated delivery, HA local credentials and bad-password rejection: OK')
 
 
+def container_check_command(compose):
+    # Use Compose's rendered values, including YAML list parsing, rather than
+    # independently recreating the mount options for this startup preflight.
+    rendered = json.loads(subprocess.check_output(
+        ['docker', 'compose', '-f', str(compose), 'config', '--format', 'json'], text=True))
+    service = rendered['services']['mosquitto']
+    mounts = service.get('tmpfs', [])
+    if isinstance(mounts, str):
+        mounts = [mounts]
+    if not mounts or any(not isinstance(mount, str) or not mount.split(':', 1)[0].startswith('/') for mount in mounts):
+        raise ValueError('Compose tmpfs targets must be absolute paths; quote entries containing commas')
+    if not service.get('read_only') or service.get('user') != '1883:1883':
+        raise ValueError('Expected read-only broker with the dedicated unprivileged user')
+    command = ['docker', 'run', '--rm', '--network', 'none', '--read-only', '--user', service['user']]
+    for capability in service.get('cap_drop', []):
+        command += ['--cap-drop', capability]
+    for option in service.get('security_opt', []):
+        command += ['--security-opt', option]
+    for mount in mounts:
+        command += ['--tmpfs', mount]
+    return command + ['--entrypoint', '/bin/sh', service['image'], '-ec',
+                      'test -w /tmp; touch /tmp/mqtt-container-check; rm /tmp/mqtt-container-check']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('init', 'check', 'observe'))
+    parser.add_argument('action', choices=('init', 'check', 'observe', 'container-check'))
+    parser.add_argument('--compose', type=Path)
     parser.add_argument('--credentials', type=Path, default=Path('/etc/manage-smarthome/mqtt-clients.json'))
     parser.add_argument('--ca', type=Path, default=Path('/mnt/data/smarthome/mosquitto/config/ca.crt'))
     parser.add_argument('--host', default='192.168.0.23')
@@ -238,6 +264,15 @@ def main():
     parser.add_argument('--expected-devices', type=int, default=1)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
+    if args.action == 'container-check':
+        if not args.compose:
+            parser.error('--compose is required for container-check')
+        try:
+            subprocess.run(container_check_command(args.compose), check=True)
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError('Broker container preflight failed; no credentials or running services were changed') from error
+        print('Rendered Compose tmpfs and unprivileged read-only container startup: OK')
+        return 0
     if args.action == 'init':
         if args.credentials.exists() or args.credentials.is_symlink():
             raise ValueError('Credentials already exist')

@@ -10,7 +10,8 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=8m,mode=1777]
+    tmpfs:
+      - "/tmp:size=8m,mode=1777"
     volumes:
       - /mnt/data/smarthome/mosquitto/config:/mosquitto/config:ro
       - /mnt/data/smarthome/mosquitto/data:/mosquitto/data

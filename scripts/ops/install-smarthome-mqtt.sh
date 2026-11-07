@@ -40,11 +40,17 @@ BACKUP=$(mktemp -d /mnt/backup/smarthome/mqtt-install-XXXXXXXX)
 cp -a "$0" "$BACKUP/installer.sh"
 docker ps -q | sort > "$BACKUP/containers-before.txt"
 STAGE=prepare
+STARTED_AT=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 DEPLOYED=false
 finish() {
     local result=$? rollback=false
     trap - EXIT
     if (( result != 0 )); then
+        if [[ $DEPLOYED == true ]]; then
+            journalctl -u smarthome-mqtt.service -u smarthome-mqtt-firewall.service --since "$STARTED_AT" \
+                --no-pager -n 100 > "$BACKUP/mqtt-journal.txt" 2>&1 || true
+            tail -n 80 "$BACKUP/mqtt-journal.txt"
+        fi
         local stopped=true remaining
         if [[ $DEPLOYED == true ]]; then
             systemctl disable --now smarthome-mqtt.service smarthome-mqtt-firewall.service || rollback=true
@@ -76,6 +82,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 STAGE=image-pull
 docker pull --platform linux/amd64 "$IMAGE"
+STAGE=container-check
+python3 "$REPO/scripts/ops/smarthome_mqtt.py" container-check --compose "$REPO/docker/mosquitto/docker-compose.yml"
 STAGE=password-tool-check
 PASSWORD_TEST=$(mktemp -d "$BACKUP/password-tool-XXXXXXXX")
 printf 'test:not-a-real-password\n' > "$PASSWORD_TEST/passwords"

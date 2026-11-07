@@ -134,6 +134,22 @@ LAN_IFACE=enp1s0
 class DeploymentSafetyTests(unittest.TestCase):
     setUp = foundation_tests.DeploymentTests.setUp
 
+    def test_rendered_compose_mounts_are_accepted_and_unquoted_commas_are_rejected(self):
+        compose=ROOT/'docker/mosquitto/docker-compose.yml'
+        command=MQTT.container_check_command(compose)
+        mounts=[command[i+1] for i,value in enumerate(command) if value=='--tmpfs']
+        self.assertEqual(mounts,['/tmp:size=8m,mode=1777'])
+        self.assertEqual(command[command.index('--user')+1],'1883:1883')
+        self.assertIn('--read-only',command)
+        with tempfile.TemporaryDirectory() as directory:
+            broken=Path(directory)/'compose.yml'
+            text=compose.read_text().replace('tmpfs:\n      - "/tmp:size=8m,mode=1777"',
+                                             'tmpfs: [/tmp:size=8m,mode=1777]')
+            self.assertNotEqual(text,compose.read_text())
+            broken.write_text(text)
+            with self.assertRaisesRegex(ValueError,'absolute paths'):
+                MQTT.container_check_command(broken)
+
     def test_saved_credentials_are_reused_privately_without_password_input(self):
         source=(ROOT/'scripts/ops/install-smarthome-mqtt.sh').read_text()
         helper=source.split('python3 - "$REPO/scripts/ops" "$REUSE_CREDENTIALS" "$CLIENTS" <<\'PY\'\n',1)[1].split('\nPY',1)[0]
@@ -194,7 +210,9 @@ REPO={shlex.quote(str(repo))}
 COMPOSE=unused
 STAGE=verify
 DEPLOYED=true
+STARTED_AT='2026-11-07 00:00:00 UTC'
 systemctl() {{ return 0; }}
+ journalctl() {{ :; }}
 docker() {{ if [[ $1 == ps ]]; then return {0 if stopped else 1}; fi; return 0; }}
 logger() {{ :; }}
 trap finish EXIT
