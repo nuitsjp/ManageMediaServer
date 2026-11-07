@@ -1,0 +1,24 @@
+[Unit]
+Description=Smart home MQTT broker
+Wants=network-online.target
+Requires=docker.service smarthome-mqtt-firewall.service
+PartOf=docker.service
+After=network-online.target docker.service smarthome-mqtt-firewall.service
+RequiresMountsFor=/mnt/data
+
+[Service]
+Type=exec
+User=mediaserver
+Group=mediaserver
+SupplementaryGroups=docker
+WorkingDirectory=/home/mediaserver/ManageMediaServer/docker/mosquitto
+ExecStartPre=/usr/bin/docker compose config --quiet
+ExecStart=/usr/bin/docker compose up --no-build --pull never --abort-on-container-exit
+ExecStop=/usr/bin/docker compose stop
+Restart=always
+RestartSec=10
+TimeoutStartSec=90
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

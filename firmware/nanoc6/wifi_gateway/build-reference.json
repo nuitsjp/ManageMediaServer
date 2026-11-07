@@ -1,0 +1,32 @@
+{
+  "arduino_esp32": "3.3.6",
+  "fqbn": "esp32:esp32:esp32c6:CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=zigbee_zczr,ZigbeeMode=zczr",
+  "app_offset": 65536,
+  "app_max_size": 2621440,
+  "preserved_ranges": [
+    [
+      36864,
+      20480
+    ],
+    [
+      4104192,
+      20480
+    ]
+  ],
+  "sources": {
+    "firmware/nanoc6/wifi_gateway/gateway_model.h": "1a2dc40840293eba3380cafa7a9c7d9e0d1c029650b2821eb000b391973a78a4",
+    "firmware/nanoc6/wifi_gateway/gateway_network.h": "84cc11023187cd3409fe95cc906a8be55e6a3425fcbdf9a95c14d993f583c4ac",
+    "firmware/nanoc6/wifi_gateway/partitions.csv": "7fe8f5364607dd6ec6e058ca37f57585eec9b6364774a721829096a4a17f7890",
+    "firmware/nanoc6/wifi_gateway/wifi_gateway.ino": "0472366c06064aa9d9c1e712e11fd8ffe0db463cdc29440ba21f9c86703bbd0a"
+  },
+  "artifacts": {
+    "wifi_gateway.ino.bin": "1d8a57b3d015460d645bafbe90934895c493d051b3178fa4046c3565aa21c4b5",
+    "wifi_gateway.ino.partitions.bin": "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
+  },
+  "accepted_partition_sha256": [
+    "01358d93531719c033d5cd657680cab6579bbfc07c550e1a5d2e8c8977d1b9af",
+    "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
+  ],
+  "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
+  "hardware_verified": false
+}

@@ -9,10 +9,11 @@ SYSTEMD_ROOT="${SYSTEMD_ROOT:-/etc/systemd/system}"
 BACKUP_PARENT="${BACKUP_PARENT:-${PROD_ROOT}/.deploy-backups}"
 DRY_RUN=false
 SMARTHOME_ONLY=false
+MQTT_ONLY=false
 
 usage() {
     cat <<USAGE
-Usage: $0 [--dry-run] [--smarthome-only]
+Usage: $0 [--dry-run] [--smarthome-only|--mqtt-only]
 
 Deploy only Git-managed operational files from:
   ${REPO_ROOT}
@@ -29,6 +30,7 @@ Host-specific files such as .env, config/env/*.env, rclone.conf, logs,
 Options:
   --dry-run  Show planned changes without writing files
   --smarthome-only  Deploy only smart home foundation files (no other services)
+  --mqtt-only  Deploy only smart home MQTT files
 USAGE
 }
 
@@ -39,6 +41,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --smarthome-only)
             SMARTHOME_ONLY=true
+            ;;
+        --mqtt-only)
+            MQTT_ONLY=true
             ;;
         -h|--help)
             usage
@@ -220,6 +225,28 @@ if [[ "$SMARTHOME_ONLY" == true ]]; then
         managed_files+=("$source|${PROD_ROOT}/$source|$mode")
     done
     for name in homeassistant.service smarthome-firewall.service smarthome-apparmor.service; do
+        managed_files+=("systemd/$name|${SYSTEMD_ROOT}/$name|0644")
+    done
+fi
+
+if [[ "$MQTT_ONLY" == true ]]; then
+    [[ "$SMARTHOME_ONLY" == false ]] || { echo 'Choose only one deployment scope.' >&2; exit 2; }
+    managed_files=()
+    for source in docker/mosquitto/docker-compose.yml config/mosquitto/mosquitto.conf config/mosquitto/acl \
+        scripts/ops/apply-smarthome-mqtt-firewall.sh scripts/ops/install-smarthome-mqtt.sh \
+        scripts/ops/smarthome_mqtt.py scripts/ops/provision-nanoc6-gateway.py \
+        scripts/ops/update-nanoc6-gateway.sh scripts/ops/check-smarthome-mqtt-ha.py \
+        scripts/ops/build-nanoc6-gateway.sh docs/NanoC6-MQTT連携.md \
+        firmware/nanoc6/wifi_gateway/wifi_gateway.ino firmware/nanoc6/wifi_gateway/gateway_model.h \
+        firmware/nanoc6/wifi_gateway/gateway_network.h firmware/nanoc6/wifi_gateway/partitions.csv \
+        firmware/nanoc6/wifi_gateway/build-reference.json \
+        systemd/smarthome-mqtt.service systemd/smarthome-mqtt-firewall.service; do
+        git -c safe.directory="$REPO_ROOT" -C "$REPO_ROOT" ls-files --error-unmatch "$source" >/dev/null
+        mode=0644
+        [[ $source != *.sh ]] || mode=0755
+        managed_files+=("$source|${PROD_ROOT}/$source|$mode")
+    done
+    for name in smarthome-mqtt.service smarthome-mqtt-firewall.service; do
         managed_files+=("systemd/$name|${SYSTEMD_ROOT}/$name|0644")
     done
 fi

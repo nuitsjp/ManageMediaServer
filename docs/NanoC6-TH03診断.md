@@ -2,7 +2,8 @@
 
 運用時は Nano C6 を温湿度計の近くに常時給電で設置し、Zigbee 受信値を Wi-Fi/MQTT over TLS で
 Ubuntu の Mosquitto、Home Assistant へ送る。USB は開発時のみ。温湿度計は**最低10台**。
-今回は USB 接続下で1台の TH03 の機種情報と温湿度データを取得する。Wi-Fi・MQTT は未実装。
+この診断版では USB 接続下で1台の TH03 の機種情報と温湿度データを取得する。
+後続のWi-Fi・MQTT版は [Nano C6 / MQTT連携](NanoC6-MQTT連携.md) を参照。
 既存 HA やメディアサービスへの配備・再起動は行わない。
 
 ## 配置

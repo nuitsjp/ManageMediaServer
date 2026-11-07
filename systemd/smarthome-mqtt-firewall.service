@@ -1,0 +1,15 @@
+[Unit]
+Description=Restrict smart home MQTT to TLS on LAN and local plaintext
+Wants=network-online.target
+After=network-online.target
+Before=smarthome-mqtt.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=/etc/manage-smarthome/firewall.env
+ExecStart=/usr/bin/bash /usr/local/libexec/manage-smarthome/apply-smarthome-mqtt-firewall.sh apply
+
+[Install]
+WantedBy=multi-user.target

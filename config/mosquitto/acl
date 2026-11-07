@@ -1,0 +1,18 @@
+user nanoc6
+topic write smarthome/nanoc6/#
+topic write homeassistant/sensor/nanoc6/#
+topic write homeassistant/button/nanoc6/#
+topic read homeassistant/status
+topic read smarthome/nanoc6/gateway/join/set
+
+user homeassistant
+topic read homeassistant/#
+topic read smarthome/nanoc6/#
+topic write homeassistant/status
+topic write smarthome/nanoc6/gateway/join/set
+
+user smarthome-check
+topic read homeassistant/sensor/nanoc6/#
+topic read homeassistant/button/nanoc6/#
+topic read smarthome/nanoc6/#
+topic readwrite smarthome/check/#

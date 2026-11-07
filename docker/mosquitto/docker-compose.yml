@@ -1,0 +1,22 @@
+name: smarthome-mqtt
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.1.2-alpine@sha256:22075095e8790eec5592ff3c213b1974cd51aa458275af2f8b0595af4c385df2
+    platform: linux/amd64
+    container_name: smarthome-mqtt
+    user: "1883:1883"
+    network_mode: host
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=8m,mode=1777]
+    volumes:
+      - /mnt/data/smarthome/mosquitto/config:/mosquitto/config:ro
+      - /mnt/data/smarthome/mosquitto/data:/mosquitto/data
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
