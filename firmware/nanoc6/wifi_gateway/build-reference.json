@@ -30,6 +30,6 @@
   ],
   "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
   "firmware_version": "nanoc6-wifi-gateway-0.3",
-  "hardware_verified": false,
-  "hardware_verification_scope": "v0.3 naming and per-sensor reception state: compiled and automated checks only; no v0.3 hardware flash or end-to-end verification yet. The previous v0.2 release was verified with one Zbeacon/TH01 sensor and preserved NVS/Zigbee storage; long-term operation with ten sensors remains unverified."
+  "hardware_verified": true,
+  "hardware_verification_scope": "v0.3 verified on 2026-11-15 JST: full flash backed up; bootloader, NVS and Zigbee storage matched on readback; all ten numbered mappings read back after a separate USB power cycle; MQTT Discovery names and six entities per sensor confirmed in Home Assistant registry; fresh sensor 10 temperature/humidity received over USB. Home Assistant live presentation, long-term reception and ten simultaneously powered sensors remain to be verified."
 }
