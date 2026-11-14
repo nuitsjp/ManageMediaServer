@@ -3,6 +3,10 @@
 #include <stdio.h>
 using namespace gateway;
 int main() {
+  assert(!strcmp(reception_status(false, 20000, 19000), "未確認"));
+  assert(!strcmp(reception_status(true, 19000, 20000), "未確認"));
+  assert(!strcmp(reception_status(true, 20799, 10000), "3時間以内に受信"));
+  assert(!strcmp(reception_status(true, 20800, 10000), "3時間以上受信なし"));
   Fleet fleet;
   for (unsigned i=0; i<10; ++i) {
     char ieee[17]; snprintf(ieee,sizeof(ieee),"a4c138%010x",i+1);

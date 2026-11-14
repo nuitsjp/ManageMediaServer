@@ -301,7 +301,7 @@ static void print_event(const Event &event) {
   for (int i = 0; i < 8; ++i) snprintf(ieee + i * 2, 3, "%02x", event.ieee[7-i]);
   Serial.printf("{\"v\":1,\"event\":\"%s\",\"uptime_ms\":%lu", names[event.kind], static_cast<unsigned long>(event.uptime));
   if (event.kind == READY) {
-    Serial.printf(",\"firmware\":\"nanoc6-wifi-gateway-0.2\",\"channel\":%u,\"max_children\":%u,\"device_slots\":%u,\"join_open\":false",
+    Serial.printf(",\"firmware\":\"nanoc6-wifi-gateway-0.3\",\"channel\":%u,\"max_children\":%u,\"device_slots\":%u,\"join_open\":false",
                   CHANNEL, MAX_CHILDREN, static_cast<unsigned>(MAX_DEVICES));
   } else {
     Serial.printf(",\"ieee\":\"%s\",\"short\":%u,\"endpoint\":%u,\"status\":%u", ieee, event.address, event.endpoint, event.status);

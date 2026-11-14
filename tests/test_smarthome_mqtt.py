@@ -210,6 +210,8 @@ class DeploymentSafetyTests(unittest.TestCase):
                      'scripts/ops/apply-smarthome-mqtt-firewall.sh','scripts/ops/install-smarthome-mqtt.sh',
                      'scripts/ops/smarthome_mqtt.py','scripts/ops/provision-nanoc6-gateway.py',
                      'scripts/ops/enroll-nanoc6-sensors.py',
+                     'scripts/ops/assign-nanoc6-numbers.py',
+                     'scripts/ops/check-nanoc6-numbers.py',
                      'scripts/ops/update-nanoc6-gateway.sh','scripts/ops/verify-nanoc6-battery.py','scripts/ops/check-smarthome-mqtt-ha.py','scripts/ops/build-nanoc6-gateway.sh'):
             target=self.repo/path;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/path,target)
         subprocess.run(['git','-C',str(self.repo),'add','.'],check=True)

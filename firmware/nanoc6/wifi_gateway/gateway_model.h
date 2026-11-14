@@ -9,6 +9,10 @@ constexpr uint32_t POWER_REFRESH_MS = 6U * 60 * 60 * 1000;
 constexpr uint32_t POWER_RETRY_MS = 5U * 60 * 1000;
 constexpr uint32_t POWER_BATCH_GAP_MS = 2000;
 constexpr uint16_t POWER_REPORT_MIN_S = 3600, POWER_REPORT_MAX_S = 21600;
+inline const char *reception_status(bool seen, uint32_t now_epoch, uint32_t seen_epoch) {
+  if (!seen || now_epoch < seen_epoch) return "未確認";
+  return now_epoch-seen_epoch < 10800U ? "3時間以内に受信" : "3時間以上受信なし";
+}
 enum Kind { TEMPERATURE, HUMIDITY, BATTERY, VOLTAGE, METRICS };
 struct Metric {
   int32_t encoded = 0;
@@ -52,6 +56,10 @@ struct Node {
   bool refresh = false;
   bool seen = false;
   uint32_t last_seen_ms = 0;
+  // Only a successful device event is evidence of reception. NVS and MQTT
+  // reconnects must never make an old reading appear new.
+  bool signal_seen = false, signal_pending = false, status_sent = false;
+  uint32_t last_signal_ms = 0, last_signal_epoch = 0, last_status_ms = 0;
   PowerRefresh power;
 };
 inline bool known(const Identity &id) {

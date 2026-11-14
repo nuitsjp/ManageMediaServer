@@ -14,13 +14,14 @@
     ]
   ],
   "sources": {
-    "firmware/nanoc6/wifi_gateway/gateway_model.h": "aaa72088bd3d300c33fa66ff5d54e44dc1a89edbd254bec9dc06bf9c6b9c66cd",
-    "firmware/nanoc6/wifi_gateway/gateway_network.h": "ef94ab55a7929a5204806d0e271fc02f3aad538d54ee5c8b2d3476d7e9576a3d",
+    "firmware/nanoc6/wifi_gateway/gateway_model.h": "f8cb761b9f2eff78b8f5db175cba98af2bd81e312bf2bd7b0c7be28092aaf482",
+    "firmware/nanoc6/wifi_gateway/gateway_network.h": "16ba84f93df3631007ef4691fdc28a247a16abeda7626ca20fdc1196c7022318",
     "firmware/nanoc6/wifi_gateway/partitions.csv": "7fe8f5364607dd6ec6e058ca37f57585eec9b6364774a721829096a4a17f7890",
-    "firmware/nanoc6/wifi_gateway/wifi_gateway.ino": "d71cc81423a0834d3742b61e30532703f004866cf6e34ed8858aa344b7573085"
+    "firmware/nanoc6/wifi_gateway/sensor_numbers.h": "8261bebd7f4fdea0151068bfe04ec662b7a8200f8f10f41e758587713299b8f2",
+    "firmware/nanoc6/wifi_gateway/wifi_gateway.ino": "dad7bb1dedf11113792d9ede3da3066af412245a9ba0507945934c9b298d0f99"
   },
   "artifacts": {
-    "wifi_gateway.ino.bin": "00744d4e3c52b626b3fef439a1f03af576a76944c4b3002e6e5e62a990ae8fcf",
+    "wifi_gateway.ino.bin": "4560d0b0f973d495c71bf20f5c8159db201b1019af354f2111d094b08ae63394",
     "wifi_gateway.ino.partitions.bin": "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
   },
   "accepted_partition_sha256": [
@@ -28,7 +29,7 @@
     "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
   ],
   "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
-  "firmware_version": "nanoc6-wifi-gateway-0.2",
-  "hardware_verified": true,
-  "hardware_verification_scope": "One Nano C6 and one Zbeacon/TH01 sensor verified on 2026-11-14 JST: NVS/Zigbee storage preserved; fresh temperature, humidity, battery (100% reported) and voltage (2.9V) over MQTT/TLS; Configure Reporting acknowledged on the first attempt (status 0); all four Home Assistant entities and operator-confirmed UI values. Long-term periodic delivery and ten-sensor radio stability remain unverified."
+  "firmware_version": "nanoc6-wifi-gateway-0.3",
+  "hardware_verified": false,
+  "hardware_verification_scope": "v0.3 naming and per-sensor reception state: compiled and automated checks only; no v0.3 hardware flash or end-to-end verification yet. The previous v0.2 release was verified with one Zbeacon/TH01 sensor and preserved NVS/Zigbee storage; long-term operation with ten sensors remains unverified."
 }

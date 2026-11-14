@@ -1,7 +1,9 @@
 #pragma once
 #include "gateway_model.h"
+#include "sensor_numbers.h"
 #include <WiFi.h>
 #include <Preferences.h>
+#include <nvs.h>
 #include <mqtt_client.h>
 #include <esp_coexist.h>
 #include <cJSON.h>
@@ -13,8 +15,11 @@
 #endif
 // Only the network worker owns Fleet, Preferences, MQTT handles and in-flight state.
 // Zigbee callbacks never wait for Wi-Fi, TLS, broker acknowledgements or flash writes.
-static QueueHandle_t gateway_events, gateway_acks;
+static QueueHandle_t gateway_events, gateway_acks, number_requests;
 static gateway::Fleet fleet;
+static gateway::SensorNumbers sensor_numbers;
+static bool number_storage_healthy = true;
+struct NumberRequest { char ieee[17]; uint8_t number; bool query; };
 static esp_mqtt_client_handle_t mqtt = nullptr;
 static std::atomic<bool> mqtt_connected{false}, mqtt_reset{false}, discovery_reset{false}, join_requested{false};
 static std::atomic<uint32_t> gateway_drops{0};
@@ -23,7 +28,7 @@ static uint32_t stale_drops = 0, unacked_retries = 0, received_attributes = 0;
 static uint32_t power_reads = 0, power_config_requests = 0, power_config_successes = 0, power_config_failures = 0;
 static gateway::PowerBudget power_budget;
 static unsigned power_cursor = 0;
-static const char *FIRMWARE_VERSION = "nanoc6-wifi-gateway-0.2";
+static const char *FIRMWARE_VERSION = "nanoc6-wifi-gateway-0.3";
 static String wifi_ssid, wifi_password, mqtt_host, mqtt_user, mqtt_password, mqtt_ca;
 static const char *ROOT_TOPIC = "smarthome/nanoc6";
 static const char *GW_AVAIL = "smarthome/nanoc6/gateway/availability";
@@ -58,6 +63,12 @@ static cJSON *gw_device(const gateway::Identity &id) {
   String identifier = String("nanoc6_") + id.ieee;
   cJSON_AddItemToArray(identifiers, cJSON_CreateString(identifier.c_str()));
   String name = String("TH ") + id.ieee + " (" + id.model + ")";
+  unsigned number = sensor_numbers.number_for(id.ieee);
+  if (number) {
+    char numbered_name[32];
+    snprintf(numbered_name, sizeof(numbered_name), "温湿度計%02u", number);
+    name = numbered_name;
+  }
   cJSON_AddStringToObject(device, "name", name.c_str());
   cJSON_AddStringToObject(device, "manufacturer", id.manufacturer);
   cJSON_AddStringToObject(device, "model", id.model);
@@ -81,6 +92,22 @@ static bool gw_discovery(gateway::Node &node, unsigned k) {
   cJSON_AddNumberToObject(j, "expire_after", k < 2 ? 10800 : 172800);
   cJSON_AddNumberToObject(j, "qos", 1);
   if (k >= 2) cJSON_AddStringToObject(j, "entity_category", "diagnostic");
+  cJSON_AddItemToObject(j, "device", gw_device(node.identity));
+  return gw_json(topic.c_str(), j, true) >= 0;
+}
+static bool gw_signal_discovery(gateway::Node &node, bool timestamp) {
+  const char *kind = timestamp ? "last_seen" : "reception";
+  String unique = String("nanoc6_") + node.identity.ieee + "_" + kind;
+  String topic = String("homeassistant/sensor/nanoc6/") + unique + "/config";
+  String state = String(ROOT_TOPIC) + "/" + node.identity.ieee + "/" + kind + "/state";
+  cJSON *j = cJSON_CreateObject();
+  cJSON_AddStringToObject(j, "name", timestamp ? "最終受信" : "受信状況");
+  cJSON_AddStringToObject(j, "unique_id", unique.c_str());
+  cJSON_AddStringToObject(j, "state_topic", state.c_str());
+  cJSON_AddStringToObject(j, "availability_topic", GW_AVAIL);
+  cJSON_AddStringToObject(j, "entity_category", "diagnostic");
+  if (timestamp) cJSON_AddStringToObject(j, "device_class", "timestamp");
+  cJSON_AddNumberToObject(j, "qos", 1);
   cJSON_AddItemToObject(j, "device", gw_device(node.identity));
   return gw_json(topic.c_str(), j, true) >= 0;
 }
@@ -162,6 +189,26 @@ static void gw_load() {
     }
   }
   registry.end();
+  nvs_handle_t number_handle;
+  esp_err_t number_open = nvs_open("gwnumbers", NVS_READONLY, &number_handle);
+  if (number_open == ESP_ERR_NVS_NOT_FOUND) {
+    number_storage_healthy = true;  // First use, before any assignments.
+  } else if (number_open != ESP_OK) {
+    number_storage_healthy = false;
+    gw_log("number_registry_unavailable");
+  } else {
+    size_t size = 0;
+    esp_err_t result = nvs_get_blob(number_handle, "map", nullptr, &size);
+    if (result != ESP_ERR_NVS_NOT_FOUND &&
+        (result != ESP_OK || size != sizeof(sensor_numbers) ||
+         nvs_get_blob(number_handle, "map", &sensor_numbers, &size) != ESP_OK ||
+         size != sizeof(sensor_numbers) || !sensor_numbers.valid())) {
+      sensor_numbers = gateway::SensorNumbers{};
+      number_storage_healthy = false;
+      gw_log("number_registry_invalid");
+    }
+    nvs_close(number_handle);
+  }
   cJSON *seed = nullptr;
   cJSON_ArrayForEach(seed, cJSON_GetObjectItemCaseSensitive(j, "devices")) {
     if (auto *node = fleet.find(json_string(seed, "ieee"))) {
@@ -219,6 +266,41 @@ static void gw_worker(void *) {
   bool button_discovered = false;
   for (;;) {
     uint32_t now = millis();
+    NumberRequest request;
+    if (xQueueReceive(number_requests, &request, 0) == pdTRUE) {
+      if (request.query) {
+        unsigned number = sensor_numbers.number_for(request.ieee);
+        if (xSemaphoreTake(usb_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          Serial.printf("{\"v\":1,\"event\":\"number_value\",\"ieee\":\"%s\",\"number\":%u,\"healthy\":%s}\n",
+                        request.ieee, number, number_storage_healthy ? "true" : "false");
+          xSemaphoreGive(usb_mutex);
+        }
+      } else {
+        gateway::Node *target = nullptr;
+        for (auto &node : fleet.nodes) if (!strcmp(node.identity.ieee, request.ieee)) { target = &node; break; }
+        gateway::SensorNumbers candidate = sensor_numbers;
+        bool accepted = number_storage_healthy && target && gateway::known(target->identity)
+                        && candidate.assign(request.number, request.ieee);
+        if (accepted && memcmp(&candidate, &sensor_numbers, sizeof(candidate))) {
+          Preferences store;
+          accepted = store.begin("gwnumbers", false);
+          if (accepted) {
+            accepted = store.putBytes("map", &candidate, sizeof(candidate)) == sizeof(candidate);
+            gateway::SensorNumbers readback;
+            accepted = accepted && store.getBytes("map", &readback, sizeof(readback)) == sizeof(readback)
+                       && readback.valid() && !memcmp(&candidate, &readback, sizeof(candidate));
+            store.end();
+            if (!accepted) number_storage_healthy = false;
+          }
+          if (accepted) { sensor_numbers = candidate; target->discovery = 0; }
+        }
+        if (xSemaphoreTake(usb_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+          Serial.printf("{\"v\":1,\"event\":\"number_result\",\"ieee\":\"%s\",\"number\":%u,\"accepted\":%s}\n",
+                        request.ieee, request.number, accepted ? "true" : "false");
+          xSemaphoreGive(usb_mutex);
+        }
+      }
+    }
     Event event;
     for (unsigned count = 0; count < 32 && xQueueReceive(gateway_events, &event, 0) == pdTRUE; ++count) {
       if (event.endpoint != 1 && event.kind != ANNOUNCE) continue;
@@ -226,6 +308,16 @@ static void gw_worker(void *) {
       auto *node = fleet.find(ieee); if (!node) continue;
       node->address = event.address;
       node->seen = true; node->last_seen_ms = event.uptime;
+      if ((event.kind == ANNOUNCE || event.kind == ATTRIBUTE) && event.status == 0) {
+        time_t clock = time(nullptr);
+        uint32_t age = static_cast<uint32_t>(now-event.uptime);
+        if (clock > 1735689600 && age < gateway::MAX_SEND_AGE_MS) {
+          node->signal_seen = true; node->signal_pending = true;
+          node->last_signal_ms = event.uptime;
+          node->last_signal_epoch = static_cast<uint32_t>(clock-age/1000);
+          node->status_sent = false;
+        }
+      }
       if (event.kind == ANNOUNCE) {
         node->refresh = true; node->power.requested = true;
         node->power.configured = node->power.unsupported = false; node->power.config_attempts = 0;
@@ -279,7 +371,7 @@ static void gw_worker(void *) {
     if (WiFi.status() == WL_CONNECTED && time(nullptr) > 1735689600 && !mqtt
         && static_cast<uint32_t>(now-last_connect) > 5000) { gw_connect(); last_connect = now; }
     if (mqtt_connected && discovery_reset.exchange(false)) {
-      for (auto &node : fleet.nodes) { node.discovery = 0; node.refresh = true; node.power.requested = true; }
+      for (auto &node : fleet.nodes) { node.discovery = 0; node.refresh = true; node.power.requested = true; node.status_sent = false; }
       button_discovered = false;
       esp_mqtt_client_subscribe(mqtt, JOIN_TOPIC, 1);
       esp_mqtt_client_subscribe(mqtt, "homeassistant/status", 1);
@@ -296,6 +388,27 @@ static void gw_worker(void *) {
       if (!button_discovered) button_discovered = gw_button_discovery();
       for (auto &node : fleet.nodes) {
         if (!gateway::known(node.identity)) continue;
+        if (!(node.discovery & (1U << gateway::METRICS)) && gw_signal_discovery(node, true))
+          node.discovery |= (1U << gateway::METRICS);
+        if (!(node.discovery & (1U << (gateway::METRICS+1))) && gw_signal_discovery(node, false))
+          node.discovery |= (1U << (gateway::METRICS+1));
+        bool status_due = !node.status_sent || static_cast<uint32_t>(now-node.last_status_ms) >= 60000;
+        if (node.signal_pending || (node.signal_seen && status_due)) {
+          time_t epoch = node.last_signal_epoch;
+          struct tm utc = {};
+          char timestamp[24];
+          if (gmtime_r(&epoch, &utc) && strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc)) {
+            String topic = String(ROOT_TOPIC) + "/" + node.identity.ieee + "/last_seen/state";
+            if (gw_publish(topic.c_str(), timestamp, true) >= 0) node.signal_pending = false;
+          }
+        }
+        if (status_due) {
+          time_t clock = time(nullptr);
+          const uint32_t safe_clock = clock > 1735689600 ? static_cast<uint32_t>(clock) : 0;
+          const char *status = gateway::reception_status(node.signal_seen, safe_clock, node.last_signal_epoch);
+          String topic = String(ROOT_TOPIC) + "/" + node.identity.ieee + "/reception/state";
+          if (gw_publish(topic.c_str(), status, true) >= 0) { node.status_sent = true; node.last_status_ms = now; }
+        }
         if (node.refresh && node.address < 0xfff8 && uxQueueSpacesAvailable(jobs) >= 4) {
           // A newly started HA must receive NEW reads, rather than an old cached state.
           schedule(READ_ATTRIBUTES, node.address, 1, 0x0402);
@@ -353,7 +466,8 @@ static void gw_worker(void *) {
 }
 static void gateway_start() {
   gateway_events = xQueueCreate(128, sizeof(Event)); gateway_acks = xQueueCreate(256, sizeof(int));
-  if (!gateway_events || !gateway_acks) abort();
+  number_requests = xQueueCreate(4, sizeof(NumberRequest));
+  if (!gateway_events || !gateway_acks || !number_requests) abort();
   if (xTaskCreate(gw_worker, "gateway", 12288, nullptr, 2, nullptr) != pdPASS) abort();
 }
 static void gateway_accept(const Event &event) {
@@ -375,6 +489,19 @@ static bool gateway_command(const char *command) {
   if (command[0] != '{') return false;
   cJSON *j = cJSON_Parse(command);
   if (!j) { gw_log("invalid_config"); return true; }
+  if (!strcmp(json_string(j, "command"), "assign-number") || !strcmp(json_string(j, "command"), "get-number")) {
+    const char *ieee = json_string(j, "ieee");
+    cJSON *number = cJSON_GetObjectItemCaseSensitive(j, "number");
+    bool query = !strcmp(json_string(j, "command"), "get-number");
+    if (gateway::SensorNumbers::valid_ieee(ieee) && (query || (cJSON_IsNumber(number)
+        && number->valuedouble == number->valueint && number->valueint >= 1 && number->valueint <= 10))) {
+      NumberRequest request = {};
+      memcpy(request.ieee, ieee, 17); request.query = query; request.number = query ? 0 : number->valueint;
+      if (xQueueSend(number_requests, &request, 0) != pdTRUE) gw_log("number_queue_full");
+    } else gw_log("invalid_number_request");
+    cJSON_Delete(j);
+    return true;
+  }
   bool valid = !strcmp(json_string(j, "command"), "configure")
       && strlen(json_string(j, "wifi_ssid")) > 0 && strlen(json_string(j, "wifi_ssid")) <= 32
       && strlen(json_string(j, "wifi_password")) <= 63

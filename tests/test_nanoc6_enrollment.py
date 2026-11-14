@@ -302,6 +302,14 @@ class EnrollmentTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             observer.accept('smarthome/nanoc6/gateway/telemetry', json.dumps(telemetry([], uptime=100, drops=3)).encode())
 
+    def test_existing_and_new_gateway_versions_are_accepted(self):
+        for version in ('nanoc6-wifi-gateway-0.2', 'nanoc6-wifi-gateway-0.3'):
+            observer = ENROLL.EnrollmentObservation()
+            message = telemetry([])
+            message['firmware'] = version
+            observer.accept('smarthome/nanoc6/gateway/telemetry', json.dumps(message).encode())
+            self.assertEqual(observer.telemetry['firmware'], version)
+
     def test_closed_admission_needs_a_new_matching_usb_ack(self):
         master, slave = os.openpty()
         serial = ENROLL.Serial(os.ttyname(slave))

@@ -236,9 +236,12 @@ if [[ "$MQTT_ONLY" == true ]]; then
         scripts/ops/apply-smarthome-mqtt-firewall.sh scripts/ops/install-smarthome-mqtt.sh \
         scripts/ops/smarthome_mqtt.py scripts/ops/provision-nanoc6-gateway.py \
         scripts/ops/enroll-nanoc6-sensors.py \
+        scripts/ops/assign-nanoc6-numbers.py \
+        scripts/ops/check-nanoc6-numbers.py \
         scripts/ops/update-nanoc6-gateway.sh scripts/ops/verify-nanoc6-battery.py scripts/ops/check-smarthome-mqtt-ha.py \
         scripts/ops/build-nanoc6-gateway.sh docs/NanoC6-MQTT連携.md \
         firmware/nanoc6/wifi_gateway/wifi_gateway.ino firmware/nanoc6/wifi_gateway/gateway_model.h \
+        firmware/nanoc6/wifi_gateway/sensor_numbers.h \
         firmware/nanoc6/wifi_gateway/gateway_network.h firmware/nanoc6/wifi_gateway/partitions.csv \
         firmware/nanoc6/wifi_gateway/build-reference.json \
         systemd/smarthome-mqtt.service systemd/smarthome-mqtt-firewall.service; do

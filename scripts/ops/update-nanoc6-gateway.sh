@@ -6,7 +6,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 [[ $EUID == 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 CACHE=/home/ubuntu/.cache/manage-media-smarthome
-BUILD=$CACHE/build/nanoc6-wifi-gateway
+BUILD=${NANOC6_BUILD_DIR:-$CACHE/build/nanoc6-wifi-gateway}
 TOOL=$CACHE/arduino-data/packages/esp32/tools/esptool_py/5.1.0/esptool
 OTA=$CACHE/arduino-data/packages/esp32/hardware/esp32/3.3.6/tools/partitions/boot_app0.bin
 PORT=/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_9C:CC:01:33:A1:50-if00

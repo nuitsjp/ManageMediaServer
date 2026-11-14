@@ -20,6 +20,7 @@ from smarthome_mqtt import Observation, connect, private_json
 Serial = importlib.import_module('provision-nanoc6-gateway').Serial
 ha_registered = importlib.import_module('check-smarthome-mqtt-ha').registered
 METRICS = ('temperature', 'humidity', 'battery', 'voltage')
+SUPPORTED_FIRMWARE = ('nanoc6-wifi-gateway-0.2', 'nanoc6-wifi-gateway-0.3')
 METRIC_LABELS = dict(zip(METRICS, ('温度', '湿度', '電池残量', '電圧')))
 MAX_AGES = dict(temperature=10800, humidity=10800, battery=172800, voltage=172800)
 DROP_KEYS = ('event_drops', 'job_drops', 'gateway_drops', 'device_overflow')
@@ -202,8 +203,8 @@ class EnrollmentObservation(Observation):
     def _accept(self, topic, payload, retained=False):
         if topic == 'smarthome/nanoc6/gateway/telemetry':
             data = json.loads(payload)
-            if retained or data.get('firmware') != 'nanoc6-wifi-gateway-0.2':
-                raise RuntimeError('登録には確認済みのNano C6 v0.2が必要です。')
+            if retained or data.get('firmware') not in SUPPORTED_FIRMWARE:
+                raise RuntimeError('登録には対応するNano C6ファームウェアが必要です。')
             if any(type(data.get(key)) is not int or data[key] < 0 for key in DROP_KEYS):
                 raise ValueError('ゲートウェイ診断情報が不正です。')
             if self.telemetry and data.get('uptime_ms', 0) < self.telemetry.get('uptime_ms', 0):
@@ -604,7 +605,7 @@ def run(args):
                 collector.check()
             with observation.lock:
                 status = observation.gateway_status or {}
-                if (observation.telemetry and observation.online and status.get('firmware') == 'nanoc6-wifi-gateway-0.2'
+                if (observation.telemetry and observation.online and status.get('firmware') in SUPPORTED_FIRMWARE
                         and all(status.get(k) for k in ('wifi', 'mqtt', 'clock'))):
                     break
             if time.monotonic()-last_status >= 5:
