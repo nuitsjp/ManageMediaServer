@@ -20,6 +20,8 @@ from smarthome_mqtt import Observation, connect, private_json
 Serial = importlib.import_module('provision-nanoc6-gateway').Serial
 ha_registered = importlib.import_module('check-smarthome-mqtt-ha').registered
 METRICS = ('temperature', 'humidity', 'battery', 'voltage')
+METRIC_LABELS = dict(zip(METRICS, ('温度', '湿度', '電池残量', '電圧')))
+MAX_AGES = dict(temperature=10800, humidity=10800, battery=172800, voltage=172800)
 DROP_KEYS = ('event_drops', 'job_drops', 'gateway_drops', 'device_overflow')
 FINGERPRINTS = {('Zbeacon', 'TH01'), ('_TZ3000_itnrsufe', 'TS0201'),
                 ('_TZ3000_bguser20', 'TS0201'), ('_TZ3000_xr3htd96', 'TS0201')}
@@ -32,6 +34,12 @@ def valid_ieee(value):
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def live_values(values, since):
+    now = time.time()
+    return {kind: value for kind, value in values.items()
+            if value['received_at'] >= max(since-2, now-MAX_AGES[kind])}
 
 
 def atomic_text(path, text):
@@ -265,8 +273,7 @@ class EnrollmentObservation(Observation):
             if descriptor and (descriptor['profile'] != 260 or not {1, 1026, 1029}.issubset(descriptor['in_clusters'])):
                 raise ValueError('想定した温湿度・電源クラスターがありません。')
             report = super().report()
-            values = {kind: value for kind, value in report['measurements'].get(ieee, {}).items()
-                      if value['received_at'] >= since-2}
+            values = live_values(report['measurements'].get(ieee, {}), since)
             configuration = (self.telemetry or {}).get('power_configuration', {}).get(ieee, {})
             if not all(kind in values and (ieee, kind) in self.discovery for kind in METRICS):
                 return None
@@ -285,6 +292,31 @@ class EnrollmentObservation(Observation):
                     evidence['ha_device_url'] = 'http://192.168.0.23:8123/config/devices/device/' + device['id']
                     break
         return evidence
+
+    def progress(self, ieee, since, storage):
+        """Explain missing evidence without treating HA registration as live delivery."""
+        with self.lock:
+            identity = dict(self.identities.get(ieee, {}))
+            values = self.report()['measurements'].get(ieee, {})
+            received = list(live_values(values, since))
+            discovery = [kind for kind in METRICS if (ieee, kind) in self.discovery]
+            configuration = dict((self.telemetry or {}).get('power_configuration', {}).get(ieee, {}))
+            address = self.addresses.get(ieee)
+        # Placeholder keys select registry entries only; they are never saved as measurements.
+        entities = ha_registered(storage, {'measurements': {ieee: {kind: None for kind in METRICS}}}, METRICS)
+        missing = [METRIC_LABELS[kind]+'の新規受信' for kind in METRICS if kind not in received]
+        if not identity.get('manufacturer') or not identity.get('model'):
+            missing.append('機種情報')
+        if len(discovery) != len(METRICS):
+            missing.append('MQTT Discovery')
+        if not configuration.get('configured') and not configuration.get('unsupported'):
+            missing.append('電池の定期報告設定')
+        if not entities:
+            missing.append('Home Assistantの4項目登録')
+        return dict(checked_at=utc_now(), missing=missing, identity=identity,
+                    received=received, measurements=values, discovery=discovery,
+                    power_configuration=configuration, homeassistant_registered=bool(entities),
+                    live_usb_address=dict(short=address[0], observed_at=address[1]) if address else None)
 
 
 class Collector:
@@ -364,7 +396,8 @@ class Enroller:
         unassigned = self.session.data['unassigned']
         if not unassigned:
             return False
-        print('未割当の機器があります。機器を識別できた場合だけ、対応するIEEEを入力してください。')
+        print(f"「{entry['location']}」に置く機器を選びます。以下はZigbee参加済みで、設置場所が未割当の機器です。")
+        print('今回ペアリングした実機との対応が分かる場合だけ、そのIEEEをコピーして入力してください。分からなければqで中断できます。')
         for ieee in unassigned:
             print('  ' + ieee)
         chosen = self.prompt('識別済みIEEE / q=中断: ').strip().lower()
@@ -380,6 +413,7 @@ class Enroller:
         self.collector.check()
         self.reconcile()
         if self.choose_unassigned(entry):
+            print('設置場所との対応を保存しました。この機器の新しい受信を確認します。', flush=True)
             return time.time()
         answer = self.prompt('この1台だけを手元に用意。Enter=180秒の参加受付を開始 / q=中断: ').strip().lower()
         if answer == 'q':
@@ -416,25 +450,47 @@ class Enroller:
 
     def verify(self, entry, since):
         print(f"IEEE {entry['ieee']} を確認中: 機種・温度・湿度・電池残量・電圧・HA登録", flush=True)
-        if entry['attempts'] > 1:
-            self.collector.serial.send('refresh-battery')
-        end, last_interview = time.monotonic()+self.verify_seconds, None
+        print('最大10分待ちます。進捗は10秒ごとに表示します。Ctrl+Cで保存して中断できます。', flush=True)
+        self.collector.serial.send('refresh-battery')  # Firmware bounds rate and retries, including sleeping devices.
+        # The collector runs during prompts too. A live non-retained value received
+        # before the operator typed this IEEE must not require another battery report.
+        reception_since = self.observation.started
+        started = time.monotonic()
+        end, last_interview, last_progress = started+self.verify_seconds, None, None
         while time.monotonic() < end:
             self.collector.check()
             unexpected = self.observation.candidates(since, set(self.session.data['baseline']) | self.session.claimed())
             if unexpected:
                 self.session.quarantine(unexpected)
                 raise ValueError('別の新規機器を検出しました。参加受付を閉じたまま確認を中断します。')
-            evidence = self.observation.evidence(entry['ieee'], since, self.storage)
+            evidence = self.observation.evidence(entry['ieee'], reception_since, self.storage)
             if evidence:
+                entry.pop('waiting', None)
                 return evidence
             with self.observation.lock:
                 address = self.observation.addresses.get(entry['ieee'])
-            if address and address[1] >= since and (last_interview is None or time.monotonic()-last_interview >= 300):
+            # A live USB mapping observed while the user was typing is usable too.
+            # Never reuse a NWK address from a previous process or a saved session.
+            live_address = address and address[1] >= max(self.observation.started-2, time.time()-300)
+            if live_address and (last_interview is None or time.monotonic()-last_interview >= 300):
                 self.collector.serial.send(f'interview {address[0]:04x}')
                 last_interview = time.monotonic()
+                print('USBで確認できた通信先へ、機種情報と測定値の再読出しを要求しました。', flush=True)
+            if last_progress is None or time.monotonic()-last_progress >= 10:
+                progress = self.observation.progress(entry['ieee'], reception_since, self.storage)
+                elapsed = int(time.monotonic()-started)
+                progress.update(elapsed_seconds=elapsed, remaining_seconds=max(0, int(end-time.monotonic())))
+                entry['waiting'] = progress
+                self.session.save()
+                received = '・'.join(METRIC_LABELS[kind] for kind in progress['received']) or 'なし'
+                pending = '、'.join(progress['missing']) or '最終照合'
+                print(f"確認中 {elapsed}秒 / 残り約{progress['remaining_seconds']}秒：今回受信済み={received}。待機項目={pending}", flush=True)
+                if not live_address:
+                    print('この実行中のUSB受信で通信先を確認できていません。受信を待っています。', flush=True)
+                last_progress = time.monotonic()
             time.sleep(0.25)
-        raise TimeoutError('受信確認が時間内に揃いませんでした。IEEEとの対応は保存済みです。')
+        pending = '、'.join(entry.get('waiting', {}).get('missing', []))
+        raise TimeoutError('受信確認が時間内に揃いませんでした。未確認: '+pending+'。IEEEとの対応は保存済みです。')
 
     def run(self):
         self.close()
@@ -455,6 +511,7 @@ class Enroller:
                         self.session.location(entry, answer)
                     except ValueError as error:
                         print(error)
+                print('登録先: ' + entry['location'], flush=True)
                 while entry['state'] != 'verified':
                     entry['attempts'] += 1
                     self.session.save()

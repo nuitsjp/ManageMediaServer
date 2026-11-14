@@ -217,6 +217,74 @@ class EnrollmentTests(unittest.TestCase):
         registry.write_text(json.dumps(data))
         self.assertIsNone(observer.evidence(ADDED[0], now, self.storage))
 
+    def test_waiting_progress_separates_live_reception_discovery_and_ha_registration(self):
+        observer = self.observer()
+        now = time.time()
+        sensor(observer, ADDED[0], now)
+        observer.accept('smarthome/nanoc6/gateway/telemetry', json.dumps(telemetry(ADDED)).encode())
+        observer.measurements[ADDED[0]].pop('battery')
+        progress = observer.progress(ADDED[0], now, self.storage)
+        self.assertEqual(progress['missing'], ['電池残量の新規受信'])
+        self.assertTrue(progress['homeassistant_registered'])
+        self.assertNotIn('battery', progress['received'])
+        self.assertNotIn('battery', progress['measurements'])
+
+    def test_retry_reads_using_usb_address_seen_before_the_operator_answered(self):
+        observer = self.observer()
+        observer.started = time.time()-120
+        sensor(observer, ADDED[0], observer.started-10)
+        observer.serial_event(dict(event='attribute', ieee=ADDED[0], short=0x1234, status=0), time.time()-30)
+        collector = FakeCollector(observer)
+        session = ENROLL.Session(self.session_path, 1, [EXISTING])
+        entry = session.data['entries'][0]
+        session.claim(entry, ADDED[0])
+        enroller = ENROLL.Enroller(session, collector, self.storage, verify_seconds=0.01)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(TimeoutError):
+            enroller.verify(entry, time.time())
+        self.assertIn('interview 1234', collector.serial.commands)
+        self.assertIn('待機項目=', output.getvalue())
+        self.assertIn('電池残量の新規受信', output.getvalue())
+        saved = json.loads(self.session_path.read_text())['entries'][0]
+        self.assertIn('waiting', saved)
+        self.assertEqual(saved['waiting']['received'], [])
+
+    def test_live_values_received_before_ieee_input_do_not_require_a_second_battery_report(self):
+        observer = self.observer()
+        observer.started = time.time()-120
+        sensor(observer, ADDED[0], time.time()-30)
+        observer.accept('smarthome/nanoc6/gateway/telemetry', json.dumps(telemetry(ADDED)).encode())
+        collector = FakeCollector(observer)
+        session = ENROLL.Session(self.session_path, 1, [EXISTING])
+        entry = session.data['entries'][0]
+        session.claim(entry, ADDED[0])
+        enroller = ENROLL.Enroller(session, collector, self.storage, verify_seconds=0.01)
+        with contextlib.redirect_stdout(io.StringIO()):
+            evidence = enroller.verify(entry, time.time())
+        self.assertEqual(set(evidence['measurements']), set(ENROLL.METRICS))
+        self.assertLess(evidence['measurements']['battery']['received_at'], time.time()-20)
+
+    def test_values_from_a_long_prompt_do_not_outlive_homeassistant_expiry(self):
+        observer = self.observer()
+        observer.started = time.time()-20000
+        sensor(observer, ADDED[0], time.time()-11000)
+        observer.accept('smarthome/nanoc6/gateway/telemetry', json.dumps(telemetry(ADDED)).encode())
+        self.assertIsNone(observer.evidence(ADDED[0], observer.started, self.storage))
+        progress = observer.progress(ADDED[0], observer.started, self.storage)
+        self.assertEqual(progress['received'], ['battery', 'voltage'])
+
+    def test_retry_never_uses_a_usb_address_from_before_this_process(self):
+        observer = self.observer()
+        observer.serial_event(dict(event='attribute', ieee=ADDED[0], short=0x1234, status=0), observer.started-10)
+        collector = FakeCollector(observer)
+        session = ENROLL.Session(self.session_path, 1, [EXISTING])
+        entry = session.data['entries'][0]
+        session.claim(entry, ADDED[0])
+        enroller = ENROLL.Enroller(session, collector, self.storage, verify_seconds=0.01)
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(TimeoutError):
+            enroller.verify(entry, time.time())
+        self.assertNotIn('interview 1234', collector.serial.commands)
+
     def test_unknown_fingerprint_and_new_drops_block_verification(self):
         observer = self.observer()
         sensor(observer, ADDED[0])
