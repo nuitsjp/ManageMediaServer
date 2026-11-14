@@ -56,6 +56,7 @@ finish() {
 trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+echo 'Identifying the Nano C6 and backing up its complete 4 MiB flash...'
 "$TOOL" --chip esp32c6 --port "$PORT" --after no-reset flash-id > "$BACKUP/chip.txt" 2>&1
 grep -q 'Detected flash size: 4MB' "$BACKUP/chip.txt" || fail 'Expected ESP32-C6 with 4MB flash.'
 "$TOOL" --chip esp32c6 --port "$PORT" --baud 460800 --after no-reset read-flash 0 0x400000 "$BACKUP/original-flash.bin" > "$BACKUP/read.txt" 2>&1
@@ -70,9 +71,11 @@ if len(data)!=4194304 or hashlib.sha256(data[0x8000:0x8c00]).hexdigest() not in 
 PY
 STAGE=write
 WRITING=true
+echo 'Writing the reviewed application; NVS and Zigbee storage remain at their existing offsets...'
 "$TOOL" --chip esp32c6 --port "$PORT" --baud 460800 --after no-reset write-flash \
     0x8000 "$BUILD/wifi_gateway.ino.partitions.bin" 0xe000 "$OTA" 0x10000 "$BUILD/wifi_gateway.ino.bin" > "$BACKUP/write.txt" 2>&1
 STAGE=readback
+echo 'Reading back the full flash to verify the image and preserved storage...'
 "$TOOL" --chip esp32c6 --port "$PORT" --baud 460800 --after hard-reset read-flash 0 0x400000 "$BACKUP/updated-flash.bin" > "$BACKUP/readback.txt" 2>&1
 python3 - "$BUILD" "$BACKUP" <<'PY'
 from pathlib import Path

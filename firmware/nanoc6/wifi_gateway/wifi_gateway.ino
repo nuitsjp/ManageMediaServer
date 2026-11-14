@@ -6,6 +6,7 @@
 #include <zdo/esp_zigbee_zdo_command.h>
 #include <zcl/esp_zigbee_zcl_command.h>
 #include <nvs_flash.h>
+#include "gateway_model.h"
 
 #ifndef ZIGBEE_MODE_ZCZR
 #error Select Zigbee ZCZR coordinator/router mode
@@ -24,7 +25,7 @@ struct Device {
   uint16_t address;
   uint8_t ieee[8];
 };
-enum EventKind : uint8_t { READY, ANNOUNCE, DESCRIPTOR, ATTRIBUTE, CUSTOM, RESULT };
+enum EventKind : uint8_t { READY, ANNOUNCE, DESCRIPTOR, ATTRIBUTE, CUSTOM, RESULT, POWER_CONFIG_RESULT };
 struct Event {
   EventKind kind;
   uint32_t uptime;
@@ -35,12 +36,13 @@ struct Event {
   uint16_t clusters[MAX_CLUSTERS];
   bool truncated, report;
 };
-enum JobKind : uint8_t { ACTIVE_ENDPOINTS, SIMPLE_DESCRIPTOR, READ_ATTRIBUTES, BIND_CLUSTER };
+enum JobKind : uint8_t { ACTIVE_ENDPOINTS, SIMPLE_DESCRIPTOR, READ_ATTRIBUTES, BIND_CLUSTER, CONFIGURE_POWER };
 struct Job { JobKind kind; uint16_t address; uint8_t endpoint; uint16_t cluster; };
 
 static Device devices[MAX_DEVICES] = {};
 static QueueHandle_t events, jobs;
 static SemaphoreHandle_t usb_mutex;
+static portMUX_TYPE jobs_mux = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool network_ready = false;
 static volatile uint32_t event_drops = 0, job_drops = 0;
 
@@ -50,7 +52,18 @@ static void post(Event &event) {
 }
 static void schedule(JobKind kind, uint16_t address, uint8_t endpoint = 0, uint16_t cluster = 0) {
   Job job = {kind, address, endpoint, cluster};
+  portENTER_CRITICAL(&jobs_mux);
   if (xQueueSend(jobs, &job, 0) != pdTRUE) ++job_drops;
+  portEXIT_CRITICAL(&jobs_mux);
+}
+static bool schedule_power(uint16_t address, bool configure) {
+  Job batch[] = {{READ_ATTRIBUTES, address, 1, 1}, {BIND_CLUSTER, address, 1, 1}, {CONFIGURE_POWER, address, 1, 1}};
+  unsigned count = configure ? 3 : 1;
+  portENTER_CRITICAL(&jobs_mux);
+  bool available = uxQueueSpacesAvailable(jobs) >= count;
+  if (available) for (unsigned i=0; i<count; ++i) xQueueSend(jobs, &batch[i], 0);
+  portEXIT_CRITICAL(&jobs_mux);
+  return available; // Backpressure defers the complete batch; it never drops part of it.
 }
 static Device *remember(uint16_t address, const uint8_t *ieee) {
   Device *empty = nullptr;
@@ -106,6 +119,17 @@ static esp_err_t action_handler(esp_zb_core_action_callback_id_t id, const void 
                         message->info.cluster, item->attribute, item->status, false);
       }
     }
+  } else if (id == ESP_ZB_CORE_CMD_REPORT_CONFIG_RESP_CB_ID) {
+    const auto *message = static_cast<const esp_zb_zcl_cmd_config_report_resp_message_t *>(data);
+    if (message->info.cluster != 1) return ESP_OK;
+    Event event = {};
+    event.kind = POWER_CONFIG_RESULT;
+    address_event(event, message->info.src_address.u.short_addr, message->info.src_endpoint);
+    event.cluster = 1; event.attribute = 0xffff; event.status = message->info.status;
+    for (auto *item = message->variables; item; item = item->next) if (item->status != ESP_ZB_ZCL_STATUS_SUCCESS) {
+      event.status = item->status; event.attribute = item->attribute_id; break;
+    }
+    post(event);
   } else if (id == ESP_ZB_CORE_CMD_CUSTOM_CLUSTER_REQ_CB_ID) {
     const auto *message = static_cast<const esp_zb_zcl_custom_cluster_command_message_t *>(data);
     Event event = {};
@@ -240,6 +264,24 @@ static void run_job(const Job &job) {
     request.attr_field = job.cluster == 0 ? basic : job.cluster == 1 ? power : value;
     request.attr_number = job.cluster == 0 ? 7 : job.cluster == 1 ? 2 : 1;
     esp_zb_zcl_read_attr_cmd_req(&request);
+  } else if (job.kind == CONFIGURE_POWER) {
+    uint8_t voltage_change = 1, percentage_change = 2; // 0.1V / 1 percentage point.
+    esp_zb_zcl_config_report_record_t records[2] = {};
+    for (unsigned i=0; i<2; ++i) {
+      records[i].direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
+      records[i].attributeID = 0x20 + i;
+      records[i].attrType = 0x20;
+      records[i].min_interval = gateway::POWER_REPORT_MIN_S;
+      records[i].max_interval = gateway::POWER_REPORT_MAX_S;
+      records[i].reportable_change = i ? &percentage_change : &voltage_change;
+    }
+    esp_zb_zcl_config_report_cmd_t request = {};
+    request.zcl_basic_cmd.dst_addr_u.addr_short = job.address;
+    request.zcl_basic_cmd.dst_endpoint = job.endpoint;
+    request.zcl_basic_cmd.src_endpoint = LOCAL_EP;
+    request.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+    request.clusterID = 1; request.record_number = 2; request.record_field = records;
+    esp_zb_zcl_config_report_cmd_req(&request);
   } else if (job.kind == BIND_CLUSTER) {
     esp_zb_zdo_bind_req_param_t request = {};
     if (esp_zb_ieee_address_by_short(job.address, request.src_address) != ESP_OK) return;
@@ -254,12 +296,12 @@ static void run_job(const Job &job) {
   }
 }
 static void print_event(const Event &event) {
-  static const char *names[] = {"ready", "announce", "descriptor", "attribute", "custom", "bind_result"};
+  static const char *names[] = {"ready", "announce", "descriptor", "attribute", "custom", "bind_result", "power_config_result"};
   char ieee[17];
   for (int i = 0; i < 8; ++i) snprintf(ieee + i * 2, 3, "%02x", event.ieee[7-i]);
   Serial.printf("{\"v\":1,\"event\":\"%s\",\"uptime_ms\":%lu", names[event.kind], static_cast<unsigned long>(event.uptime));
   if (event.kind == READY) {
-    Serial.printf(",\"firmware\":\"nanoc6-wifi-gateway-0.1\",\"channel\":%u,\"max_children\":%u,\"device_slots\":%u,\"join_open\":false",
+    Serial.printf(",\"firmware\":\"nanoc6-wifi-gateway-0.2\",\"channel\":%u,\"max_children\":%u,\"device_slots\":%u,\"join_open\":false",
                   CHANNEL, MAX_CHILDREN, static_cast<unsigned>(MAX_DEVICES));
   } else {
     Serial.printf(",\"ieee\":\"%s\",\"short\":%u,\"endpoint\":%u,\"status\":%u", ieee, event.address, event.endpoint, event.status);
@@ -274,7 +316,8 @@ static void print_event(const Event &event) {
                     event.cluster, event.attribute, event.type, event.command, event.report ? "true" : "false", event.truncated ? "true" : "false");
       for (uint8_t i=0; i<event.size; ++i) Serial.printf("%02x", event.raw[i]);
       Serial.print('"');
-    } else if (event.kind == RESULT) Serial.printf(",\"cluster\":%u", event.cluster);
+    } else if (event.kind == RESULT || event.kind == POWER_CONFIG_RESULT)
+      Serial.printf(",\"cluster\":%u,\"attribute\":%u", event.cluster, event.attribute);
   }
   Serial.printf(",\"event_drops\":%lu,\"job_drops\":%lu}\n", static_cast<unsigned long>(event_drops), static_cast<unsigned long>(job_drops));
 }

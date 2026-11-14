@@ -27,9 +27,37 @@ serial_spec.loader.exec_module(PROVISION)
 ha_spec = importlib.util.spec_from_file_location('ha_check', ROOT/'scripts/ops/check-smarthome-mqtt-ha.py')
 HA = importlib.util.module_from_spec(ha_spec)
 ha_spec.loader.exec_module(HA)
+power_spec = importlib.util.spec_from_file_location('battery_check', ROOT/'scripts/ops/verify-nanoc6-battery.py')
+POWER = importlib.util.module_from_spec(power_spec)
+power_spec.loader.exec_module(POWER)
 
 
 class ModelTests(unittest.TestCase):
+    def test_battery_verification_requires_fresh_values_and_new_firmware_acknowledgement(self):
+        ieee='a4c1380000000001'; now=time.time()
+        observer=POWER.PowerObservation([ieee],started=now-300)
+        for kind,value in (('temperature',27.2),('humidity',43.67),('battery',100),('voltage',3.0)):
+            state=f'smarthome/nanoc6/{ieee}/{kind}/state'
+            config=dict(unique_id=f'nanoc6_{ieee}_{kind}',state_topic=state,device=dict(identifiers=[f'nanoc6_{ieee}']))
+            observer.accept(f'homeassistant/sensor/nanoc6/{kind}/config',json.dumps(config).encode(),True)
+            observer.accept(state,json.dumps(dict(value=value,received_at=now-120)).encode())
+        telemetry=dict(firmware='nanoc6-wifi-gateway-0.1',uptime_ms=60000,event_drops=0,job_drops=0,
+                       gateway_drops=0,device_overflow=0,power_configuration={ieee:dict(configured=True)})
+        observer.accept('smarthome/nanoc6/gateway/telemetry',json.dumps(telemetry).encode())
+        self.assertFalse(observer.report()['firmware_verified'])
+        telemetry['firmware']='nanoc6-wifi-gateway-0.2'
+        observer.accept('smarthome/nanoc6/gateway/telemetry',json.dumps(telemetry).encode())
+        self.assertEqual(observer.report()['complete_devices'],0) # Values from before this boot cannot prove recovery.
+        for kind,value in (('temperature',27.2),('humidity',43.67),('battery',100),('voltage',3.0)):
+            observer.accept(f'smarthome/nanoc6/{ieee}/{kind}/state',json.dumps(dict(value=value,received_at=now)).encode())
+        self.assertEqual(observer.report()['complete_devices'],1)
+        telemetry['power_configuration'][ieee] = dict(configured=False,unsupported=False)
+        observer.accept('smarthome/nanoc6/gateway/telemetry',json.dumps(telemetry).encode())
+        self.assertEqual(observer.report()['complete_devices'],0)
+        telemetry['power_configuration'][ieee]['unsupported']=True
+        observer.accept('smarthome/nanoc6/gateway/telemetry',json.dumps(telemetry).encode())
+        self.assertEqual(observer.report()['complete_devices'],1) # Explicit read fallback is reported separately.
+
     def test_usb_configuration_chunking_and_acknowledgement(self):
         master, slave = os.openpty()
         received = []
@@ -59,6 +87,14 @@ class ModelTests(unittest.TestCase):
             (p/'core.entity_registry').write_text(json.dumps(dict(data=dict(entities=entities))))
             report=dict(measurements={'a4c1380000000001':dict(temperature={},humidity={})})
             self.assertEqual(len(HA.registered(p,report)['a4c1380000000001']),2)
+            kinds=('temperature','humidity','battery','voltage')
+            self.assertIsNone(HA.registered(p,report,kinds))
+            for kind in ('battery','voltage'):
+                entities.append(dict(platform='mqtt',config_entry_id='mqtt1',unique_id=f'nanoc6_a4c1380000000001_{kind}',
+                                     entity_id=f'sensor.test_{kind}',disabled_by=None))
+                report['measurements']['a4c1380000000001'][kind]={}
+            (p/'core.entity_registry').write_text(json.dumps(dict(data=dict(entities=entities))))
+            self.assertEqual(len(HA.registered(p,report,kinds)['a4c1380000000001']),4)
             entities[0]['disabled_by']='user'
             (p/'core.entity_registry').write_text(json.dumps(dict(data=dict(entities=entities))))
             self.assertIsNone(HA.registered(p,report))
@@ -173,7 +209,7 @@ class DeploymentSafetyTests(unittest.TestCase):
         for path in ('docs/NanoC6-MQTT連携.md','systemd/smarthome-mqtt.service','systemd/smarthome-mqtt-firewall.service',
                      'scripts/ops/apply-smarthome-mqtt-firewall.sh','scripts/ops/install-smarthome-mqtt.sh',
                      'scripts/ops/smarthome_mqtt.py','scripts/ops/provision-nanoc6-gateway.py',
-                     'scripts/ops/update-nanoc6-gateway.sh','scripts/ops/check-smarthome-mqtt-ha.py','scripts/ops/build-nanoc6-gateway.sh'):
+                     'scripts/ops/update-nanoc6-gateway.sh','scripts/ops/verify-nanoc6-battery.py','scripts/ops/check-smarthome-mqtt-ha.py','scripts/ops/build-nanoc6-gateway.sh'):
             target=self.repo/path;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/path,target)
         subprocess.run(['git','-C',str(self.repo),'add','.'],check=True)
         sentinels=('docker/homeassistant/docker-compose.yml','docker/immich/.env','config/env/notification.env')
@@ -323,6 +359,24 @@ class BrokerTests(unittest.TestCase):
                     while time.monotonic()<end:
                         message=new.receive(0.1)
                         self.assertFalse(message and b'99' in message[1])
+                    # Exercise the battery recovery verifier over the same real TLS broker.
+                    ieee='a4c1380000000001'
+                    power=POWER.PowerObservation([ieee])
+                    for kind,value in (('temperature',27.2),('humidity',43.67),('battery',100),('voltage',3.0)):
+                        topic=f'smarthome/nanoc6/{ieee}/{kind}/state'
+                        discovery=dict(unique_id=f'nanoc6_{ieee}_{kind}',state_topic=topic,device=dict(identifiers=[f'nanoc6_{ieee}']))
+                        publisher.publish(f'homeassistant/sensor/nanoc6/{ieee}_{kind}/config',json.dumps(discovery),True)
+                        publisher.publish(topic,json.dumps(dict(value=value,received_at=time.time())))
+                    telemetry=dict(firmware='nanoc6-wifi-gateway-0.2',uptime_ms=1000,event_drops=0,job_drops=0,
+                                   gateway_drops=0,device_overflow=0,power_configuration={ieee:dict(configured=True,unsupported=False)})
+                    publisher.publish('smarthome/nanoc6/gateway/telemetry',json.dumps(telemetry))
+                    end=time.monotonic()+3
+                    while time.monotonic()<end and power.report()['complete_devices']<1:
+                        message=new.receive(0.1)
+                        if message:power.accept(*message)
+                    self.assertEqual(power.report()['complete_devices'],1)
+                    self.assertEqual(power.report()['measurements'][ieee]['battery']['value'],100)
+                    self.assertEqual(power.report()['measurements'][ieee]['voltage']['value'],3.0)
                 finally:
                     for client in clients:client.close()
                     broker.terminate();broker.wait(timeout=5)

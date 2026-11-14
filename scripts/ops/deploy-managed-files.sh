@@ -235,7 +235,7 @@ if [[ "$MQTT_ONLY" == true ]]; then
     for source in docker/mosquitto/docker-compose.yml config/mosquitto/mosquitto.conf config/mosquitto/acl \
         scripts/ops/apply-smarthome-mqtt-firewall.sh scripts/ops/install-smarthome-mqtt.sh \
         scripts/ops/smarthome_mqtt.py scripts/ops/provision-nanoc6-gateway.py \
-        scripts/ops/update-nanoc6-gateway.sh scripts/ops/check-smarthome-mqtt-ha.py \
+        scripts/ops/update-nanoc6-gateway.sh scripts/ops/verify-nanoc6-battery.py scripts/ops/check-smarthome-mqtt-ha.py \
         scripts/ops/build-nanoc6-gateway.sh docs/NanoC6-MQTT連携.md \
         firmware/nanoc6/wifi_gateway/wifi_gateway.ino firmware/nanoc6/wifi_gateway/gateway_model.h \
         firmware/nanoc6/wifi_gateway/gateway_network.h firmware/nanoc6/wifi_gateway/partitions.csv \

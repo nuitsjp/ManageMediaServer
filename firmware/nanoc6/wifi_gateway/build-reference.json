@@ -14,13 +14,13 @@
     ]
   ],
   "sources": {
-    "firmware/nanoc6/wifi_gateway/gateway_model.h": "1a2dc40840293eba3380cafa7a9c7d9e0d1c029650b2821eb000b391973a78a4",
-    "firmware/nanoc6/wifi_gateway/gateway_network.h": "84cc11023187cd3409fe95cc906a8be55e6a3425fcbdf9a95c14d993f583c4ac",
+    "firmware/nanoc6/wifi_gateway/gateway_model.h": "aaa72088bd3d300c33fa66ff5d54e44dc1a89edbd254bec9dc06bf9c6b9c66cd",
+    "firmware/nanoc6/wifi_gateway/gateway_network.h": "ef94ab55a7929a5204806d0e271fc02f3aad538d54ee5c8b2d3476d7e9576a3d",
     "firmware/nanoc6/wifi_gateway/partitions.csv": "7fe8f5364607dd6ec6e058ca37f57585eec9b6364774a721829096a4a17f7890",
-    "firmware/nanoc6/wifi_gateway/wifi_gateway.ino": "0472366c06064aa9d9c1e712e11fd8ffe0db463cdc29440ba21f9c86703bbd0a"
+    "firmware/nanoc6/wifi_gateway/wifi_gateway.ino": "d71cc81423a0834d3742b61e30532703f004866cf6e34ed8858aa344b7573085"
   },
   "artifacts": {
-    "wifi_gateway.ino.bin": "1d8a57b3d015460d645bafbe90934895c493d051b3178fa4046c3565aa21c4b5",
+    "wifi_gateway.ino.bin": "00744d4e3c52b626b3fef439a1f03af576a76944c4b3002e6e5e62a990ae8fcf",
     "wifi_gateway.ino.partitions.bin": "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
   },
   "accepted_partition_sha256": [
@@ -28,6 +28,7 @@
     "9d146eb9a83b679e99b227b4b13dfcac6dfbed8866e1d14f7e56b055a44fb43a"
   ],
   "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
-  "hardware_verified": true,
-  "hardware_verification_scope": "One Nano C6 and one Zbeacon/TH01 sensor: NVS/Zigbee storage preserved, Wi-Fi with verified MQTT/TLS, fresh temperature/humidity delivery and Home Assistant registration, operator-confirmed UI values, 2026-11-07 JST. Ten sensors, battery delivery over MQTT, separate-power placement, reconnect/reboot and 24-hour stability remain unverified."
+  "firmware_version": "nanoc6-wifi-gateway-0.2",
+  "hardware_verified": false,
+  "hardware_verification_scope": "Battery refresh/report configuration v0.2 built and tested locally; flash, fresh battery/voltage delivery and Home Assistant display remain to be verified. Previous v0.1 temperature/humidity evidence is documented separately."
 }

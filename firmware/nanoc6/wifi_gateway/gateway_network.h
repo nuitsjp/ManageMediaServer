@@ -18,7 +18,12 @@ static gateway::Fleet fleet;
 static esp_mqtt_client_handle_t mqtt = nullptr;
 static std::atomic<bool> mqtt_connected{false}, mqtt_reset{false}, discovery_reset{false}, join_requested{false};
 static std::atomic<uint32_t> gateway_drops{0};
+static std::atomic<bool> power_refresh_requested{false};
 static uint32_t stale_drops = 0, unacked_retries = 0, received_attributes = 0;
+static uint32_t power_reads = 0, power_config_requests = 0, power_config_successes = 0, power_config_failures = 0;
+static gateway::PowerBudget power_budget;
+static unsigned power_cursor = 0;
+static const char *FIRMWARE_VERSION = "nanoc6-wifi-gateway-0.2";
 static String wifi_ssid, wifi_password, mqtt_host, mqtt_user, mqtt_password, mqtt_ca;
 static const char *ROOT_TOPIC = "smarthome/nanoc6";
 static const char *GW_AVAIL = "smarthome/nanoc6/gateway/availability";
@@ -107,7 +112,7 @@ static void gw_mqtt_event(void *, esp_event_base_t, int32_t id, void *data) {
   } else if (id == MQTT_EVENT_DATA && event->current_data_offset == 0 && event->data_len == event->total_data_len) {
     if (event->topic_len == strlen(JOIN_TOPIC) && !memcmp(event->topic, JOIN_TOPIC, event->topic_len)
         && !event->retain && event->data_len == 3 && !memcmp(event->data, "180", 3)) join_requested = true;
-    if (event->topic_len == 20 && !memcmp(event->topic, "homeassistant/status", 20)
+    if (!event->retain && event->topic_len == 20 && !memcmp(event->topic, "homeassistant/status", 20)
         && event->data_len == 6 && !memcmp(event->data, "online", 6)) discovery_reset = true;
   }
 }
@@ -173,6 +178,36 @@ static void gw_store() {
   if (prefs.putBytes("identities", saved, sizeof(saved)) != sizeof(saved)) gw_log("registry_save_failed");
   prefs.end();
 }
+static void gw_refresh_power(uint32_t now) {
+  if (!network_ready || !power_budget.ready(now)) return;
+  for (unsigned offset=0; offset<gateway::CAPACITY; ++offset) {
+    unsigned index = (power_cursor + offset) % gateway::CAPACITY;
+    auto &node = fleet.nodes[index];
+    if (!gateway::known(node.identity)) continue;
+    if (node.address == 0 || node.address >= 0xfff8) {
+      // Restore the live NWK mapping from the stack, never from a saved short address.
+      esp_zb_ieee_addr_t ieee;
+      for (unsigned i=0; i<8; ++i) {
+        char byte[3] = {node.identity.ieee[i*2], node.identity.ieee[i*2+1], 0};
+        ieee[7-i] = strtoul(byte, nullptr, 16);
+      }
+      if (esp_zb_lock_acquire(pdMS_TO_TICKS(10))) {
+        node.address = esp_zb_address_short_by_ieee(ieee);
+        esp_zb_lock_release();
+      }
+    }
+    if (node.address == 0 || node.address >= 0xfff8) continue;
+    bool awake = node.seen && static_cast<uint32_t>(now-node.last_seen_ms) < 10000;
+    if (!node.power.due(now, node.metrics[gateway::BATTERY], node.metrics[gateway::VOLTAGE], awake)) continue;
+    bool configure = node.power.needs_configuration();
+    if (!schedule_power(node.address, configure)) return;
+    node.power.scheduled(now, configure); power_budget.sent(now);
+    ++power_reads; if (configure) ++power_config_requests;
+    power_cursor = (index+1) % gateway::CAPACITY;
+    return;
+  }
+  power_budget.sent(now); // Also rate-limit stack lookups for sleeping/unresolved devices.
+}
 static void gw_worker(void *) {
   gw_load();
   if (wifi_ssid.isEmpty() || mqtt_ca.isEmpty()) { gw_log("provision_required"); vTaskDelete(nullptr); return; }
@@ -186,10 +221,28 @@ static void gw_worker(void *) {
     uint32_t now = millis();
     Event event;
     for (unsigned count = 0; count < 32 && xQueueReceive(gateway_events, &event, 0) == pdTRUE; ++count) {
-      if (event.kind != ATTRIBUTE || event.status || event.truncated || event.endpoint != 1) continue;
+      if (event.endpoint != 1 && event.kind != ANNOUNCE) continue;
       char ieee[17]; for (unsigned i = 0; i < 8; ++i) snprintf(ieee + i*2, 3, "%02x", event.ieee[7-i]);
       auto *node = fleet.find(ieee); if (!node) continue;
       node->address = event.address;
+      node->seen = true; node->last_seen_ms = event.uptime;
+      if (event.kind == ANNOUNCE) {
+        node->refresh = true; node->power.requested = true;
+        node->power.configured = node->power.unsupported = false; node->power.config_attempts = 0;
+        node->power.last_config_status = 0xffff;
+        continue;
+      }
+      if (event.kind == POWER_CONFIG_RESULT) {
+        node->power.last_config_status = event.status;
+        if (!event.status) { node->power.configured = true; ++power_config_successes; }
+        else {
+          ++power_config_failures;
+          node->power.unsupported = event.status == ESP_ZB_ZCL_STATUS_UNSUP_ATTRIB
+                                   || event.status == ESP_ZB_ZCL_STATUS_UNREPORTABLE_ATTRIB;
+        }
+        continue;
+      }
+      if (event.kind != ATTRIBUTE || event.status || event.truncated) continue;
       ++received_attributes;
       if (event.cluster == 0 && (event.attribute == 4 || event.attribute == 5) && event.type == 0x42
           && event.size && event.raw[0] && event.raw[0] <= 32 && event.raw[0] < event.size) {
@@ -226,7 +279,7 @@ static void gw_worker(void *) {
     if (WiFi.status() == WL_CONNECTED && time(nullptr) > 1735689600 && !mqtt
         && static_cast<uint32_t>(now-last_connect) > 5000) { gw_connect(); last_connect = now; }
     if (mqtt_connected && discovery_reset.exchange(false)) {
-      for (auto &node : fleet.nodes) { node.discovery = 0; node.refresh = true; }
+      for (auto &node : fleet.nodes) { node.discovery = 0; node.refresh = true; node.power.requested = true; }
       button_discovered = false;
       esp_mqtt_client_subscribe(mqtt, JOIN_TOPIC, 1);
       esp_mqtt_client_subscribe(mqtt, "homeassistant/status", 1);
@@ -238,6 +291,8 @@ static void gw_worker(void *) {
       gw_log("joining_open_180_seconds");
     }
     if (mqtt_connected) {
+      if (power_refresh_requested.exchange(false)) for (auto &node : fleet.nodes) node.power.requested = true;
+      gw_refresh_power(now);
       if (!button_discovered) button_discovered = gw_button_discovery();
       for (auto &node : fleet.nodes) {
         if (!gateway::known(node.identity)) continue;
@@ -277,6 +332,19 @@ static void gw_worker(void *) {
         cJSON_AddNumberToObject(j, "received_attributes", received_attributes);
         cJSON_AddNumberToObject(j, "free_heap", ESP.getFreeHeap());
         cJSON_AddNumberToObject(j, "uptime_ms", now);
+        cJSON_AddStringToObject(j, "firmware", FIRMWARE_VERSION);
+        cJSON_AddNumberToObject(j, "power_read_requests", power_reads);
+        cJSON_AddNumberToObject(j, "power_config_requests", power_config_requests);
+        cJSON_AddNumberToObject(j, "power_config_successes", power_config_successes);
+        cJSON_AddNumberToObject(j, "power_config_failures", power_config_failures);
+        cJSON *configuration = cJSON_AddObjectToObject(j, "power_configuration");
+        for (const auto &node : fleet.nodes) if (gateway::known(node.identity)) {
+          cJSON *item = cJSON_AddObjectToObject(configuration, node.identity.ieee);
+          cJSON_AddBoolToObject(item, "configured", node.power.configured);
+          cJSON_AddBoolToObject(item, "unsupported", node.power.unsupported);
+          cJSON_AddNumberToObject(item, "attempts", node.power.config_attempts);
+          cJSON_AddNumberToObject(item, "status", node.power.last_config_status);
+        }
         gw_json("smarthome/nanoc6/gateway/telemetry", j, false, 0); last_telemetry = now;
       }
     }
@@ -289,14 +357,18 @@ static void gateway_start() {
   if (xTaskCreate(gw_worker, "gateway", 12288, nullptr, 2, nullptr) != pdPASS) abort();
 }
 static void gateway_accept(const Event &event) {
-  if (event.kind == ATTRIBUTE && xQueueSend(gateway_events, &event, 0) != pdTRUE) ++gateway_drops;
+  if ((event.kind == ATTRIBUTE || event.kind == POWER_CONFIG_RESULT || event.kind == ANNOUNCE)
+      && xQueueSend(gateway_events, &event, 0) != pdTRUE) ++gateway_drops;
 }
 static bool gateway_command(const char *command) {
+  if (!strcmp(command, "refresh-battery")) {
+    power_refresh_requested = true; gw_log("battery_refresh_requested"); return true;
+  }
   if (!strcmp(command, "gateway-status")) {
     xSemaphoreTake(usb_mutex, portMAX_DELAY);
-    Serial.printf("{\"v\":1,\"event\":\"gateway_status\",\"wifi\":%s,\"mqtt\":%s,\"clock\":%s,\"gateway_drops\":%lu}\n",
+    Serial.printf("{\"v\":1,\"event\":\"gateway_status\",\"wifi\":%s,\"mqtt\":%s,\"clock\":%s,\"gateway_drops\":%lu,\"firmware\":\"%s\"}\n",
                   WiFi.status() == WL_CONNECTED ? "true" : "false", mqtt_connected ? "true" : "false",
-                  time(nullptr) > 1735689600 ? "true" : "false", static_cast<unsigned long>(gateway_drops.load()));
+                  time(nullptr) > 1735689600 ? "true" : "false", static_cast<unsigned long>(gateway_drops.load()), FIRMWARE_VERSION);
     xSemaphoreGive(usb_mutex);
     return true;
   }
