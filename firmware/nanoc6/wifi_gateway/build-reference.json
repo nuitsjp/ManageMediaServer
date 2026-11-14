@@ -31,5 +31,5 @@
   "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
   "firmware_version": "nanoc6-wifi-gateway-0.3",
   "hardware_verified": true,
-  "hardware_verification_scope": "v0.3 verified on 2026-11-15 JST: full flash backed up; bootloader, NVS and Zigbee storage matched on readback; all ten numbered mappings read back after a separate USB power cycle; MQTT Discovery names and six entities per sensor confirmed in Home Assistant registry; fresh sensor 10 temperature/humidity received over USB. Home Assistant live presentation, long-term reception and ten simultaneously powered sensors remain to be verified."
+  "hardware_verification_scope": "v0.3 verified on 2026-11-15 JST: flash backed up; bootloader, NVS and Zigbee storage matched on readback; ten numbered mappings read back after USB power cycle; MQTT Discovery names and six entities per sensor confirmed in HA registry; operator confirmed sensor 10 reception state and last-seen in HA; with ten sensors powered, at least one successful Zigbee event from each was observed over USB in a short test, with event/job/gateway drop counters at zero. Per-device full metric delivery and long-term stability remain to be verified."
 }
