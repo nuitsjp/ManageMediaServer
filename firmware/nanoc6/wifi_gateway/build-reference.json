@@ -29,6 +29,6 @@
   ],
   "ota_reset_sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
   "firmware_version": "nanoc6-wifi-gateway-0.2",
-  "hardware_verified": false,
-  "hardware_verification_scope": "Battery refresh/report configuration v0.2 built and tested locally; flash, fresh battery/voltage delivery and Home Assistant display remain to be verified. Previous v0.1 temperature/humidity evidence is documented separately."
+  "hardware_verified": true,
+  "hardware_verification_scope": "One Nano C6 and one Zbeacon/TH01 sensor verified on 2026-11-14 JST: NVS/Zigbee storage preserved; fresh temperature, humidity, battery (100% reported) and voltage (2.9V) over MQTT/TLS; Configure Reporting acknowledged on the first attempt (status 0); all four Home Assistant entities and operator-confirmed UI values. Long-term periodic delivery and ten-sensor radio stability remain unverified."
 }
