@@ -848,6 +848,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 これとは別に `media-health-check.timer` が 10 分ごとに Immich、Jellyfin、`media-daily-maintenance.timer`、各ファイルシステムを監視します。ヘルスチェックは同じ障害を繰り返し通知せず、初回障害、障害内容の変化、復旧の各タイミングで 1 回だけ Discord へ通知します。通知状態は `/mnt/data/config/media-health-check/state/last-result` に保存します。
 
+Tailscale の接続状態と端末キーの期限も監視し、未ログインや期限切れ、期限まで既定で 14 日以内の場合に通知します。閾値は `TAILSCALE_EXPIRY_WARNING_SECONDS` で変更できます。期限が報告されない場合、期限に基づく通知は行いません。
+
 通知に含める主な内容:
 
 ```text

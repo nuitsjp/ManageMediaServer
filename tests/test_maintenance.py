@@ -4,6 +4,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -126,6 +127,33 @@ check_pending_reboot
     def test_reboot_grace_period_and_overdue(self):
         self.assertNotIn('FAIL', self.monitor(reboot='new'))
         self.assertIn('reboot request is overdue', self.monitor(reboot='old'))
+
+    def test_tailscale_state_and_key_expiry(self):
+        import json
+        now = datetime.now(timezone.utc)
+        cases = [
+            ({'BackendState': 'NeedsLogin'}, 'FAIL Tailscale is not running'),
+            ({'BackendState': 'Running', 'Self': {'KeyExpiry': (now + timedelta(days=2)).isoformat()}}, 'FAIL Tailscale key expires'),
+            ({'BackendState': 'Running', 'Self': {'KeyExpiry': (now - timedelta(days=1)).isoformat()}}, 'FAIL Tailscale key has expired'),
+            ({'BackendState': 'Running', 'Self': {'KeyExpiry': (now + timedelta(days=30)).isoformat()}}, 'OK Tailscale is running'),
+            ({'BackendState': 'Running', 'Self': {}}, 'no key expiry is reported'),
+            ({'BackendState': 'Running', 'Self': None}, 'FAIL cannot read Tailscale device status'),
+            ({'BackendState': 'Running', 'Self': {'KeyExpiry': 'bad'}}, 'FAIL cannot read Tailscale key expiry'),
+        ]
+        for status, expected in cases:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temp:
+                fake = Path(temp, 'tailscale')
+                fake.write_text('#!/bin/sh\nprintf %s ' + __import__('shlex').quote(json.dumps(status)) + '\n')
+                fake.chmod(0o755)
+                code = function('media-health-check.sh', 'check_tailscale') + '''
+record_failure() { echo "FAIL $*"; }
+record_ok() { echo "OK $*"; }
+TAILSCALE_EXPIRY_WARNING_SECONDS=1209600
+check_tailscale
+'''
+                result = self.shell(code, {'PATH': temp + ':' + os.environ['PATH']})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(expected, result.stdout)
 
 
 if __name__ == '__main__':

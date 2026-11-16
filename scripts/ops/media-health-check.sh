@@ -66,6 +66,7 @@ JELLYFIN_COMPOSE_DIR="${JELLYFIN_COMPOSE_DIR:-${PROD_ROOT}/docker/jellyfin}"
 IMMICH_HEALTH_URL="${IMMICH_HEALTH_URL:-http://127.0.0.1:2283}"
 JELLYFIN_HEALTH_URL="${JELLYFIN_HEALTH_URL:-http://127.0.0.1:8096}"
 HTTP_MAX_TIME_SECONDS="${HTTP_MAX_TIME_SECONDS:-10}"
+TAILSCALE_EXPIRY_WARNING_SECONDS="${TAILSCALE_EXPIRY_WARNING_SECONDS:-1209600}"
 
 MAINTENANCE_TIMER="${MAINTENANCE_TIMER:-media-daily-maintenance.timer}"
 REQUIRE_MAINTENANCE_TIMER_ENABLED="${REQUIRE_MAINTENANCE_TIMER_ENABLED:-true}"
@@ -301,6 +302,48 @@ check_compose() {
     fi
 }
 
+check_tailscale() {
+    local status state expiry expiry_epoch now
+    if [[ ! "$TAILSCALE_EXPIRY_WARNING_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+        record_failure "invalid Tailscale expiry threshold"
+        return
+    fi
+    if ! command -v tailscale >/dev/null || ! command -v jq >/dev/null \
+        || ! status=$(timeout 10 tailscale status --json 2>/dev/null); then
+        record_failure "cannot read Tailscale status"
+        return
+    fi
+    if ! state=$(jq -er '.BackendState | strings' <<<"$status" 2>/dev/null); then
+        record_failure "cannot read Tailscale state"
+        return
+    fi
+    if [[ "$state" != Running ]]; then
+        record_failure "Tailscale is not running or needs login"
+        return
+    fi
+    if ! jq -e '.Self | type == "object"' <<<"$status" >/dev/null 2>&1; then
+        record_failure "cannot read Tailscale device status"
+        return
+    fi
+    expiry=$(jq -r '.Self.KeyExpiry // empty' <<<"$status" 2>/dev/null)
+    if [[ -z "$expiry" || "$expiry" == 0001-01-01T00:00:00Z ]]; then
+        record_ok "Tailscale is running; no key expiry is reported"
+        return
+    fi
+    if ! expiry_epoch=$(date -d "$expiry" +%s 2>/dev/null) || [[ ! "$expiry_epoch" =~ ^[0-9]+$ ]]; then
+        record_failure "cannot read Tailscale key expiry"
+        return
+    fi
+    now=$(date +%s)
+    if (( expiry_epoch <= now )); then
+        record_failure "Tailscale key has expired"
+    elif (( expiry_epoch - now <= TAILSCALE_EXPIRY_WARNING_SECONDS )); then
+        record_failure "Tailscale key expires within warning period"
+    else
+        record_ok "Tailscale is running and key expiry is outside warning period"
+    fi
+}
+
 check_timer() {
     local timer="$1"
     local state
@@ -419,6 +462,7 @@ main() {
 
     load_notification_state
 
+    check_tailscale
     check_http "Immich" "$IMMICH_HEALTH_URL"
     check_http "Jellyfin" "$JELLYFIN_HEALTH_URL"
     if [[ -f /etc/systemd/system/token-monitor-analytics.service ]]; then
