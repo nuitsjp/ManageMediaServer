@@ -3,20 +3,43 @@
 import argparse
 import json
 import pathlib
+import socket
+import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 
-def request(base, path, headers=None):
+def transport_category(error):
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, ssl.SSLError):
+        return "tls"
+    if isinstance(reason, socket.gaierror):
+        return "dns"
+    if isinstance(reason, TimeoutError):
+        return "timeout"
+    if isinstance(reason, ConnectionError):
+        return "connection"
+    return "transport"
+
+
+def request(base, path, headers=None, *, phase):
     req = urllib.request.Request(base.rstrip("/") + path, headers=headers or {})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return response.status, response.headers, response.read(1024 * 1024)
-    except urllib.error.HTTPError as error:
-        status, headers = error.code, error.headers
-        error.close()
-        return status, headers, b""
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status, response.headers, response.read(1024 * 1024)
+        except urllib.error.HTTPError as error:
+            status, response_headers = error.code, error.headers
+            error.close()
+            return status, response_headers, b""
+        except (urllib.error.URLError, OSError) as error:
+            category = transport_category(error)
+            print(f"WARN: public Hub {phase} transport failure: category={category} attempt={attempt}/3", flush=True)
+            if attempt == 3 or category == "tls":
+                raise
+            time.sleep(2)
 
 
 def check(base):
@@ -27,7 +50,7 @@ def check(base):
         parsed.scheme == "http" and parsed.hostname == "127.0.0.1"
     ):
         raise ValueError("The public endpoint must use HTTPS")
-    status, headers, body = request(base, "/api/health")
+    status, headers, body = request(base, "/api/health", phase="health")
     if status != 200:
         raise ValueError(f"Public health returned HTTP {status}")
     health = json.loads(body)
@@ -36,7 +59,7 @@ def check(base):
     if headers.get("X-Content-Type-Options") != "nosniff" or "max-age=" not in headers.get("Strict-Transport-Security", ""):
         raise ValueError("Public proxy security headers are missing")
     for label, auth in [("anonymous", {}), ("invalid token", {"Authorization": "Bearer public-health-invalid-token"})]:
-        status, _, _ = request(base, "/api/devices", auth)
+        status, _, _ = request(base, "/api/devices", auth, phase=label.replace(" ", "-"))
         if status != 401:
             raise ValueError(f"Public data did not reject {label}: HTTP {status}")
     print("OK: public HTTPS/proxy, Hub health, and anonymous/invalid-token rejection")

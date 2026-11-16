@@ -8,11 +8,13 @@ import json
 from pathlib import Path
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 
@@ -235,6 +237,34 @@ class PublicProxyTests(unittest.TestCase):
 
     def test_internal_auth_endpoint_cannot_be_called_directly(self):
         self.assertEqual(self.call("/_public_auth", self.auth())[0], 404)
+
+
+class TransportCheckTests(unittest.TestCase):
+    def test_transient_failure_is_retried_without_exposing_details(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.status = 200
+        response.__enter__.return_value.headers = {}
+        response.__enter__.return_value.read.return_value = b"ok"
+        output = io.StringIO()
+        with mock.patch.object(public_check.urllib.request, "urlopen", side_effect=[urllib.error.URLError(socket.gaierror("secret-host")), response]) as urlopen, mock.patch.object(public_check.time, "sleep") as sleep, contextlib.redirect_stdout(output):
+            self.assertEqual(public_check.request("https://example.test", "/api/health", phase="health")[0], 200)
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(2)
+        self.assertIn("health transport failure: category=dns", output.getvalue())
+        self.assertNotIn("secret-host", output.getvalue())
+
+    def test_timeout_exhausts_retries_and_tls_is_immediate(self):
+        for error, count in [(TimeoutError("secret"), 3), (urllib.error.URLError(ssl.SSLError("secret")), 1)]:
+            with self.subTest(error=type(error)), mock.patch.object(public_check.urllib.request, "urlopen", side_effect=error) as urlopen, mock.patch.object(public_check.time, "sleep"), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises((TimeoutError, urllib.error.URLError)):
+                    public_check.request("https://example.test", "/api/health", phase="health")
+                self.assertEqual(urlopen.call_count, count)
+
+    def test_http_auth_failure_is_not_retried(self):
+        error = urllib.error.HTTPError("https://example.test", 401, "unauthorized", {}, None)
+        with mock.patch.object(public_check.urllib.request, "urlopen", side_effect=error) as urlopen:
+            self.assertEqual(public_check.request("https://example.test", "/api/devices", phase="anonymous")[0], 401)
+        self.assertEqual(urlopen.call_count, 1)
 
 
 class SecretValidationTests(unittest.TestCase):

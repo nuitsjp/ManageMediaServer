@@ -138,7 +138,11 @@ because ordinary nginx errors can include a request query.
 The existing 10-minute media health check verifies the public service, HTTPS,
 Hub authentication, and rejection of anonymous/invalid-token data reads. Normal
 failure/recovery notifications remain with that existing check. The public
-protections limit application traffic; Funnel's TLS/transport resource use and
+check retries transient transport failures up to three times per request, with
+two seconds between attempts. It logs the check phase and a sanitized failure
+category without endpoint or exception details. TLS and HTTP/authentication
+failures are reported immediately. Each request has a 5-second timeout.
+The public protections limit application traffic; Funnel's TLS/transport resource use and
 network saturation still depend on Tailscale and the host's available resources.
 
 Integration tests use real nginx against an isolated Hub fixture:
